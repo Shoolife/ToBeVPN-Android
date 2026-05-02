@@ -39,8 +39,14 @@ jobs:
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
+          # keystore lives at the repo root in CI (we just decoded it
+          # there). build.gradle.kts resolves keystore.path through
+          # rootProject.file() so a bare `tobevpn-release.jks` lands inside
+          # the cloned repo. The local dev convention `../tobevpn-release.jks`
+          # only works on a developer machine where the .jks sits one level
+          # up alongside the repo clone.
           cat > local.properties <<EOF
-          keystore.path=../tobevpn-release.jks
+          keystore.path=tobevpn-release.jks
           keystore.password=${SIGNING_KEYSTORE_PASSWORD}
           keystore.keyAlias=${SIGNING_KEY_ALIAS}
           keystore.keyPassword=${SIGNING_KEY_PASSWORD}
