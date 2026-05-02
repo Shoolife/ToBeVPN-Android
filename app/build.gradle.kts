@@ -112,9 +112,16 @@ android {
     // universal-fallback APK. The in-app updater on the device picks the
     // matching split via Build.SUPPORTED_ABIS, so users only ever download
     // ~12 MB on update instead of the full bundle.
+    //
+    // Splits are toggled off when building the App Bundle: AAB carries every
+    // architecture inside one .aab and Google's bundletool re-splits per
+    // device, so doing it ourselves at the same time is incompatible
+    // (Google issuetracker #402800800). The CI runs APK and AAB in
+    // separate gradle invocations, passing -PdisableAbiSplits for the AAB.
+    val splitsDisabled = providers.gradleProperty("disableAbiSplits").isPresent
     splits {
         abi {
-            isEnable = true
+            isEnable = !splitsDisabled
             reset()
             include("arm64-v8a", "armeabi-v7a", "x86_64")
             // Keep a universal APK as a safety net for any device whose
