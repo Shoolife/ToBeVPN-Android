@@ -1,0 +1,131 @@
+name: build
+
+on:
+  push:
+    branches: [main, feat/per-device-auth-and-fixes]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Restore release keystore
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$SIGNING_KEYSTORE_BASE64" ]; then
+            echo "::error::SIGNING_KEYSTORE_BASE64 secret is missing"
+            exit 1
+          fi
+          echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > tobevpn-release.jks
+          ls -la tobevpn-release.jks
+
+      - name: Write local.properties
+        env:
+          SIGNING_KEYSTORE_PASSWORD: ${{ secrets.SIGNING_KEYSTORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          cat > local.properties <<EOF
+          keystore.path=../tobevpn-release.jks
+          keystore.password=${SIGNING_KEYSTORE_PASSWORD}
+          keystore.keyAlias=${SIGNING_KEY_ALIAS}
+          keystore.keyPassword=${SIGNING_KEY_PASSWORD}
+          EOF
+
+      - name: Build release APK + AAB
+        # BOT_API_URL is read by app/build.gradle.kts as a buildConfigField.
+        # The fallback in gradle is a hard error, so this CI run fails loudly
+        # if the secret is missing — far better than silently shipping a build
+        # that points at example.invalid.
+        env:
+          BOT_API_URL: ${{ secrets.BOT_API_URL }}
+        run: ./gradlew assembleRelease bundleRelease --no-daemon
+
+      - name: Locate and rename artifacts
+        # The splits {} block in app/build.gradle.kts produces one APK per
+        # ABI (arm64-v8a, armeabi-v7a, x86_64) plus one universal fallback,
+        # all named `app-<abi>-release.apk`. We rename them to a stable
+        # convention `ToBeVPN-<version>-<abi>-<sha>.apk` because the
+        # in-app updater on the device matches asset names by the
+        # `-<abi>-` token to find the split for its primary ABI.
+        run: |
+          set -e
+          VERSION=$(grep -E "^\s*versionName" app/build.gradle.kts | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          SHA=${GITHUB_SHA:0:7}
+
+          mkdir -p artifacts
+          for apk in app/build/outputs/apk/release/app-*-release.apk; do
+            [ -f "$apk" ] || continue
+            base=$(basename "$apk" -release.apk)        # e.g. app-arm64-v8a
+            abi=${base#app-}                            # e.g. arm64-v8a
+            cp "$apk" "artifacts/ToBeVPN-${VERSION}-${abi}-${SHA}.apk"
+          done
+
+          AAB=$(find app/build/outputs/bundle/release -name "*.aab" | head -1)
+          if [ -z "$AAB" ]; then
+            echo "::error::AAB missing"
+            ls -R app/build/outputs/
+            exit 1
+          fi
+          cp "$AAB" "artifacts/ToBeVPN-${VERSION}-${SHA}.aab"
+
+          echo "--- artifacts/ ---"
+          ls -la artifacts/
+
+          if ! ls artifacts/*.apk >/dev/null 2>&1; then
+            echo "::error::no APK splits produced — splits {} block likely misconfigured"
+            ls -R app/build/outputs/
+            exit 1
+          fi
+
+      - name: Upload APK splits
+        uses: actions/upload-artifact@v5
+        with:
+          name: ToBeVPN-apk
+          path: artifacts/*.apk
+          if-no-files-found: error
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v5
+        with:
+          name: ToBeVPN-aab
+          path: artifacts/*.aab
+          if-no-files-found: error
+
+      - name: Wipe sensitive files
+        if: always()
+        run: |
+          rm -f tobevpn-release.jks local.properties
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          path: dist
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/ToBeVPN-apk/*.apk
+            dist/ToBeVPN-aab/*.aab
+          generate_release_notes: true

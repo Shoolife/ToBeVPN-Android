@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="280dp"
+    android:height="280dp"
+    android:viewportWidth="192"
+    android:viewportHeight="192">
+
+    <!-- Shield outline -->
+    <path
+        android:pathData="M96,20 C100,20 150,34 150,42 C150,96 138,130 96,170 C54,130 42,96 42,42 C42,34 92,20 96,20 Z"
+        android:fillColor="#00000000"
+        android:strokeWidth="5">
+        <aapt:attr name="android:strokeColor">
+            <gradient
+                android:type="linear"
+                android:startX="42"
+                android:startY="20"
+                android:endX="150"
+                android:endY="170">
+                <item android:offset="0.0" android:color="#FF00E5A0" />
+                <item android:offset="0.5" android:color="#FF00BCD4" />
+                <item android:offset="1.0" android:color="#FF2196F3" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Forward chevron -->
+    <path
+        android:pathData="M84,72 L112,96 L84,120"
+        android:strokeWidth="7"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+    <!-- Trailing chevron -->
+    <path
+        android:pathData="M66,78 L88,96 L66,114"
+        android:strokeWidth="5"
+        android:strokeColor="#55FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+
+</vector>

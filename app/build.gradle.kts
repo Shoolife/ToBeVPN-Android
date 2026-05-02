@@ -1,0 +1,199 @@
+import java.util.Properties
+
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.hilt)
+}
+
+val localProperties = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) load(file.inputStream())
+}
+
+android {
+    namespace = "com.tobevpn.app"
+    compileSdk {
+        version = release(36) {
+            minorApiLevel = 1
+        }
+    }
+
+    defaultConfig {
+        applicationId = "com.tobevpn.app"
+        minSdk = 29
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // ABI filtering is done per build type below — keep defaultConfig
+        // empty so the splits {} block works against the full set declared
+        // in release{}.
+
+        // Backend URL is **never** hardcoded into the public source tree —
+        // production instances must not be discoverable via GitHub search.
+        // Resolution order:
+        //   1. local.properties: `bot.api.url=https://...` (developers)
+        //   2. env var BOT_API_URL (CI / GitHub Actions secret)
+        //   3. Hard fail at configure time so a broken build never silently
+        //      compiles against `https://example.invalid/` and gets shipped.
+        val botApiUrl = localProperties.getProperty("bot.api.url")
+            ?: System.getenv("BOT_API_URL")
+            ?: throw GradleException(
+                "BOT_API_URL is not configured. Set it via local.properties (`bot.api.url=...`) " +
+                "or the BOT_API_URL environment variable / Actions secret."
+            )
+        buildConfigField("String", "BOT_API_BASE_URL", "\"$botApiUrl\"")
+    }
+
+    // Release signing is opt-in — credentials live in local.properties (gitignored).
+    // Without them the release config is skipped so debug builds and CI clones
+    // still work; `./gradlew assembleRelease` will fail loudly if invoked.
+    val keystorePath = localProperties.getProperty("keystore.path")
+    val keystorePassword = localProperties.getProperty("keystore.password")
+    val keystoreKeyAlias = localProperties.getProperty("keystore.keyAlias")
+    val keystoreKeyPassword = localProperties.getProperty("keystore.keyPassword")
+    val hasReleaseSigning = keystorePath != null
+        && keystorePassword != null
+        && keystoreKeyAlias != null
+        && keystoreKeyPassword != null
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                // Resolve relative paths against the repo root so users can write
+                // e.g. "../tobevpn-release.jks" without worrying about Gradle's
+                // module-relative resolution.
+                storeFile = rootProject.file(keystorePath!!)
+                storePassword = keystorePassword
+                keyAlias = keystoreKeyAlias
+                keyPassword = keystoreKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            isMinifyEnabled = false
+            isShrinkResources = false
+            ndk {
+                abiFilters += listOf("x86", "x86_64")
+            }
+        }
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            ndk {
+                abiFilters.clear()
+                // Production ABIs we ship to release assets. The splits {}
+                // block below turns each into a separate APK so phones only
+                // download the native libs they actually need.
+                //   * arm64-v8a   — every modern Android phone (since 2017)
+                //   * armeabi-v7a — older 32-bit ARM phones still in the wild
+                //   * x86_64      — emulators, ChromeOS Android subsystem
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+        }
+    }
+
+    // Per-ABI splits: instead of one universal APK with native libs for every
+    // architecture (~30 MB), produce one APK per ABI (~10–13 MB each) and a
+    // universal-fallback APK. The in-app updater on the device picks the
+    // matching split via Build.SUPPORTED_ABIS, so users only ever download
+    // ~12 MB on update instead of the full bundle.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("arm64-v8a", "armeabi-v7a", "x86_64")
+            // Keep a universal APK as a safety net for any device whose
+            // Build.SUPPORTED_ABIS doesn't intersect our list (rare, but
+            // RuStore / sideload scenarios sometimes ship to unusual hardware).
+            isUniversalApk = true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+}
+
+dependencies {
+    // XRay core (AAR in libs/)
+    implementation(fileTree(mapOf("dir" to "libs", "include" to listOf("*.aar"))))
+
+    // Compose
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.graphics)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+
+    // Core
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.appcompat)
+
+    // Lifecycle
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+
+    // Navigation
+    implementation(libs.androidx.navigation.compose)
+
+    // Hilt
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
+
+    // Room
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+
+    // Network
+    implementation(libs.retrofit)
+    implementation(libs.retrofit.gson)
+    implementation(libs.okhttp.logging)
+
+    // Coroutines
+    implementation(libs.kotlinx.coroutines.android)
+
+    // DataStore
+    implementation(libs.androidx.datastore.preferences)
+
+    // Serialization
+    implementation(libs.kotlinx.serialization.json)
+
+    // ML Kit Barcode Scanner (for linking TV via QR)
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+
+    // SQLCipher
+    implementation(libs.sqlcipher)
+    implementation(libs.androidx.sqlite.ktx)
+
+    // Testing
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+}

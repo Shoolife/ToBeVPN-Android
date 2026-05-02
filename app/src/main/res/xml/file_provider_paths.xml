@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Matches setDestinationInExternalFilesDir(context, DIRECTORY_DOWNLOADS, ...) -->
+    <external-files-path name="updates" path="Download/" />
+    <!-- Fallback: emulators / devices without shared storage land here. -->
+    <files-path name="updates_internal" path="updates/" />
+</paths>

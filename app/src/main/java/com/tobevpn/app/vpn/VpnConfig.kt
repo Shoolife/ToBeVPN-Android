@@ -1,0 +1,191 @@
+package com.tobevpn.app.vpn
+
+import com.tobevpn.app.domain.model.Server
+import org.json.JSONArray
+import org.json.JSONObject
+
+object VpnConfig {
+
+    fun buildConfigJson(server: Server): String {
+        return JSONObject().apply {
+            put("stats", JSONObject())
+            put("log", JSONObject().put("loglevel", "info"))
+            put("policy", buildPolicy())
+            put("inbounds", buildInbounds())
+            put("outbounds", buildOutbounds(server))
+            put("dns", buildDns())
+            put("routing", buildRouting())
+            put("xudp", JSONObject().apply {
+                put("baseKey", server.uuid)
+            })
+        }.toString(2)
+    }
+
+    private fun buildPolicy(): JSONObject {
+        return JSONObject().apply {
+            put("levels", JSONObject().apply {
+                put("8", JSONObject().apply {
+                    put("handshake", 4)
+                    put("connIdle", 300)
+                    put("uplinkOnly", 1)
+                    put("downlinkOnly", 1)
+                })
+            })
+            put("system", JSONObject().apply {
+                put("statsOutboundUplink", true)
+                put("statsOutboundDownlink", true)
+            })
+        }
+    }
+
+    private fun buildInbounds(): JSONArray {
+        return JSONArray().apply {
+            put(JSONObject().apply {
+                put("tag", "socks")
+                put("port", 10808)
+                put("protocol", "socks")
+                put("listen", "127.0.0.1")
+                put("settings", JSONObject().apply {
+                    put("auth", "noauth")
+                    put("udp", true)
+                    put("userLevel", 8)
+                })
+                put("sniffing", JSONObject().apply {
+                    put("enabled", true)
+                    put("destOverride", JSONArray().apply {
+                        put("http")
+                        put("tls")
+                    })
+                    put("routeOnly", false)
+                })
+            })
+            put(JSONObject().apply {
+                put("tag", "tun")
+                put("port", 0)
+                put("protocol", "tun")
+                put("settings", JSONObject().apply {
+                    put("name", "xray0")
+                    put("MTU", 1500)
+                    put("userLevel", 8)
+                })
+                put("sniffing", JSONObject().apply {
+                    put("enabled", true)
+                    put("destOverride", JSONArray().apply {
+                        put("http")
+                        put("tls")
+                    })
+                    put("routeOnly", false)
+                })
+            })
+        }
+    }
+
+    private fun buildOutbounds(server: Server): JSONArray {
+        return JSONArray().apply {
+            put(JSONObject().apply {
+                put("tag", "proxy")
+                put("protocol", "vless")
+                put("settings", JSONObject().apply {
+                    put("vnext", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("address", server.address)
+                            put("port", server.port)
+                            put("users", JSONArray().apply {
+                                put(JSONObject().apply {
+                                    put("id", server.uuid)
+                                    put("level", 8)
+                                    put("encryption", "none")
+                                    if (server.flow.isNotEmpty()) {
+                                        put("flow", server.flow)
+                                    }
+                                })
+                            })
+                        })
+                    })
+                })
+                put("streamSettings", buildStreamSettings(server))
+                if (server.network != "xhttp") {
+                    put("mux", JSONObject().apply {
+                        put("enabled", false)
+                        put("concurrency", -1)
+                    })
+                }
+            })
+            put(JSONObject().apply {
+                put("tag", "direct")
+                put("protocol", "freedom")
+                put("settings", JSONObject().apply {
+                    put("domainStrategy", "UseIP")
+                })
+            })
+            put(JSONObject().apply {
+                put("tag", "block")
+                put("protocol", "blackhole")
+                put("settings", JSONObject().apply {
+                    put("response", JSONObject().put("type", "http"))
+                })
+            })
+        }
+    }
+
+    private fun buildStreamSettings(server: Server): JSONObject {
+        return JSONObject().apply {
+            put("network", server.network)
+            put("security", server.security)
+            when (server.network) {
+                "xhttp" -> {
+                    put("xhttpSettings", JSONObject().apply {
+                        if (server.path.isNotEmpty()) put("path", server.path)
+                        if (server.mode.isNotEmpty()) put("mode", server.mode)
+                    })
+                }
+                "ws" -> {
+                    put("wsSettings", JSONObject().apply {
+                        if (server.path.isNotEmpty()) put("path", server.path)
+                    })
+                }
+                else -> {
+                    put("tcpSettings", JSONObject().apply {
+                        put("header", JSONObject().put("type", "none"))
+                    })
+                }
+            }
+            if (server.security == "reality") {
+                put("realitySettings", JSONObject().apply {
+                    put("allowInsecure", false)
+                    put("serverName", server.sni)
+                    put("fingerprint", server.fingerprint)
+                    put("publicKey", server.publicKey)
+                    put("shortId", server.shortId)
+                    put("spiderX", server.spx.ifEmpty { "/" })
+                })
+            } else if (server.security == "tls") {
+                put("tlsSettings", JSONObject().apply {
+                    put("allowInsecure", false)
+                    put("serverName", server.sni)
+                    put("fingerprint", server.fingerprint)
+                })
+            }
+        }
+    }
+
+    private fun buildDns(): JSONObject {
+        return JSONObject().apply {
+            put("servers", JSONArray().apply {
+                put("1.1.1.1")
+                put("8.8.8.8")
+                put("2606:4700:4700::1111")
+                put("2001:4860:4860::8888")
+            })
+            put("queryStrategy", "UseIP")
+            put("tag", "dns-module")
+        }
+    }
+
+    private fun buildRouting(): JSONObject {
+        return JSONObject().apply {
+            put("domainStrategy", "AsIs")
+            put("rules", JSONArray())
+        }
+    }
+}
