@@ -206,18 +206,18 @@
     <string name="vpn_notification_channel">VPN-подключение</string>
 
     <!-- In-app updater -->
-    <string name="update_banner_title">Доступна новая версия %1$s</string>
+    <string name="update_banner_title">Доступна v%1$s</string>
     <string name="update_banner_download">Скачать</string>
     <string name="update_banner_later">Позже</string>
-    <string name="update_banner_downloading_title">Загружаем %1$s…</string>
+    <string name="update_banner_downloading_title">Загружаем v%1$s</string>
     <string name="update_banner_cancel">Отменить</string>
-    <string name="update_banner_ready_title">Версия %1$s готова к установке</string>
+    <string name="update_banner_ready_title">v%1$s готова к установке</string>
     <string name="update_banner_ready_description">Нажмите «Установить», чтобы применить обновление.</string>
     <string name="update_banner_install">Установить</string>
     <string name="update_banner_failed_title">Не удалось обновить</string>
     <string name="update_banner_retry">Повторить</string>
     <!-- Settings → О приложении → строка "Проверить обновления" -->
     <string name="update_check_button">Проверить</string>
-    <string name="update_check_uptodate">Установлена последняя версия (%1$s)</string>
-    <string name="update_available_short">Доступна: %1$s</string>
+    <string name="update_check_uptodate">Версия %1$s</string>
+    <string name="update_available_short">Версия %1$s · доступна v%2$s</string>
 </resources>

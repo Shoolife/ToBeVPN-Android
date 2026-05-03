@@ -44,7 +44,7 @@ fun SettingsUpdateCheckRow(viewModel: UpdateViewModel = rememberAppUpdateViewMod
 
     val statusText = when (val s = state) {
         is UpdateUiState.Available ->
-            stringResource(R.string.update_available_short, s.info.versionName)
+            stringResource(R.string.update_available_short, versionName, s.info.versionName)
         is UpdateUiState.Downloading,
         is UpdateUiState.ReadyToInstall,
         is UpdateUiState.Failed,

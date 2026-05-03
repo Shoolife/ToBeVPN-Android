@@ -206,18 +206,18 @@
     <string name="vpn_notification_channel">VPN Service</string>
 
     <!-- In-app updater -->
-    <string name="update_banner_title">New version %1$s available</string>
+    <string name="update_banner_title">v%1$s available</string>
     <string name="update_banner_download">Download</string>
     <string name="update_banner_later">Later</string>
-    <string name="update_banner_downloading_title">Downloading %1$s…</string>
+    <string name="update_banner_downloading_title">Downloading v%1$s</string>
     <string name="update_banner_cancel">Cancel</string>
-    <string name="update_banner_ready_title">Update %1$s ready</string>
+    <string name="update_banner_ready_title">v%1$s ready</string>
     <string name="update_banner_ready_description">Tap Install to apply the new version.</string>
     <string name="update_banner_install">Install</string>
     <string name="update_banner_failed_title">Update failed</string>
     <string name="update_banner_retry">Retry</string>
     <!-- Settings → About → "Check for updates" row -->
     <string name="update_check_button">Check</string>
-    <string name="update_check_uptodate">Latest version installed (%1$s)</string>
-    <string name="update_available_short">Available: %1$s</string>
+    <string name="update_check_uptodate">Version %1$s</string>
+    <string name="update_available_short">Version %1$s · v%2$s available</string>
 </resources>

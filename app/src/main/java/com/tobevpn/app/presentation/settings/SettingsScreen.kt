@@ -330,16 +330,13 @@ fun SettingsScreen(
                         fontWeight = FontWeight.SemiBold,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
-                    // Single source of truth: versionName from build.gradle.kts.
-                    // Hardcoded "1.0" used to drift from the actual release
-                    // and confuse support tickets.
-                    InfoRow(
-                        stringResource(R.string.version),
-                        com.tobevpn.app.BuildConfig.VERSION_NAME,
-                    )
-                    InfoRow(stringResource(R.string.xray), viewModel.xrayVersion)
-                    Spacer(modifier = Modifier.height(8.dp))
+                    // Version + "Check for updates" merged into one row to
+                    // stop duplicating the current version (one InfoRow plus
+                    // an "Up-to-date 1.0.2" status line repeated the same
+                    // number twice in the same card).
                     com.tobevpn.app.update.SettingsUpdateCheckRow()
+                    Spacer(modifier = Modifier.height(4.dp))
+                    InfoRow(stringResource(R.string.xray), viewModel.xrayVersion)
                 }
             }
 

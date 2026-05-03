@@ -24,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -142,12 +143,21 @@ private fun AvailableCard(
                 text = stringResource(R.string.update_banner_title, info.versionName),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
+                color = bannerContentColor(),
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(8.dp))
             TextButton(
                 onClick = onDismiss,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                // TextButton defaults to colorScheme.primary, which under
+                // dynamicDarkColorScheme on Material You devices is the
+                // Purple40 family — clashes with the green action button on
+                // the right and looks foreign in the dark VPN UI. Force a
+                // neutral on-surface tone instead.
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = bannerContentColor().copy(alpha = 0.85f),
+                ),
             ) {
                 Text(
                     text = stringResource(R.string.update_banner_later),
@@ -192,13 +202,20 @@ private fun DownloadingCard(
                     text = stringResource(R.string.update_banner_downloading_title, info.versionName),
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
+                    color = bannerContentColor(),
                 )
                 Spacer(Modifier.height(6.dp))
+                // Material 3 defaults trackColor to surfaceVariant, which on
+                // this device picks up the dynamic-palette purple tint. Pin
+                // both the bar and its track to neutral values so the
+                // indicator stays on-brand regardless of the wallpaper.
+                val trackColour = bannerContentColor().copy(alpha = 0.18f)
                 if (totalBytes > 0L) {
                     val fraction = (downloadedBytes.toDouble() / totalBytes.toDouble()).coerceIn(0.0, 1.0).toFloat()
                     LinearProgressIndicator(
                         progress = { fraction },
                         color = VpnGreen,
+                        trackColor = trackColour,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(4.dp),
@@ -206,6 +223,7 @@ private fun DownloadingCard(
                 } else {
                     LinearProgressIndicator(
                         color = VpnGreen,
+                        trackColor = trackColour,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(4.dp),
@@ -215,13 +233,16 @@ private fun DownloadingCard(
                 Text(
                     text = formatProgress(downloadedBytes, totalBytes),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    color = bannerContentColor().copy(alpha = 0.7f),
                 )
             }
             Spacer(Modifier.width(8.dp))
             TextButton(
                 onClick = onCancel,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = bannerContentColor().copy(alpha = 0.85f),
+                ),
             ) {
                 Text(
                     text = stringResource(R.string.update_banner_cancel),
@@ -248,12 +269,21 @@ private fun ReadyCard(
                 text = stringResource(R.string.update_banner_ready_title, info.versionName),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
+                color = bannerContentColor(),
                 modifier = Modifier.weight(1f),
             )
             Spacer(Modifier.width(8.dp))
             TextButton(
                 onClick = onDismiss,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                // TextButton defaults to colorScheme.primary, which under
+                // dynamicDarkColorScheme on Material You devices is the
+                // Purple40 family — clashes with the green action button on
+                // the right and looks foreign in the dark VPN UI. Force a
+                // neutral on-surface tone instead.
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = bannerContentColor().copy(alpha = 0.85f),
+                ),
             ) {
                 Text(
                     text = stringResource(R.string.update_banner_later),
@@ -306,6 +336,14 @@ private fun FailedCard(
             TextButton(
                 onClick = onDismiss,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                // TextButton defaults to colorScheme.primary, which under
+                // dynamicDarkColorScheme on Material You devices is the
+                // Purple40 family — clashes with the green action button on
+                // the right and looks foreign in the dark VPN UI. Force a
+                // neutral on-surface tone instead.
+                colors = ButtonDefaults.textButtonColors(
+                    contentColor = bannerContentColor().copy(alpha = 0.85f),
+                ),
             ) {
                 Text(
                     text = stringResource(R.string.update_banner_later),
@@ -328,26 +366,51 @@ private fun FailedCard(
     }
 }
 
+// Pure greys — no blue / green / violet undertone. Material 3 Card applies
+// a `surfaceTint` overlay that scales with elevation, and surfaceTint comes
+// from the dynamic palette (purple-ish on this device). At elevation = 0
+// the overlay is fully transparent, so the card sits at exactly the
+// container colour we picked. The drop shadow is reinstated via
+// Modifier.shadow on the Card itself.
+private val BannerDarkBg = Color(0xFF202020)
+private val BannerLightBg = Color(0xFFFFFFFF)
+private val BannerLightBorder = Color(0xFFD8D8D8)
+private val BannerDarkContent = Color(0xFFE4E4E4)
+private val BannerLightContent = Color(0xFF1A1A1A)
+
+@Composable
+private fun bannerContentColor(): Color =
+    if (androidx.compose.foundation.isSystemInDarkTheme()) BannerDarkContent else BannerLightContent
+
 @Composable
 private fun BannerCard(
     modifier: Modifier = Modifier,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
-    contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    containerColor: Color = if (androidx.compose.foundation.isSystemInDarkTheme()) BannerDarkBg else BannerLightBg,
+    contentColor: Color = if (androidx.compose.foundation.isSystemInDarkTheme()) BannerDarkContent else BannerLightContent,
     content: @Composable () -> Unit,
 ) {
-    // Match the rounded-card aesthetic of ServerSelectorCard / TrafficCard but
-    // pack content tighter — the banner is a transient overlay, not a primary
-    // surface, so a 20dp gutter on a phone screen made it dominate the view.
+    val cardShape = RoundedCornerShape(16.dp)
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(14.dp),
+            .padding(horizontal = 16.dp)
+            // Drop shadow lives on the Modifier instead of CardDefaults.cardElevation
+            // so we keep the shadow without inviting the surfaceTint overlay back.
+            .shadow(elevation = 6.dp, shape = cardShape, clip = false),
+        shape = cardShape,
         colors = CardDefaults.cardColors(
             containerColor = containerColor,
             contentColor = contentColor,
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
+        // 1dp light-grey border on light theme so the white card has a visible
+        // edge against the white app background. Dark theme already gets
+        // contrast from the dark fill against the dark background.
+        border = if (isDark) null else androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = BannerLightBorder,
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
