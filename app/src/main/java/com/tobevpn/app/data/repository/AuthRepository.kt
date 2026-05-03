@@ -17,6 +17,7 @@ import com.tobevpn.app.data.remote.dto.SaveEmailRequestDto
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.UserPlan
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -60,7 +61,11 @@ class AuthRepository @Inject constructor(
             } else {
                 AuthState.Anonymous
             }
-        }
+            // Suppress redundant emissions — sessionStore.update writes the
+            // whole row even when only fields outside AuthState change (email,
+            // tokens, shortUuid). Without this the UI gets recomposition churn
+            // for no visible state change.
+        }.distinctUntilChanged()
     }
 
     suspend fun getOrCreateDeviceId(): String {

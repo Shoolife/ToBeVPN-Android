@@ -81,6 +81,20 @@
                 android:resource="@xml/file_provider_paths" />
         </provider>
 
+        <!-- Persist the per-app locale chosen via AppCompatDelegate.setApplicationLocales
+             across cold starts on Android 12 and below. Without this declaration the
+             setting reverts on each launch, and the splash flashes the default-locale
+             string before AppCompat re-applies the saved one. Android 13+ uses the
+             system LocaleManager and ignores this service. -->
+        <service
+            android:name="androidx.appcompat.app.AppLocalesMetadataHolderService"
+            android:enabled="false"
+            android:exported="false">
+            <meta-data
+                android:name="autoStoreLocales"
+                android:value="true" />
+        </service>
+
     </application>
 
 </manifest>

@@ -26,10 +26,22 @@ object DatabasePassphrase {
         val ivB64 = prefs.getString(PREF_IV, null)
 
         if (encryptedB64 != null && ivB64 != null) {
-            return decrypt(
-                android.util.Base64.decode(encryptedB64, android.util.Base64.NO_WRAP),
-                android.util.Base64.decode(ivB64, android.util.Base64.NO_WRAP),
-            )
+            try {
+                return decrypt(
+                    android.util.Base64.decode(encryptedB64, android.util.Base64.NO_WRAP),
+                    android.util.Base64.decode(ivB64, android.util.Base64.NO_WRAP),
+                )
+            } catch (_: Exception) {
+                // AndroidKeyStore key got out of sync with the encrypted blob —
+                // happens after Auto Backup restore, factory reset, or signing
+                // cert change. The blob is unrecoverable, so regenerate the
+                // passphrase. SQLCipher will fail to open the existing .db file
+                // with the new key, and DatabaseModule.ensureCipherCompatible
+                // wipes + recreates it.
+                runCatching { resetKeystoreKey() }
+                prefs.edit().clear().apply()
+                runCatching { context.deleteDatabase("tobevpn.db") }
+            }
         }
 
         val passphrase = ByteArray(32).also { java.security.SecureRandom().nextBytes(it) }
@@ -41,6 +53,13 @@ object DatabasePassphrase {
             .apply()
 
         return passphrase
+    }
+
+    private fun resetKeystoreKey() {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        if (keyStore.containsAlias(KEYSTORE_ALIAS)) {
+            keyStore.deleteEntry(KEYSTORE_ALIAS)
+        }
     }
 
     private fun getOrCreateKey(): SecretKey {

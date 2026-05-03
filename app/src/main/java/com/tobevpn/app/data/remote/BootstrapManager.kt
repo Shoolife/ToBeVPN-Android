@@ -154,33 +154,49 @@ class BootstrapManager @Inject constructor(
             isLinked = data.isLinked,
         )
         tokensRef.set(stored)
-        val isAuthenticated = stored.isLinked && stored.telegramId != null
+        val responseSaysAuthenticated = stored.isLinked && stored.telegramId != null
         sessionStore.updateOrCreate(stored.deviceId) { session ->
-            val wasAuthenticated = session.authState == "AUTHENTICATED"
-            val preserveAnonymousIdentity = !isAuthenticated && !wasAuthenticated
-            session.copy(
-                deviceId = stored.deviceId,
-                accessToken = stored.accessToken,
-                refreshToken = stored.refreshToken,
-                accessExpiresAt = stored.accessExpiresAt,
-                refreshExpiresAt = stored.refreshExpiresAt,
-                authState = if (isAuthenticated) "AUTHENTICATED" else "ANONYMOUS",
-                isLinked = stored.isLinked,
-                telegramId = if (isAuthenticated) stored.telegramId else null,
-                panelUserUuid = when {
-                    isAuthenticated -> stored.panelUserUuid ?: session.panelUserUuid
-                    preserveAnonymousIdentity -> session.panelUserUuid
-                    else -> null
-                },
-                shortUuid = when {
-                    isAuthenticated -> stored.shortUuid ?: session.shortUuid
-                    preserveAnonymousIdentity -> session.shortUuid
-                    else -> null
-                },
-                pendingAuthToken = if (isAuthenticated) null else session.pendingAuthToken,
-                userPlan = if (!isAuthenticated && wasAuthenticated) "FREE_TRIAL" else session.userPlan,
-                planExpiresAt = if (!isAuthenticated && wasAuthenticated) null else session.planExpiresAt,
-            )
+            val wasAuthenticated = session.authState == "AUTHENTICATED" && session.telegramId != null
+            when {
+                responseSaysAuthenticated -> session.copy(
+                    deviceId = stored.deviceId,
+                    accessToken = stored.accessToken,
+                    refreshToken = stored.refreshToken,
+                    accessExpiresAt = stored.accessExpiresAt,
+                    refreshExpiresAt = stored.refreshExpiresAt,
+                    authState = "AUTHENTICATED",
+                    isLinked = true,
+                    telegramId = stored.telegramId,
+                    panelUserUuid = stored.panelUserUuid ?: session.panelUserUuid,
+                    shortUuid = stored.shortUuid ?: session.shortUuid,
+                    pendingAuthToken = null,
+                )
+                // The /auth/refresh endpoint can echo back stale isLinked=false even
+                // after Telegram auth completed via /auth/check, because the original
+                // session was opened anonymously. Without this guard, every token
+                // refresh would silently downgrade the user to ANONYMOUS, then
+                // ensurePanelUser would re-upgrade, then the next refresh downgrades
+                // again — UI flickers between authed/anon. So persist() only ever
+                // updates tokens here; identity downgrades happen exclusively via
+                // explicit logout()/unlinkDevice().
+                wasAuthenticated -> session.copy(
+                    deviceId = stored.deviceId,
+                    accessToken = stored.accessToken,
+                    refreshToken = stored.refreshToken,
+                    accessExpiresAt = stored.accessExpiresAt,
+                    refreshExpiresAt = stored.refreshExpiresAt,
+                )
+                else -> session.copy(
+                    deviceId = stored.deviceId,
+                    accessToken = stored.accessToken,
+                    refreshToken = stored.refreshToken,
+                    accessExpiresAt = stored.accessExpiresAt,
+                    refreshExpiresAt = stored.refreshExpiresAt,
+                    authState = "ANONYMOUS",
+                    isLinked = false,
+                    telegramId = null,
+                )
+            }
         }
         return stored
     }
