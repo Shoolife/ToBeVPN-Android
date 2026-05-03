@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
@@ -32,6 +33,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModelStoreOwner
 import com.tobevpn.app.R
 import com.tobevpn.app.data.repository.UpdateCheckResult
+import com.tobevpn.app.presentation.theme.VpnGreen
 
 /**
  * Returns the [UpdateViewModel] scoped to the host Activity rather than to
@@ -126,28 +128,47 @@ private fun AvailableCard(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Compact banner — title + actions in a single row. We deliberately drop
+    // GitHub's auto-generated release notes (they're a noisy "Full Changelog:
+    // <url>" string for tag-only releases and blow the banner up to half the
+    // screen). Users who want details can open the release page from the
+    // dedicated "What's new" link further down the road.
     BannerCard(modifier) {
-        Text(
-            text = stringResource(R.string.update_banner_title, info.versionName),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        if (info.releaseNotes.isNotBlank()) {
-            Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
             Text(
-                text = info.releaseNotes.lineSequence().take(4).joinToString("\n").trim(),
+                text = stringResource(R.string.update_banner_title, info.versionName),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
             )
-        }
-        Spacer(Modifier.height(14.dp))
-        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.update_banner_later))
-            }
             Spacer(Modifier.width(8.dp))
-            Button(onClick = onDownload, shape = RoundedCornerShape(10.dp)) {
-                Text(stringResource(R.string.update_banner_download))
+            TextButton(
+                onClick = onDismiss,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.update_banner_later),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            Button(
+                onClick = onDownload,
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = VpnGreen,
+                    contentColor = androidx.compose.ui.graphics.Color.White,
+                ),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.update_banner_download),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }
@@ -162,37 +183,50 @@ private fun DownloadingCard(
     modifier: Modifier = Modifier,
 ) {
     BannerCard(modifier) {
-        Text(
-            text = stringResource(R.string.update_banner_downloading_title, info.versionName),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(10.dp))
-        if (totalBytes > 0L) {
-            val fraction = (downloadedBytes.toDouble() / totalBytes.toDouble()).coerceIn(0.0, 1.0).toFloat()
-            LinearProgressIndicator(
-                progress = { fraction },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp),
-            )
-        } else {
-            LinearProgressIndicator(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(6.dp),
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = formatProgress(downloadedBytes, totalBytes),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        )
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = onCancel) {
-                Text(stringResource(R.string.update_banner_cancel))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.update_banner_downloading_title, info.versionName),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(6.dp))
+                if (totalBytes > 0L) {
+                    val fraction = (downloadedBytes.toDouble() / totalBytes.toDouble()).coerceIn(0.0, 1.0).toFloat()
+                    LinearProgressIndicator(
+                        progress = { fraction },
+                        color = VpnGreen,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp),
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        color = VpnGreen,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(4.dp),
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = formatProgress(downloadedBytes, totalBytes),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            TextButton(
+                onClick = onCancel,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.update_banner_cancel),
+                    style = MaterialTheme.typography.labelLarge,
+                )
             }
         }
     }
@@ -206,25 +240,41 @@ private fun ReadyCard(
     modifier: Modifier = Modifier,
 ) {
     BannerCard(modifier) {
-        Text(
-            text = stringResource(R.string.update_banner_ready_title, info.versionName),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(6.dp))
-        Text(
-            text = stringResource(R.string.update_banner_ready_description),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-        )
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.update_banner_later))
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.update_banner_ready_title, info.versionName),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
+            )
             Spacer(Modifier.width(8.dp))
-            Button(onClick = onInstall, shape = RoundedCornerShape(10.dp)) {
-                Text(stringResource(R.string.update_banner_install))
+            TextButton(
+                onClick = onDismiss,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.update_banner_later),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            Button(
+                onClick = onInstall,
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = VpnGreen,
+                    contentColor = androidx.compose.ui.graphics.Color.White,
+                ),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.update_banner_install),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }
@@ -242,27 +292,37 @@ private fun FailedCard(
         containerColor = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,
     ) {
-        Text(
-            text = stringResource(R.string.update_banner_failed_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-        )
-        if (reason.isNotBlank()) {
-            Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
             Text(
-                text = reason,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
+                text = stringResource(R.string.update_banner_failed_title),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f),
             )
-        }
-        Spacer(Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.update_banner_later))
-            }
             Spacer(Modifier.width(8.dp))
-            OutlinedButton(onClick = onRetry, shape = RoundedCornerShape(10.dp)) {
-                Text(stringResource(R.string.update_banner_retry))
+            TextButton(
+                onClick = onDismiss,
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.update_banner_later),
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+            Spacer(Modifier.width(4.dp))
+            OutlinedButton(
+                onClick = onRetry,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.update_banner_retry),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
             }
         }
     }
@@ -271,22 +331,26 @@ private fun FailedCard(
 @Composable
 private fun BannerCard(
     modifier: Modifier = Modifier,
-    containerColor: Color = MaterialTheme.colorScheme.surfaceVariant,
-    contentColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    contentColor: Color = MaterialTheme.colorScheme.onSurface,
     content: @Composable () -> Unit,
 ) {
+    // Match the rounded-card aesthetic of ServerSelectorCard / TrafficCard but
+    // pack content tighter — the banner is a transient overlay, not a primary
+    // surface, so a 20dp gutter on a phone screen made it dominate the view.
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp),
-        shape = RoundedCornerShape(20.dp),
+            .padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(
             containerColor = containerColor,
             contentColor = contentColor,
         ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.Center,
         ) {
             content()

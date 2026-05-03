@@ -112,14 +112,27 @@ class UpdateRepository @Inject constructor(
         if (System.currentTimeMillis() - ts > CACHE_TTL_MS) return null
         return when (prefs.getString(KEY_CACHED_KIND, null)) {
             "uptodate" -> UpdateCheckResult.UpToDate
-            "available" -> UpdateCheckResult.Available(
-                versionName = prefs.getString(KEY_VERSION, null) ?: return null,
-                releaseNotes = prefs.getString(KEY_NOTES, "") ?: "",
-                releasePageUrl = prefs.getString(KEY_PAGE_URL, "") ?: "",
-                apkUrl = prefs.getString(KEY_APK_URL, null) ?: return null,
-                apkSizeBytes = prefs.getLong(KEY_APK_SIZE, 0L),
-                apkFileName = prefs.getString(KEY_APK_NAME, null) ?: return null,
-            )
+            "available" -> {
+                val version = prefs.getString(KEY_VERSION, null) ?: return null
+                // After the user installs an update, BuildConfig.VERSION_NAME
+                // catches up but the SharedPreferences cache still holds the
+                // pre-install "Available v1.0.1" record. Drop it so the next
+                // probe writes a fresh result instead of nagging about a
+                // version the user has already installed.
+                val cached = parseSemver(version)
+                val current = parseSemver(BuildConfig.VERSION_NAME)
+                if (cached == null || current == null || compareSemver(cached, current) <= 0) {
+                    return null
+                }
+                UpdateCheckResult.Available(
+                    versionName = version,
+                    releaseNotes = prefs.getString(KEY_NOTES, "") ?: "",
+                    releasePageUrl = prefs.getString(KEY_PAGE_URL, "") ?: "",
+                    apkUrl = prefs.getString(KEY_APK_URL, null) ?: return null,
+                    apkSizeBytes = prefs.getLong(KEY_APK_SIZE, 0L),
+                    apkFileName = prefs.getString(KEY_APK_NAME, null) ?: return null,
+                )
+            }
             else -> null
         }
     }
