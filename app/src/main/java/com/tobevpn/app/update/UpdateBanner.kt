@@ -1,6 +1,7 @@
 package com.tobevpn.app.update
 
 import android.content.ActivityNotFoundException
+import androidx.activity.compose.LocalActivity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,8 +29,25 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.ViewModelStoreOwner
 import com.tobevpn.app.R
 import com.tobevpn.app.data.repository.UpdateCheckResult
+
+/**
+ * Returns the [UpdateViewModel] scoped to the host Activity rather than to
+ * a NavBackStackEntry. Without this, Settings' "Check for updates" button
+ * and the home-screen banner end up bound to two separate ViewModel
+ * instances — Settings would see "Available", but the banner host on
+ * another route wouldn't, because each `composable<>` block in NavHost has
+ * its own ViewModelStore. Sharing at the Activity level keeps a single
+ * source of truth visible across every screen.
+ */
+@Composable
+internal fun rememberAppUpdateViewModel(): UpdateViewModel {
+    val owner = LocalActivity.current as? ViewModelStoreOwner
+        ?: error("Update banner requires an Activity context")
+    return hiltViewModel(owner)
+}
 
 /**
  * Side-effect-only composable: triggers a one-shot GitHub probe the first time
@@ -37,7 +55,7 @@ import com.tobevpn.app.data.repository.UpdateCheckResult
  * whatever state the probe (or any subsequent download/install action) produced.
  */
 @Composable
-fun UpdateBannerCheck(viewModel: UpdateViewModel = hiltViewModel()) {
+fun UpdateBannerCheck(viewModel: UpdateViewModel = rememberAppUpdateViewModel()) {
     androidx.compose.runtime.LaunchedEffect(Unit) { viewModel.checkOnce() }
 }
 
@@ -49,7 +67,7 @@ fun UpdateBannerCheck(viewModel: UpdateViewModel = hiltViewModel()) {
 @Composable
 fun UpdateBannerHost(
     modifier: Modifier = Modifier,
-    viewModel: UpdateViewModel = hiltViewModel(),
+    viewModel: UpdateViewModel = rememberAppUpdateViewModel(),
 ) {
     val state by viewModel.state.collectAsState()
     val context = LocalContext.current

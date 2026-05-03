@@ -8,14 +8,20 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.unit.dp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.rememberNavController
@@ -23,6 +29,8 @@ import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.presentation.navigation.AppNavHost
 import com.tobevpn.app.presentation.splash.SplashScreen
 import com.tobevpn.app.presentation.theme.ToBeVPNTheme
+import com.tobevpn.app.update.UpdateBannerCheck
+import com.tobevpn.app.update.UpdateBannerHost
 import com.tobevpn.app.util.DeepLinkBus
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -74,6 +82,24 @@ class MainActivity : AppCompatActivity() {
                             )
                         }
                     }
+                }
+
+                // In-app updater banner. Mounted at the Activity level so it
+                // overlays every NavHost route — Home, Servers, Settings,
+                // Stats, etc. The state is owned by an Activity-scoped
+                // UpdateViewModel, so the Settings "Check for updates" button
+                // and this overlay stay in sync. The banner persists until
+                // the user dismisses it via the in-card "Later" button.
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                        .padding(top = 8.dp)
+                        .alpha(mainAlpha),
+                    contentAlignment = Alignment.TopCenter,
+                ) {
+                    UpdateBannerCheck()
+                    UpdateBannerHost()
                 }
 
                 if (!splashFinished) {

@@ -180,11 +180,10 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // In-app updater banner — shows only when release assets has a
-            // newer version. Hidden by default; the host composable owns its
-            // own ViewModel so we don't need to thread state through here.
-            com.tobevpn.app.update.UpdateBannerCheck()
-            com.tobevpn.app.update.UpdateBannerHost()
+            // The in-app updater banner now lives at MainActivity level — it
+            // overlays every screen instead of only Home, so the user can act
+            // on a "new version available" notification from wherever they
+            // happen to be in the app.
 
             // Server selector card
             ServerSelectorCard(

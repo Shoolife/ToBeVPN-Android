@@ -21,7 +21,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
 import com.tobevpn.app.R
 import com.tobevpn.app.data.repository.UpdateCheckResult
 
@@ -38,7 +37,7 @@ import com.tobevpn.app.data.repository.UpdateCheckResult
  * последняя версия" (rendered in `formatStatus`).
  */
 @Composable
-fun SettingsUpdateCheckRow(viewModel: UpdateViewModel = hiltViewModel()) {
+fun SettingsUpdateCheckRow(viewModel: UpdateViewModel = rememberAppUpdateViewModel()) {
     val state by viewModel.state.collectAsState()
     val inFlight by viewModel.manualCheckInFlight.collectAsState()
     val versionName = remember { com.tobevpn.app.BuildConfig.VERSION_NAME }
