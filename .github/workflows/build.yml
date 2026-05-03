@@ -1,8 +1,12 @@
 name: build
 
 on:
+  # Direct pushes to main don't ship anything — releases live on tags. PRs
+  # still get a sanity build before merge, and workflow_dispatch is kept
+  # for manual reruns. This avoids running the full 12-minute signing
+  # pipeline twice when we tag a release commit (once for the main push,
+  # once for the tag).
   push:
-    branches: [main, feat/per-device-auth-and-fixes]
     tags: ['v*']
   pull_request:
     branches: [main]
