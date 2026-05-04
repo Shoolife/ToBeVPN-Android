@@ -166,6 +166,11 @@ fun SettingsScreen(
                         stringResource(R.string.account),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                        color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            Color.Black
+                        },
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     when (authState) {
@@ -174,6 +179,16 @@ fun SettingsScreen(
                                 onClick = onNavigateToAuth,
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
+                                // Same dark-grey CTA family as "Купить" /
+                                // "Сканировать QR" / speed-test "Запустить".
+                                colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                                    ButtonDefaults.buttonColors()
+                                } else {
+                                    ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF3F3F3F),
+                                        contentColor = Color.White,
+                                    )
+                                },
                             ) {
                                 Text(
                                     text = stringResource(R.string.login_via_telegram),
@@ -250,6 +265,11 @@ fun SettingsScreen(
                             text = stringResource(R.string.devices_title),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
+                            color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                Color.Black
+                            },
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
@@ -289,12 +309,33 @@ fun SettingsScreen(
                         stringResource(R.string.language),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                        color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            Color.Black
+                        },
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
+                        // Light theme chips: neutral grey selected fill so the
+                        // active language doesn't pick up the pinkish
+                        // secondaryContainer M3 derives from primary. Dark
+                        // theme keeps Material You defaults.
+                        val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+                        val chipColors = if (isDark) {
+                            androidx.compose.material3.FilterChipDefaults.filterChipColors()
+                        } else {
+                            androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                // A shade darker than BrandCardFill so the
+                                // selected chip pops against the surrounding
+                                // card-grey rows.
+                                selectedContainerColor = Color(0xFFD8D8D8),
+                                selectedLabelColor = Color.Black,
+                            )
+                        }
                         FilterChip(
                             selected = language == LocaleManager.LANG_EN,
                             onClick = {
@@ -303,6 +344,18 @@ fun SettingsScreen(
                                 }
                             },
                             label = { Text(stringResource(R.string.language_english)) },
+                            colors = chipColors,
+                            border = if (isDark) null
+                            else androidx.compose.material3.FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = language == LocaleManager.LANG_EN,
+                                borderColor = Color(0xFFBDBDBD),
+                                // No border on the active chip — the
+                                // darker fill is enough to mark selection.
+                                selectedBorderColor = Color.Transparent,
+                                borderWidth = 1.dp,
+                                selectedBorderWidth = 0.dp,
+                            ),
                         )
                         FilterChip(
                             selected = language == LocaleManager.LANG_RU,
@@ -312,6 +365,18 @@ fun SettingsScreen(
                                 }
                             },
                             label = { Text(stringResource(R.string.language_russian)) },
+                            colors = chipColors,
+                            border = if (isDark) null
+                            else androidx.compose.material3.FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = language == LocaleManager.LANG_RU,
+                                borderColor = Color(0xFFBDBDBD),
+                                // No border on the active chip — the
+                                // darker fill is enough to mark selection.
+                                selectedBorderColor = Color.Transparent,
+                                borderWidth = 1.dp,
+                                selectedBorderWidth = 0.dp,
+                            ),
                         )
                     }
                 }
@@ -328,6 +393,11 @@ fun SettingsScreen(
                         stringResource(R.string.about),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                        color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            Color.Black
+                        },
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     // Version + "Check for updates" merged into one row to
@@ -356,6 +426,14 @@ fun SettingsScreen(
                         colors = ButtonDefaults.outlinedButtonColors(
                             contentColor = MaterialTheme.colorScheme.error,
                         ),
+                        // Black border on light theme so the rectangle stands
+                        // out against white card; on dark theme keep the M3
+                        // default outline (light grey) — black would vanish.
+                        border = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                            ButtonDefaults.outlinedButtonBorder
+                        } else {
+                            androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFBDBDBD))
+                        },
                     ) {
                         Text(
                             text = stringResource(R.string.logout),
@@ -376,11 +454,22 @@ fun SettingsScreen(
             title = { Text(stringResource(R.string.language_restart_title)) },
             text = { Text(stringResource(R.string.language_restart_message)) },
             confirmButton = {
-                Button(onClick = {
-                    viewModel.setLanguage(pending)
-                    pendingLanguage = null
-                    LocaleManager.restartApp(context)
-                }) {
+                Button(
+                    onClick = {
+                        viewModel.setLanguage(pending)
+                        pendingLanguage = null
+                        LocaleManager.restartApp(context)
+                    },
+                    // Same dark-grey CTA family as "Купить" / "OK".
+                    colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                        ButtonDefaults.buttonColors()
+                    } else {
+                        ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF3F3F3F),
+                            contentColor = Color.White,
+                        )
+                    },
+                ) {
                     Text(stringResource(R.string.language_restart_button))
                 }
             },
@@ -467,6 +556,14 @@ private fun LinkedDevicesBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        // White sheet on light theme so it reads as a clean modal surface
+        // against the off-white app background. Dark theme keeps the M3
+        // default surfaceContainerLow.
+        containerColor = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+            androidx.compose.material3.BottomSheetDefaults.ContainerColor
+        } else {
+            Color.White
+        },
     ) {
         Column(
             modifier = Modifier
@@ -501,6 +598,17 @@ private fun LinkedDevicesBottomSheet(
                     onClick = onScanQr,
                     enabled = !state.isLoading && canLinkMoreDevices,
                     modifier = Modifier.weight(1f),
+                    // Same dark-grey CTA as the "Купить" button on the
+                    // subscription sheet — both are committed primary
+                    // actions on a white surface. Light theme only.
+                    colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                        ButtonDefaults.buttonColors()
+                    } else {
+                        ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF3F3F3F),
+                            contentColor = Color.White,
+                        )
+                    },
                 ) {
                     Text(stringResource(R.string.devices_scan_qr))
                 }
@@ -598,15 +706,29 @@ private fun LinkedDeviceCard(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-        ),
+        // Match the brand card fill used on the Home screen (#EEEEEE on
+        // light, M3 default on dark). Going through surfaceContainerHigh
+        // sometimes picked up Material You tint on certain devices.
+        colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            )
+        } else {
+            CardDefaults.cardColors(
+                containerColor = com.tobevpn.app.presentation.theme.BrandCardFill,
+            )
+        },
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = deviceTitle(device),
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
+                color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    Color.Black
+                },
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
@@ -696,6 +818,11 @@ private fun EmailInput(
             stringResource(R.string.email_label),
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold,
+            color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                Color.Black
+            },
         )
         Spacer(modifier = Modifier.height(8.dp))
         Row(
@@ -714,6 +841,17 @@ private fun EmailInput(
                     onClearResult()
                     isEditing = true
                 },
+                // Light theme: brand grey instead of M3's secondaryContainer
+                // (which lands on a pinkish hue on this colour scheme).
+                // Dark theme keeps the dynamic-palette default.
+                colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                    androidx.compose.material3.IconButtonDefaults.filledTonalIconButtonColors()
+                } else {
+                    androidx.compose.material3.IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = Color(0xFFD8D8D8),
+                        contentColor = Color.Black,
+                    )
+                },
             ) {
                 Icon(
                     imageVector = Icons.Filled.Edit,
@@ -731,6 +869,11 @@ private fun EmailInput(
         stringResource(R.string.email_label),
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold,
+        color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+            MaterialTheme.colorScheme.onSurface
+        } else {
+            Color.Black
+        },
     )
     Spacer(modifier = Modifier.height(8.dp))
     Text(
@@ -772,6 +915,15 @@ private fun EmailInput(
             enabled = !isSaving && email.isNotBlank(),
             modifier = Modifier
                 .align(Alignment.CenterVertically),
+            // Same dark-grey CTA family as "Купить" / "Сканировать QR".
+            colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                ButtonDefaults.buttonColors()
+            } else {
+                ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF3F3F3F),
+                    contentColor = Color.White,
+                )
+            },
         ) {
             if (isSaving) {
                 CircularProgressIndicator(
@@ -793,10 +945,17 @@ private fun EmailInput(
     }
     if (!savedEmail.isNullOrBlank()) {
         Spacer(modifier = Modifier.height(4.dp))
-        TextButton(onClick = {
-            onClearResult()
-            isEditing = false
-        }) {
+        TextButton(
+            onClick = {
+                onClearResult()
+                isEditing = false
+            },
+            colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                ButtonDefaults.textButtonColors()
+            } else {
+                ButtonDefaults.textButtonColors(contentColor = Color.Black)
+            },
+        ) {
             Text(stringResource(R.string.cancel))
         }
     }

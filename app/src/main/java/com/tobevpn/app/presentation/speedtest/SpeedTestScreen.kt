@@ -155,6 +155,8 @@ fun SpeedTestScreen(
             Spacer(modifier = Modifier.weight(1f))
 
             // Start / Reset button
+            // Same dark-grey CTA style as the "Купить" button in the
+            // subscription sheet — they're both committed primary actions.
             Button(
                 onClick = {
                     if (state.phase == SpeedTestPhase.Done || state.phase == SpeedTestPhase.Idle) {
@@ -168,6 +170,14 @@ fun SpeedTestScreen(
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 32.dp),
                 shape = RoundedCornerShape(16.dp),
+                colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                    androidx.compose.material3.ButtonDefaults.buttonColors()
+                } else {
+                    androidx.compose.material3.ButtonDefaults.buttonColors(
+                        containerColor = androidx.compose.ui.graphics.Color(0xFF3F3F3F),
+                        contentColor = androidx.compose.ui.graphics.Color.White,
+                    )
+                },
             ) {
                 Text(
                     text = when (state.phase) {

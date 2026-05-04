@@ -106,11 +106,13 @@ fun AuthScreen(
 
 @Composable
 private fun IdleContent(onLogin: () -> Unit) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val brandColor = if (isDark) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color(0xFF3F3F3F)
     Icon(
         imageVector = Icons.Default.Shield,
         contentDescription = null,
         modifier = Modifier.size(80.dp),
-        tint = MaterialTheme.colorScheme.primary,
+        tint = brandColor,
     )
     Spacer(modifier = Modifier.height(24.dp))
     Text(
@@ -128,6 +130,15 @@ private fun IdleContent(onLogin: () -> Unit) {
     Button(
         onClick = onLogin,
         modifier = Modifier.fillMaxWidth(),
+        // Same dark-grey CTA family as "Купить" / "Сканировать QR".
+        colors = if (isDark) {
+            androidx.compose.material3.ButtonDefaults.buttonColors()
+        } else {
+            androidx.compose.material3.ButtonDefaults.buttonColors(
+                containerColor = brandColor,
+                contentColor = androidx.compose.ui.graphics.Color.White,
+            )
+        },
     ) {
         Text(stringResource(R.string.auth_open_telegram))
     }
@@ -163,7 +174,13 @@ private fun SuccessContent(onBack: () -> Unit) {
         imageVector = Icons.Default.CheckCircle,
         contentDescription = null,
         modifier = Modifier.size(80.dp),
-        tint = VpnGreen,
+        // Brand dark grey on light theme to match the rest of the auth-flow
+        // icons; dark theme keeps the green for instant "success" feedback.
+        tint = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+            VpnGreen
+        } else {
+            androidx.compose.ui.graphics.Color(0xFF3F3F3F)
+        },
     )
     Spacer(modifier = Modifier.height(16.dp))
     Text(
@@ -177,7 +194,19 @@ private fun SuccessContent(onBack: () -> Unit) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Spacer(modifier = Modifier.height(32.dp))
-    Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+    Button(
+        onClick = onBack,
+        modifier = Modifier.fillMaxWidth(),
+        // Same dark-grey CTA family as the other primary actions on light.
+        colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+            androidx.compose.material3.ButtonDefaults.buttonColors()
+        } else {
+            androidx.compose.material3.ButtonDefaults.buttonColors(
+                containerColor = androidx.compose.ui.graphics.Color(0xFF3F3F3F),
+                contentColor = androidx.compose.ui.graphics.Color.White,
+            )
+        },
+    ) {
         Text(stringResource(R.string.continue_btn))
     }
 }

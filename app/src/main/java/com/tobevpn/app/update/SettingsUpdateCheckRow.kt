@@ -68,6 +68,21 @@ fun SettingsUpdateCheckRow(viewModel: UpdateViewModel = rememberAppUpdateViewMod
             onClick = { viewModel.forceCheck() },
             enabled = !inFlight,
             shape = RoundedCornerShape(10.dp),
+            border = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                androidx.compose.material3.ButtonDefaults.outlinedButtonBorder
+            } else {
+                androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    androidx.compose.ui.graphics.Color(0xFFBDBDBD),
+                )
+            },
+            colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                androidx.compose.material3.ButtonDefaults.outlinedButtonColors()
+            } else {
+                androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                    contentColor = androidx.compose.ui.graphics.Color.Black,
+                )
+            },
         ) {
             if (inFlight) {
                 CircularProgressIndicator(

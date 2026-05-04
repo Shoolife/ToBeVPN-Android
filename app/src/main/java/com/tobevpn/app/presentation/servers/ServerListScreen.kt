@@ -137,8 +137,13 @@ private fun ServerItem(
             .padding(horizontal = 16.dp, vertical = 4.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
+        // surfaceContainerHigh sits a step lighter than surfaceContainerLow
+        // in the dark Material You palette, so server tiles match the
+        // brighter card fill used on Home. On light theme this slot is
+        // pinned to BrandCardFill (#EEEEEE) by ToBeVPNTheme so server
+        // tiles also stay consistent with Home there.
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
     ) {
         Row(

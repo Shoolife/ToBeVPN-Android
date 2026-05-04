@@ -6,6 +6,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -216,7 +217,13 @@ fun MainScreen(
                     Icon(
                         Icons.Default.Speed,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
+                        // Black on light theme to match the rest of the
+                        // section labels; dark keeps the dynamic primary.
+                        tint = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            Color.Black
+                        },
                         modifier = Modifier.size(28.dp),
                     )
                     Spacer(modifier = Modifier.width(12.dp))
@@ -225,6 +232,11 @@ fun MainScreen(
                             text = stringResource(R.string.speed_test_title),
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.SemiBold,
+                            color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                Color.Black
+                            },
                         )
                         Text(
                             text = stringResource(R.string.speed_test_subtitle),
@@ -250,9 +262,6 @@ fun MainScreen(
                             .fillMaxWidth()
                             .padding(horizontal = 24.dp)
                             .clickable { showSubscriptionSheet = true },
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                        ),
                     ) {
                         Row(
                             modifier = Modifier
@@ -265,18 +274,22 @@ fun MainScreen(
                                     stringResource(R.string.subscription),
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        Color.Black
+                                    },
                                 )
                                 Text(
                                     stringResource(R.string.free_tier_hint),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             Icon(
                                 Icons.Default.KeyboardArrowRight,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -335,13 +348,25 @@ private fun ConnectButtonLarge(
         label = "scale",
     )
 
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    // Ripple defaults to colorScheme.primary tinted with alpha, which on
+    // some devices renders as a noticeable pink/violet pulse on the
+    // disconnected button. Pin it to onSurface so it reads as a plain
+    // grey overlay regardless of dynamic theme tweaks.
+    val rippleIndication = androidx.compose.material3.ripple(
+        color = MaterialTheme.colorScheme.onSurface,
+    )
     Box(
         modifier = Modifier
             .size(180.dp)
             .scale(scale)
             .clip(CircleShape)
             .background(backgroundColor)
-            .clickable(onClick = onClick),
+            .clickable(
+                interactionSource = interactionSource,
+                indication = rippleIndication,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -466,6 +491,11 @@ private fun ServerSelectorCard(
                         ?: stringResource(R.string.server_choose),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
+                    color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        Color.Black
+                    },
                 )
                 if (server != null) {
                     if (!server.isOnline) {
@@ -537,6 +567,11 @@ private fun TrafficCard(
                     text = stringResource(R.string.current_session),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
+                    color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        Color.Black
+                    },
                 )
                 Icon(
                     Icons.Default.KeyboardArrowRight,
@@ -639,9 +674,6 @@ private fun PlanCard(auth: AuthState.Authenticated, onClick: () -> Unit) {
             .padding(horizontal = 24.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
     ) {
         Row(
             modifier = Modifier
@@ -653,7 +685,11 @@ private fun PlanCard(auth: AuthState.Authenticated, onClick: () -> Unit) {
                 Text(
                     text = stringResource(R.string.subscription),
                     style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        Color.Black
+                    },
                 )
                 Text(
                     text = planLabel,
@@ -701,6 +737,14 @@ private fun SubscriptionBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        // Pure white sheet on light theme so it reads as a clean modal
+        // surface against the off-white app background. Dark theme keeps
+        // the M3 default surfaceContainerLow.
+        containerColor = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+            androidx.compose.material3.BottomSheetDefaults.ContainerColor
+        } else {
+            Color.White
+        },
     ) {
         Column(
             modifier = Modifier
@@ -727,9 +771,13 @@ private fun SubscriptionBottomSheet(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                ),
+                colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                    CardDefaults.cardColors()
+                } else {
+                    CardDefaults.cardColors(
+                        containerColor = com.tobevpn.app.presentation.theme.BrandCardFill,
+                    )
+                },
             ) {
                 Row(
                     modifier = Modifier
@@ -1018,6 +1066,15 @@ private fun SubscriptionBottomSheet(
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
+                    // Match the "Купить" / "Сканировать QR" CTA family.
+                    colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                        androidx.compose.material3.ButtonDefaults.buttonColors()
+                    } else {
+                        androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF3F3F3F),
+                            contentColor = Color.White,
+                        )
+                    },
                 ) {
                     Text(stringResource(R.string.login_via_telegram))
                 }
@@ -1057,6 +1114,18 @@ private fun SubscriptionBottomSheet(
                     enabled = selectedLabel.botPaymentUrl != null,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
+                    // Light theme: dark-grey CTA so it stands as the
+                    // strongest action on the white sheet. Dark theme: keep
+                    // the default M3 button so it doesn't disappear into
+                    // the dark background.
+                    colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                        androidx.compose.material3.ButtonDefaults.buttonColors()
+                    } else {
+                        androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF3F3F3F),
+                            contentColor = Color.White,
+                        )
+                    },
                 ) {
                     Text(stringResource(R.string.buy_plan, selectedLabel.title, selectedLabel.priceDisplay))
                 }
@@ -1073,28 +1142,29 @@ private fun PlanOption(
     selected: Boolean,
     onClick: () -> Unit,
 ) {
-    val containerColor = if (selected) {
-        MaterialTheme.colorScheme.primaryContainer
-    } else {
-        MaterialTheme.colorScheme.surfaceContainerLow
+    // On light theme, selected row uses the brand card fill (same neutral
+    // grey as Home cards) and unselected is transparent — the selected dot
+    // + grey row is enough to mark the choice. Dark theme keeps the M3
+    // default primaryContainer for selected so it stays accessible against
+    // the dark sheet background.
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val containerColor = when {
+        selected && isDark -> MaterialTheme.colorScheme.primaryContainer
+        selected -> com.tobevpn.app.presentation.theme.BrandCardFill
+        else -> Color.Transparent
     }
-    val contentColor = if (selected) {
+    val contentColor = if (selected && isDark) {
         MaterialTheme.colorScheme.onPrimaryContainer
     } else {
         MaterialTheme.colorScheme.onSurface
     }
-    val borderModifier = if (selected) {
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-    } else {
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-    }
-
+    // Use Card's own onClick handler instead of the outer clickable Modifier
+    // — Card draws the ripple inside its own clipped shape, so the press
+    // effect now matches the rounded corners of the row instead of leaking
+    // out into a square.
     Card(
-        modifier = borderModifier,
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
     ) {
@@ -1104,15 +1174,29 @@ private fun PlanOption(
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Selection indicator
+            // Selection indicator. On light theme the selected ring uses
+            // BrandSelectionRing (#5A5D6C) so it stands out against the
+            // light grey row; dark theme keeps M3 primary so it picks up
+            // the dynamic accent colour on dark surfaces.
+            val ringColor = if (selected) {
+                if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    com.tobevpn.app.presentation.theme.BrandSelectionRing
+                }
+            } else {
+                MaterialTheme.colorScheme.outlineVariant
+            }
+            val dotColor = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                Color.White
+            }
             Box(
                 modifier = Modifier
                     .size(20.dp)
                     .clip(CircleShape)
-                    .background(
-                        if (selected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.outlineVariant,
-                    ),
+                    .background(ringColor),
                 contentAlignment = Alignment.Center,
             ) {
                 if (selected) {
@@ -1120,7 +1204,7 @@ private fun PlanOption(
                         modifier = Modifier
                             .size(8.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.onPrimary),
+                            .background(dotColor),
                     )
                 }
             }
