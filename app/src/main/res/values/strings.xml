@@ -18,6 +18,7 @@
     <string name="state_connecting">Connecting…</string>
     <string name="state_connected">Connected</string>
     <string name="error_limit_exhausted">Limit exhausted. Sign in via Telegram.</string>
+    <string name="error_subscription_expired">Subscription expired. Renew it to connect.</string>
     <string name="error_vpn_interface">Failed to create VPN interface</string>
     <string name="error_unknown">Unknown error</string>
     <string name="error_network">Network error</string>

@@ -16,6 +16,7 @@ import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.UsageInfo
+import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.vpn.VpnConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -111,12 +112,35 @@ class MainViewModel @Inject constructor(
                     val previousId = lastServerId
                     lastServerId = server.id
                     _serverPing.value = measureTcpPing(server.address, server.port)
-                    // Auto-reconnect if VPN was running on a different server
-                    if (previousId != null) {
+                    // Auto-reconnect if VPN was running on a different server.
+                    // Skip when the new pick is the panel's "subscription
+                    // expired" sentinel — switchServer would call startVpn,
+                    // and xray would crash on its all-zeros uuid. Skip on
+                    // EXPIRED plan in general so we don't pretend the user
+                    // can roam between servers when nothing is going to
+                    // tunnel anyway.
+                    if (previousId != null && !server.isSentinel && !isExpired()) {
                         val state = connectionState.value
                         if (state is ConnectionState.Connected || state is ConnectionState.Connecting) {
                             connectionManager.switchServer(server)
                         }
+                    }
+                }
+            }
+        }
+        // Auto-stop the tunnel the moment we detect the user's plan has
+        // gone EXPIRED while a session is live. Without this the green
+        // "Connected" badge stays on the screen indefinitely (the panel
+        // told us we're expired but xray keeps the tunnel up locally),
+        // and the next user action — picking a server — would drag the
+        // expired sentinel through the auto-reconnect path.
+        viewModelScope.launch {
+            authState.collect { state ->
+                val expired = state is AuthState.Authenticated && state.plan == UserPlan.EXPIRED
+                if (expired) {
+                    val curr = connectionState.value
+                    if (curr is ConnectionState.Connected || curr is ConnectionState.Connecting) {
+                        connectionManager.stopVpn()
                     }
                 }
             }
@@ -144,11 +168,24 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    private fun isExpired(): Boolean {
+        val state = authState.value
+        return state is AuthState.Authenticated && state.plan == UserPlan.EXPIRED
+    }
+
     fun toggleConnection() {
         viewModelScope.launch {
             when (connectionState.value) {
                 is ConnectionState.Disconnected, is ConnectionState.Error -> {
                     val server = currentServer.value ?: return@launch
+                    // Defence-in-depth: VpnConnectionManager.startVpn already
+                    // refuses the sentinel and shows the "subscription
+                    // expired" error, but bail here too so we don't even
+                    // flash the Connecting state.
+                    if (server.isSentinel || isExpired()) {
+                        connectionManager.startVpn(server) // routes through the manager's guards
+                        return@launch
+                    }
                     connectionManager.startVpn(server)
                 }
                 is ConnectionState.Connected, is ConnectionState.Connecting -> {

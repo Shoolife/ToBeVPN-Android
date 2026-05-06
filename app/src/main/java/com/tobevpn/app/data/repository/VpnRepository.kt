@@ -22,7 +22,11 @@ class VpnRepository @Inject constructor(
 ) {
     fun observeServers(): Flow<List<Server>> {
         return serverDao.observeAll().map { entities ->
-            entities.map { it.toDomain() }
+            // Belt-and-braces filter for the panel's "subscription expired"
+            // placeholder. refreshServers() already drops it before persisting,
+            // but a stale Room row from the previous version of the app could
+            // still surface it on first launch after upgrade.
+            entities.map { it.toDomain() }.filterNot { it.isSentinel }
         }
     }
 
@@ -50,7 +54,11 @@ class VpnRepository @Inject constructor(
 
             val servers = subInfo.links.mapNotNull { link ->
                 VlessUrlParser.parse(link)
-            }
+            }.filterNot { it.isSentinel }
+            // Drop the panel's "subscription expired" placeholder link so it
+            // never appears in the UI. It looks like a valid VLESS URL to the
+            // parser, but its uuid is all-zeros and the address points nowhere
+            // — handing it to xray would SIGSEGV the native loop.
 
             if (servers.isEmpty()) {
                 return Result.failure(Exception("Нет доступных серверов"))

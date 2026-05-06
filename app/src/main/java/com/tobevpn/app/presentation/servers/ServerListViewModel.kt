@@ -103,6 +103,12 @@ class ServerListViewModel @Inject constructor(
     }
 
     fun selectServer(server: Server) {
+        // Refuse to persist the panel's "subscription expired" placeholder.
+        // VpnRepository already filters it out of refreshed lists, but a
+        // stale cached entry from before the upgrade could still surface
+        // it — never let it become the selected server, the auto-reconnect
+        // path would feed it to xray and SIGSEGV the native loop.
+        if (server.isSentinel) return
         viewModelScope.launch {
             prefsDataStore.setSelectedServerId(server.id)
         }

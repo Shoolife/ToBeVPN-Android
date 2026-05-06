@@ -72,12 +72,25 @@ class VpnConnectionManager @Inject constructor(
         return session.userPlan == "PAID" && session.authState == "AUTHENTICATED"
     }
 
+
     fun startVpn(server: Server) {
         scope.launch {
             val gen: Int
             mutex.withLock {
                 val current = _connectionState.value
                 if (current is ConnectionState.Connecting || current is ConnectionState.Connected) return@launch
+
+                // Hard guard against the panel's "subscription expired"
+                // placeholder server. xray's native loop would SIGSEGV on
+                // its all-zeros uuid / blank address; surface a friendly
+                // error instead and bail before the service is even
+                // started.
+                if (server.isSentinel) {
+                    _connectionState.value = ConnectionState.Error(
+                        context.getString(R.string.error_subscription_expired)
+                    )
+                    return@launch
+                }
 
                 if (!isPaidUser() && usageRepository.isExhausted()) {
                     _connectionState.value = ConnectionState.Error(context.getString(R.string.error_limit_exhausted))
