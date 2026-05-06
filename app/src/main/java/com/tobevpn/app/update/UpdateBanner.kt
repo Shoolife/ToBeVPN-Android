@@ -2,6 +2,9 @@ package com.tobevpn.app.update
 
 import android.content.ActivityNotFoundException
 import androidx.activity.compose.LocalActivity
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -211,9 +214,21 @@ private fun DownloadingCard(
                 // indicator stays on-brand regardless of the wallpaper.
                 val trackColour = bannerContentColor().copy(alpha = 0.18f)
                 if (totalBytes > 0L) {
-                    val fraction = (downloadedBytes.toDouble() / totalBytes.toDouble()).coerceIn(0.0, 1.0).toFloat()
+                    val target = (downloadedBytes.toDouble() / totalBytes.toDouble())
+                        .coerceIn(0.0, 1.0)
+                        .toFloat()
+                    // DownloadManager hands progress in irregular bursts (a few
+                    // chunks land in one tick, then nothing for 200-300ms). A
+                    // raw `progress = { target }` would jump every burst —
+                    // animate the value with linear easing so the bar reads as
+                    // a continuous fill that bridges the gaps.
+                    val animated by animateFloatAsState(
+                        targetValue = target,
+                        animationSpec = tween(durationMillis = 400, easing = LinearEasing),
+                        label = "updateProgress",
+                    )
                     LinearProgressIndicator(
-                        progress = { fraction },
+                        progress = { animated },
                         color = VpnGreen,
                         trackColor = trackColour,
                         modifier = Modifier

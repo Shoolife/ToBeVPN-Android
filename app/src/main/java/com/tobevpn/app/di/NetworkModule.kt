@@ -5,6 +5,7 @@ import com.tobevpn.app.data.remote.AuthHeaderInterceptor
 import com.tobevpn.app.data.remote.BootstrapApi
 import com.tobevpn.app.data.remote.BotApi
 import com.tobevpn.app.data.remote.CurrencyApi
+import com.tobevpn.app.data.remote.FallbackInterceptor
 import com.tobevpn.app.data.remote.GithubReleasesApi
 import com.tobevpn.app.data.remote.TokenAuthenticator
 import dagger.Module
@@ -59,6 +60,11 @@ object NetworkModule {
     @Singleton
     fun provideBootstrapApi(): BootstrapApi {
         val client = OkHttpClient.Builder()
+            // Fallback runs *before* logging so the rewritten URL still gets
+            // logged in debug builds, and *before* userAgentInterceptor's
+            // header — order doesn't matter for headers, but keeping
+            // network-level interceptors first matches OkHttp convention.
+            .addInterceptor(FallbackInterceptor())
             .addInterceptor(userAgentInterceptor)
             .addInterceptor(loggingInterceptor)
             .build()
@@ -78,6 +84,7 @@ object NetworkModule {
         authenticator: TokenAuthenticator,
     ): BotApi {
         val client = OkHttpClient.Builder()
+            .addInterceptor(FallbackInterceptor())
             .addInterceptor(userAgentInterceptor)
             .addInterceptor(authInterceptor)
             .authenticator(authenticator)

@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">ToBeVPN</string>
+    <string name="app_partner">× Meow VPN</string>
     <string name="splash_tagline">your future is private</string>
 
     <!-- Common -->

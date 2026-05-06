@@ -25,8 +25,8 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.0.5"
+        versionCode = 7
+        versionName = "1.0.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -48,6 +48,28 @@ android {
                 "or the BOT_API_URL environment variable / Actions secret."
             )
         buildConfigField("String", "BOT_API_BASE_URL", "\"$botApiUrl\"")
+
+        // fallback endpoint fallbacks. Both are optional — empty string
+        // means "no fallback configured" and the network layer skips the
+        // retry path entirely. Resolution order matches BOT_API_URL above:
+        // local.properties first (developers), env var second (CI secrets),
+        // empty default last so a missing config degrades gracefully
+        // instead of breaking the build.
+        //
+        //   FALLBACK_BOT_DOMAIN  — base URL of the bot proxy CF (no `?u=`).
+        //                          The original /api/* path-with-query is
+        //                          URL-encoded and appended as `?u=<path>`.
+        //   FALLBACK_SUBS_DOMAIN — full URL ending in `?sub=`. The trailing
+        //                          path segment of the panel's subscription
+        //                          URL is appended directly.
+        val fallbackBotDomain = localProperties.getProperty("fallback.bot.domain")
+            ?: System.getenv("FALLBACK_BOT_DOMAIN")
+            ?: ""
+        val fallbackSubsDomain = localProperties.getProperty("fallback.subs.domain")
+            ?: System.getenv("FALLBACK_SUBS_DOMAIN")
+            ?: ""
+        buildConfigField("String", "FALLBACK_BOT_DOMAIN", "\"$fallbackBotDomain\"")
+        buildConfigField("String", "FALLBACK_SUBS_DOMAIN", "\"$fallbackSubsDomain\"")
     }
 
     // Release signing is opt-in — credentials live in local.properties (gitignored).
