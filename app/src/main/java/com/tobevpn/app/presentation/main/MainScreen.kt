@@ -128,10 +128,18 @@ fun MainScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Row(verticalAlignment = Alignment.Bottom) {
+                    // Baseline-align the partner suffix with the app name so
+                    // the smaller text sits on the same typographic baseline
+                    // as the larger one (matches the desktop CSS
+                    // `align-items: baseline`). Alignment.Bottom would
+                    // line up the bottom edges of the bounding boxes
+                    // instead, leaving the small text floating noticeably
+                    // above the baseline of the bold word.
+                    Row {
                         Text(
                             "ToBeVPN",
                             fontWeight = FontWeight.Bold,
+                            modifier = Modifier.alignByBaseline(),
                         )
                         // Co-brand label. Sets the user's expectation that the
                         // partner's domain shows up at purchase, so the redirect
@@ -141,7 +149,9 @@ fun MainScreen(
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                            modifier = Modifier.padding(start = 8.dp, bottom = 3.dp),
+                            modifier = Modifier
+                                .alignByBaseline()
+                                .padding(start = 8.dp),
                         )
                     }
                 },
