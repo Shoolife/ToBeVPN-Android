@@ -49,7 +49,7 @@ android {
             )
         buildConfigField("String", "BOT_API_BASE_URL", "\"$botApiUrl\"")
 
-        // fallback endpoint fallbacks. Both are optional — empty string
+        // Fallback endpoint URLs. Both are optional — empty string
         // means "no fallback configured" and the network layer skips the
         // retry path entirely. Resolution order matches BOT_API_URL above:
         // local.properties first (developers), env var second (CI secrets),

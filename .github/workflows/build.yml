@@ -63,7 +63,7 @@ jobs:
         # produce many). Build them separately.
         env:
           BOT_API_URL: ${{ secrets.BOT_API_URL }}
-          # fallback endpoint fallbacks. Empty when the secret is unset
+          # Fallback endpoint URLs. Empty when the secret is unset
           # — the network layer treats empty strings as "no fallback
           # configured" and skips the retry path entirely, so a missing
           # secret degrades gracefully instead of breaking the build.
