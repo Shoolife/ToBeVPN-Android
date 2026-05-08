@@ -25,8 +25,8 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.0.8"
+        versionCode = 10
+        versionName = "1.0.9"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -56,9 +56,11 @@ android {
         // empty default last so a missing config degrades gracefully
         // instead of breaking the build.
         //
-        //   FALLBACK_BOT_DOMAIN  — base URL of the bot proxy CF (no `?u=`).
-        //                          The original /api/* path-with-query is
-        //                          URL-encoded and appended as `?u=<path>`.
+        //   FALLBACK_BOT_DOMAIN  — bare hostname of the bot mirror gateway
+        //                          (no scheme, no path). The interceptor
+        //                          swaps the primary host for this one when
+        //                          the primary is unreachable, preserving
+        //                          path / query / headers / body verbatim.
         //   FALLBACK_SUBS_DOMAIN — full URL ending in `?sub=`. The trailing
         //                          path segment of the panel's subscription
         //                          URL is appended directly.

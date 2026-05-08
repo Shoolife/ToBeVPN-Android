@@ -2,7 +2,6 @@ package com.tobevpn.app.data.remote
 
 import android.util.Log
 import com.tobevpn.app.BuildConfig
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.Response
 import java.io.IOException
@@ -13,18 +12,18 @@ import javax.net.ssl.SSLHandshakeException
 
 /**
  * Wraps every bot-API call with a transparent retry against an
- * operator-configured fallback endpoint when the primary host is
- * unreachable (DNS-blocked, TCP refused, TLS handshake failure, socket
- * timeout — exactly the failure modes ISP-level filtering produces).
+ * operator-configured fallback host when the primary host is unreachable
+ * (DNS-blocked, TCP refused, TLS handshake failure, socket timeout —
+ * exactly the failure modes ISP-level filtering produces).
  *
  * Wire format (matches the desktop client):
- *   primary:  <method> <BOT_API_BASE_URL><path>?<query>   (body, headers)
- *   fallback: <method> <FALLBACK_BOT_DOMAIN>?u=<url-encoded path-with-query>
- *             — same method, same headers, same body. The fallback endpoint
- *             reads the `u` query parameter (URL-decoded), prepends the
- *             upstream backend host on its own end, and forwards the
- *             request. We never pass a full URL to the fallback so it
- *             can't be coerced into proxying arbitrary destinations.
+ *   primary:  <method> https://<primary-host><path>?<query>   (body, headers)
+ *   fallback: <method> https://<fallback-host><path>?<query>  (same body, same headers)
+ *
+ * The fallback endpoint mirrors the primary's API surface 1:1, so we keep
+ * the original path, query, headers, and body verbatim and only swap the
+ * host. [BuildConfig.FALLBACK_BOT_DOMAIN] therefore stores a bare hostname
+ * (e.g. "gateway.example.invalid") — no scheme, no path.
  *
  * A non-2xx HTTP response from the primary is **not** a fallback trigger —
  * that's the upstream telling us something genuine (auth failed, validation
@@ -38,8 +37,8 @@ class FallbackInterceptor : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
-        val fallbackBase = BuildConfig.FALLBACK_BOT_DOMAIN
-        if (fallbackBase.isBlank()) {
+        val fallbackHost = BuildConfig.FALLBACK_BOT_DOMAIN
+        if (fallbackHost.isBlank()) {
             return chain.proceed(original)
         }
 
@@ -47,7 +46,7 @@ class FallbackInterceptor : Interceptor {
             chain.proceed(original)
         } catch (primaryError: IOException) {
             if (!isFallbackEligible(primaryError)) throw primaryError
-            val fallbackRequest = buildFallbackRequest(original, fallbackBase)
+            val fallbackRequest = buildFallbackRequest(original, fallbackHost)
                 ?: throw primaryError
             Log.w(
                 TAG,
@@ -89,48 +88,20 @@ class FallbackInterceptor : Interceptor {
         }
     }
 
-    private fun buildFallbackRequest(original: okhttp3.Request, fallbackBase: String): okhttp3.Request? {
-        val pathWithQuery = buildString {
-            append(original.url.encodedPath)
-            val q = original.url.encodedQuery
-            if (!q.isNullOrEmpty()) {
-                append('?')
-                append(q)
-            }
-        }
-        val sep = if (fallbackBase.contains('?')) '&' else '?'
-        val rebuilt = (fallbackBase + sep + "u=" + encodeForQuery(pathWithQuery))
-            .toHttpUrlOrNull() ?: return null
-        return original.newBuilder().url(rebuilt).build()
-    }
-
-    /**
-     * Same encoding rules the JS side uses (encodeURIComponent): preserve
-     * the small set of characters query parsers won't choke on, encode
-     * everything else byte-by-byte. We can't lean on java.net.URLEncoder
-     * because it converts spaces to `+`, which serverless query handlers
-     * tend to mis-route as a literal plus sign.
-     */
-    private fun encodeForQuery(raw: String): String {
-        val sb = StringBuilder(raw.length * 3)
-        for (b in raw.toByteArray(Charsets.UTF_8)) {
-            val c = b.toInt() and 0xFF
-            val ch = c.toChar()
-            val unreserved = (ch in 'A'..'Z') || (ch in 'a'..'z') || (ch in '0'..'9') ||
-                ch == '-' || ch == '_' || ch == '.' || ch == '~'
-            if (unreserved) {
-                sb.append(ch)
-            } else {
-                sb.append('%')
-                sb.append(HEX[c ushr 4])
-                sb.append(HEX[c and 0xF])
-            }
-        }
-        return sb.toString()
+    private fun buildFallbackRequest(original: okhttp3.Request, fallbackHost: String): okhttp3.Request? {
+        // Operators may paste the host with a scheme prefix or a trailing
+        // slash by accident — strip both so okhttp's host setter doesn't
+        // reject the value as malformed.
+        val cleanHost = fallbackHost
+            .removePrefix("https://")
+            .removePrefix("http://")
+            .substringBefore('/')
+            .ifBlank { return null }
+        val rebuiltUrl = original.url.newBuilder().host(cleanHost).build()
+        return original.newBuilder().url(rebuiltUrl).build()
     }
 
     private companion object {
         const val TAG = "FallbackInterceptor"
-        val HEX = "0123456789ABCDEF".toCharArray()
     }
 }
