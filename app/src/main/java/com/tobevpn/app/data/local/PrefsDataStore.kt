@@ -34,6 +34,18 @@ class PrefsDataStore @Inject constructor(
         val USD_RATE_TIMESTAMP = longPreferencesKey("usd_rate_timestamp")
         val ANON_SERVER_BYTES = longPreferencesKey("anon_server_bytes")
         val ANON_PENDING_BYTES = longPreferencesKey("anon_pending_bytes")
+        // Subscription refresh throttling. Both values are written together
+        // by AuthRepository.syncSubscription() — `LAST_SUB_SYNC_AT` is the
+        // wall-clock instant of the last successful sync, and
+        // `SUB_UPDATE_INTERVAL_MS` is the panel-recommended cadence taken
+        // from the `profile-update-interval` HTTP header on the subscription
+        // URL response. The default of 12h matches what backend's UI
+        // surfaces in its "subscription auto-refresh" field.
+        val LAST_SUB_SYNC_AT = longPreferencesKey("last_sub_sync_at")
+        val SUB_UPDATE_INTERVAL_MS = longPreferencesKey("sub_update_interval_ms")
+        // Cached subscription URL so the connect-time HWID ping can fire
+        // without a fresh /api/panel/sub/.../info round-trip.
+        val SUBSCRIPTION_URL = stringPreferencesKey("subscription_url")
     }
 
     val deviceId: Flow<String?> = context.dataStore.data.map { it[Keys.DEVICE_ID] }
@@ -126,4 +138,32 @@ class PrefsDataStore @Inject constructor(
         }
     }
 
+    /** Returns (lastSyncAt, intervalMs). Defaults: 0L and 12 hours. */
+    suspend fun getSubscriptionSyncState(): Pair<Long, Long> {
+        val prefs = context.dataStore.data.first()
+        val last = prefs[Keys.LAST_SUB_SYNC_AT] ?: 0L
+        val interval = prefs[Keys.SUB_UPDATE_INTERVAL_MS] ?: DEFAULT_SUB_INTERVAL_MS
+        return last to interval
+    }
+
+    suspend fun setSubscriptionSyncState(lastSyncAt: Long, intervalMs: Long) {
+        context.dataStore.edit {
+            it[Keys.LAST_SUB_SYNC_AT] = lastSyncAt
+            it[Keys.SUB_UPDATE_INTERVAL_MS] = intervalMs
+        }
+    }
+
+    suspend fun getCachedSubscriptionUrl(): String? {
+        return context.dataStore.data.first()[Keys.SUBSCRIPTION_URL]
+    }
+
+    suspend fun setCachedSubscriptionUrl(url: String?) {
+        context.dataStore.edit {
+            if (url.isNullOrBlank()) it.remove(Keys.SUBSCRIPTION_URL) else it[Keys.SUBSCRIPTION_URL] = url
+        }
+    }
+
+    companion object {
+        const val DEFAULT_SUB_INTERVAL_MS: Long = 12L * 60L * 60L * 1000L
+    }
 }

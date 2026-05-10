@@ -36,8 +36,18 @@ class SubscriptionPinger @Inject constructor(
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
 
-    suspend fun ping(subscriptionUrl: String?) = withContext(Dispatchers.IO) {
-        if (subscriptionUrl.isNullOrBlank()) return@withContext
+    /**
+     * Sends an HWID-tagged GET to [subscriptionUrl] and returns the panel's
+     * recommended auto-refresh cadence in milliseconds, parsed from the
+     * `profile-update-interval` response header (an integer number of hours,
+     * the V2Ray subscription convention also honoured by Happ/V2RayN).
+     *
+     * Returns `null` when the URL is blank, both legs fail, or the panel
+     * didn't include a usable header — callers fall back to the cached /
+     * default interval rather than hammering the panel.
+     */
+    suspend fun ping(subscriptionUrl: String?): Long? = withContext(Dispatchers.IO) {
+        if (subscriptionUrl.isNullOrBlank()) return@withContext null
         val fp = fingerprintProvider.get()
         val baseRequest = Request.Builder()
             .url(subscriptionUrl)
@@ -50,24 +60,38 @@ class SubscriptionPinger @Inject constructor(
             .build()
 
         try {
-            client.newCall(baseRequest).execute().use { /* body discarded */ }
+            client.newCall(baseRequest).execute().use { return@withContext readIntervalMs(it.header("profile-update-interval")) }
         } catch (primaryError: IOException) {
             if (!isFallbackEligible(primaryError)) {
                 logFailure("primary", primaryError)
-                return@withContext
+                return@withContext null
             }
             val fallbackRequest = buildFallbackRequest(subscriptionUrl, baseRequest)
             if (fallbackRequest == null) {
                 logFailure("primary", primaryError)
-                return@withContext
+                return@withContext null
             }
             Log.w(TAG, "primary failed (${primaryError.javaClass.simpleName}), retrying via fallback")
             try {
-                client.newCall(fallbackRequest).execute().use { /* body discarded */ }
+                client.newCall(fallbackRequest).execute().use { return@withContext readIntervalMs(it.header("profile-update-interval")) }
             } catch (fallbackError: IOException) {
                 logFailure("fallback", fallbackError)
+                return@withContext null
             }
         }
+    }
+
+    /**
+     * Parses the V2Ray-style `profile-update-interval` header. The value is
+     * a whole number of hours; we accept stray whitespace / decimals and
+     * clamp to a sane range so a 0 / negative / absurdly-large panel value
+     * can't disable refreshes entirely or push them years into the future.
+     */
+    private fun readIntervalMs(raw: String?): Long? {
+        val parsed = raw?.trim()?.toDoubleOrNull() ?: return null
+        if (parsed <= 0.0) return null
+        val hours = parsed.coerceIn(MIN_INTERVAL_HOURS, MAX_INTERVAL_HOURS)
+        return (hours * 60.0 * 60.0 * 1000.0).toLong()
     }
 
     private fun isFallbackEligible(error: IOException): Boolean = when (error) {
@@ -112,5 +136,10 @@ class SubscriptionPinger @Inject constructor(
 
     private companion object {
         const val TAG = "SubscriptionPinger"
+        // Floor at 1h so a misconfigured panel can't cause the client to
+        // hammer it; ceiling at 7d so a typo'd value doesn't disable
+        // subscription refreshes for the foreseeable future.
+        const val MIN_INTERVAL_HOURS = 1.0
+        const val MAX_INTERVAL_HOURS = 24.0 * 7.0
     }
 }

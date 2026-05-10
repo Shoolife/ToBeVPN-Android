@@ -19,6 +19,8 @@ import com.tobevpn.app.domain.model.UserPlan
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -40,6 +42,13 @@ class AuthRepository @Inject constructor(
         // Fallback defaults if server is unreachable
         private const val DEFAULT_FREE_TRIAL_TRAFFIC_BYTES = 1_073_741_824L // 1 GB
     }
+
+    // Serialises concurrent syncSubscription() callers (MainViewModel.init,
+    // ServerListViewModel.init and onResume() can fire near-simultaneously
+    // on a fresh app launch). Without this each one independently hits the
+    // panel; with it, the second caller suspends, then sees the throttle
+    // window updated by the first and exits without a network call.
+    private val syncMutex = Mutex()
 
     /** Fetches remote config from backend. Call once on app start. */
     suspend fun fetchRemoteConfig() {
@@ -299,8 +308,27 @@ class AuthRepository @Inject constructor(
      * @param overwriteUsage when true, writes panel's trafficUsedBytes into local usage.
      *                       Pass false during an active VPN session to avoid clobbering
      *                       the live local counter with a stale panel value.
+     * @param force          when true, bypass the panel-recommended refresh
+     *                       cadence (`profile-update-interval`, default 12h).
+     *                       Set this for explicit user-initiated refreshes
+     *                       (the Refresh button on the server list); leave it
+     *                       false for ambient triggers like onResume / screen
+     *                       open so we don't hammer the panel every time the
+     *                       user tabs away and back.
      */
-    suspend fun syncSubscription(overwriteUsage: Boolean = true) {
+    suspend fun syncSubscription(overwriteUsage: Boolean = true, force: Boolean = false) {
+        syncMutex.withLock {
+            if (!force) {
+                val (lastSyncAt, intervalMs) = prefsDataStore.getSubscriptionSyncState()
+                if (lastSyncAt > 0 && System.currentTimeMillis() - lastSyncAt < intervalMs) {
+                    return@withLock
+                }
+            }
+            runSyncSubscription(overwriteUsage)
+        }
+    }
+
+    private suspend fun runSyncSubscription(overwriteUsage: Boolean) {
         try {
             var session = sessionDao.getSession() ?: return
             var panelUser: com.tobevpn.app.data.remote.dto.PanelUserDto? = null
@@ -332,9 +360,14 @@ class AuthRepository @Inject constructor(
             val subInfo = botApi.getSubscriptionInfo(shortUuid).response
             if (!subInfo.isFound || subInfo.user == null) return
 
-            // Direct hit on the panel's public sub URL with HWID headers — only
-            // request backend actually parses for HWID device tracking.
-            subscriptionPinger.ping(panelUser?.subscriptionUrl ?: subInfo.subscriptionUrl)
+            // Direct hit on the panel's public sub URL with HWID headers —
+            // only request backend actually parses for HWID device tracking,
+            // and the response carries the panel-recommended auto-refresh
+            // cadence we use to throttle subsequent calls.
+            val effectiveUrl = panelUser?.subscriptionUrl ?: subInfo.subscriptionUrl
+            prefsDataStore.setCachedSubscriptionUrl(effectiveUrl)
+            val intervalMs = subscriptionPinger.ping(effectiveUrl)
+            persistSyncState(intervalMs)
 
             val sub = subInfo.user
             val isActive = sub.isActive && sub.userStatus == "ACTIVE"
@@ -391,6 +424,35 @@ class AuthRepository @Inject constructor(
             if (session.authState == "AUTHENTICATED") {
                 registerCurrentDevice()
             }
+        } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Updates the throttle bookkeeping after a real network sync. The
+     * interval comes from the panel's `profile-update-interval` header
+     * when the ping leg succeeded; otherwise we keep whatever interval
+     * was previously cached (or the 12h default on first launch).
+     */
+    private suspend fun persistSyncState(intervalMsFromPanel: Long?) {
+        val (_, cachedInterval) = prefsDataStore.getSubscriptionSyncState()
+        val intervalMs = intervalMsFromPanel ?: cachedInterval
+        prefsDataStore.setSubscriptionSyncState(System.currentTimeMillis(), intervalMs)
+    }
+
+    /**
+     * Bare HWID-marker ping — used by the connect path so backend
+     * registers the device on every VPN start. Skips the JSON
+     * `getSubscriptionInfo` call entirely; reads the subscription URL
+     * from the prefs cache populated by the most recent
+     * [syncSubscription]. If the cache is empty (very first connect on
+     * a fresh install before any sync has completed) we silently no-op
+     * — the next ambient sync will populate it.
+     */
+    suspend fun pingHwidOnly() {
+        try {
+            val url = prefsDataStore.getCachedSubscriptionUrl() ?: return
+            subscriptionPinger.ping(url)
         } catch (_: Exception) {
         }
     }
@@ -462,6 +524,8 @@ class AuthRepository @Inject constructor(
         // After unlink + logout the backend now returns an unlinked bootstrap.
         runCatching { bootstrapManager.ensureBootstrapped() }
         runCatching { ensurePanelUser() }
-        runCatching { syncSubscription(overwriteUsage = true) }
+        // Force after identity change — the throttle window applies to the
+        // previous user's data, not the new anonymous one.
+        runCatching { syncSubscription(overwriteUsage = true, force = true) }
     }
 }

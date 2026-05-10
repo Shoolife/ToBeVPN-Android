@@ -138,7 +138,10 @@ class AuthViewModel @Inject constructor(
     private suspend fun onAuthSuccess() {
         // Refresh servers with new subscription (user may have been upgraded)
         vpnRepository.refreshServers()
-        authRepository.syncSubscription()
+        // Force the sync — we just authenticated and the user expects to
+        // immediately see the right plan (PAID / FREE_TRIAL), not whatever
+        // was cached before login.
+        authRepository.syncSubscription(force = true)
         _uiState.value = AuthUiState.Success
         pollingJob?.cancel()
 

@@ -47,7 +47,10 @@ class ServerListViewModel @Inject constructor(
     val error: StateFlow<String?> = _error.asStateFlow()
 
     init {
-        refreshServers()
+        // Open-screen refresh respects the panel-recommended cadence — we
+        // don't want re-entering the list (or coming back from foreground)
+        // to count as an explicit "give me fresh data" request.
+        refreshServers(force = false)
         // Refresh pings every 5 seconds
         viewModelScope.launch {
             while (true) {
@@ -60,7 +63,7 @@ class ServerListViewModel @Inject constructor(
         }
     }
 
-    fun refreshServers() {
+    fun refreshServers(force: Boolean = true) {
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
@@ -69,7 +72,7 @@ class ServerListViewModel @Inject constructor(
             // finished its init leaves shortUuid null and refreshServers fails
             // with "Нет подписки".
             authRepository.ensurePanelUser()
-            authRepository.syncSubscription()
+            authRepository.syncSubscription(force = force)
             val result = vpnRepository.refreshServers()
             result.onFailure { _error.value = it.message }
             result.onSuccess { measurePings(it) }

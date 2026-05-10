@@ -105,7 +105,10 @@ class VpnConnectionManager @Inject constructor(
 
             // Fire-and-forget: hits the panel's public sub URL with HWID headers
             // so backend registers/refreshes the HWID device on every connect.
-            launch { runCatching { authRepository.syncSubscription(overwriteUsage = false) } }
+            // Bare ping only — the JSON /api/panel/sub/.../info refresh is
+            // throttled by syncSubscription's profile-update-interval window
+            // and shouldn't be coupled to the connect cadence.
+            launch { runCatching { authRepository.pingHwidOnly() } }
 
             val intent = Intent(context, ToBeVpnService::class.java).apply {
                 action = ToBeVpnService.ACTION_START
