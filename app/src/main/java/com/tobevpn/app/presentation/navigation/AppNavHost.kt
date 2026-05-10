@@ -8,6 +8,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import com.tobevpn.app.data.local.PrefsDataStore
+import com.tobevpn.app.presentation.appfilter.AppFilterScreen
 import com.tobevpn.app.presentation.auth.AuthScreen
 import com.tobevpn.app.presentation.main.MainScreen
 import com.tobevpn.app.presentation.onboarding.OnboardingScreen
@@ -71,6 +72,12 @@ fun AppNavHost(
             SettingsScreen(
                 onBack = { navController.popBackStack() },
                 onNavigateToAuth = { navController.navigate(AuthRoute) },
+                onNavigateToAppFilter = { navController.navigate(AppFilterRoute) },
+            )
+        }
+        composable<AppFilterRoute> {
+            AppFilterScreen(
+                onBack = { navController.popBackStack() },
             )
         }
     }

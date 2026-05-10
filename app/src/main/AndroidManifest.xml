@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -10,6 +11,16 @@
          system package installer. The user still has to flip an explicit
          "Install unknown apps" toggle once on Android 8+. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <!-- VPN apps need to enumerate every installed package so the user can
+         pick which ones bypass / use the tunnel (split-tunnelling). Without
+         QUERY_ALL_PACKAGES Android 11+ filters PackageManager.getInstalledApplications()
+         down to a tiny visible-by-default subset, hiding most third-party
+         apps the user would actually want to choose between (Ozon, Avito,
+         banking apps, etc.). public distribution's policy explicitly allows this
+         permission for VPN / firewall apps. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
     <!-- Android 11+ filtered package visibility — declare what we look up so
          ACTION_VIEW with vnd.android.package-archive resolves correctly. -->

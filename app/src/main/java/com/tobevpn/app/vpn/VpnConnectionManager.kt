@@ -7,8 +7,10 @@ import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.local.dao.SessionDao
 import com.tobevpn.app.data.local.dao.TrafficLogDao
 import com.tobevpn.app.data.local.entity.TrafficLogEntity
+import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.data.repository.AuthRepository
 import com.tobevpn.app.data.repository.UsageRepository
+import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.UsageInfo
@@ -39,6 +41,7 @@ class VpnConnectionManager @Inject constructor(
     private val sessionDao: SessionDao,
     private val trafficLogDao: TrafficLogDao,
     private val authRepository: AuthRepository,
+    private val appFilterRepository: AppFilterRepository,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val mutex = Mutex()
@@ -65,6 +68,66 @@ class VpnConnectionManager @Inject constructor(
 
     init {
         scope.launch { usageRepository.ensureInitialized() }
+        scope.launch { observeAppFilterAndReconnect() }
+    }
+
+    /**
+     * Re-establish the tunnel whenever the app-filter selection changes
+     * while a session is already up. The Builder's allowed/disallowed
+     * package list is locked in at `establish()` time — there is no API
+     * to mutate it on a live tunnel, so we have to tear down and bring
+     * up a new TUN with the new policy.
+     *
+     * Debounced for 600 ms so a burst of rapid checkbox toggles in the
+     * filter screen produces one reconnect at the end, not one per tap.
+     * The first emission (the initial state on Manager creation) is
+     * discarded — there's nothing to reconnect when no session exists.
+     */
+    private suspend fun observeAppFilterAndReconnect() {
+        val filterEmptyMsg = context.getString(R.string.app_filter_empty_warning)
+        var firstEmission = true
+        var lastSnapshot: com.tobevpn.app.domain.model.AppFilterState? = null
+        appFilterRepository.observeState()
+            .collect { state ->
+                if (firstEmission) {
+                    firstEmission = false
+                    lastSnapshot = state
+                    return@collect
+                }
+                if (state == lastSnapshot) return@collect
+                lastSnapshot = state
+
+                // Whenever the filter changes, drop a stale "pick at
+                // least one app" Error left over from an earlier connect
+                // attempt. The reactive reminder card on Home is the
+                // single source of truth for whether the current filter
+                // is still in the bad state, and it would already vanish
+                // on its own — but only if the connection state isn't
+                // sitting in Error and visually overshadowing it.
+                // We compare by message rather than introducing a typed
+                // Error subclass to avoid touching every call site.
+                val pre = _connectionState.value
+                if (pre is ConnectionState.Error && pre.message == filterEmptyMsg) {
+                    _connectionState.value = ConnectionState.Disconnected
+                }
+
+                val current = _connectionState.value
+                if (current !is ConnectionState.Connected && current !is ConnectionState.Connecting) {
+                    return@collect
+                }
+                // Coalesce rapid bursts.
+                delay(600)
+                if (lastSnapshot != state) return@collect
+                val server = _currentServer.value ?: return@collect
+                if (state.mode == AppFilterMode.WHITELIST && state.selectedPackages.isEmpty()) {
+                    // Disconnect rather than reconnect into a tunnel
+                    // that allows zero apps — keeps the user out of
+                    // the "VPN on but internet broken" trap.
+                    stopVpn()
+                    return@collect
+                }
+                switchServer(server)
+            }
     }
 
     private suspend fun isPaidUser(): Boolean {
@@ -94,6 +157,19 @@ class VpnConnectionManager @Inject constructor(
 
                 if (!isPaidUser() && usageRepository.isExhausted()) {
                     _connectionState.value = ConnectionState.Error(context.getString(R.string.error_limit_exhausted))
+                    return@launch
+                }
+
+                // WHITELIST with no apps selected would establish() a TUN
+                // that nothing is allowed to use — the VPN icon would light
+                // up but no traffic would actually route through it. Bail
+                // out here so the user gets a clear error instead of a
+                // silently-broken connection.
+                val filterCheck = appFilterRepository.getSnapshot()
+                if (filterCheck.mode == AppFilterMode.WHITELIST && filterCheck.selectedPackages.isEmpty()) {
+                    _connectionState.value = ConnectionState.Error(
+                        context.getString(R.string.app_filter_empty_warning),
+                    )
                     return@launch
                 }
 

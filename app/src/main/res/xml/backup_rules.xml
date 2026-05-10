@@ -1,11 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Android 11 and below (API < 31).
-    Exclude Room DB and DataStore containing auth tokens and session data.
+    Android 11 and below (API < 31) — Auto Backup rules.
+
+    What gets backed up (everything not listed below):
+      * tobevpn_prefs.preferences_pb — non-sensitive preferences
+        (filter mode, language, selected server id, anon usage counters,
+        throttle bookkeeping). After a reinstall these come back
+        automatically when the user is signed into the same Google account.
+
+    What we exclude:
+      * The Room database — encrypted with a SQLCipher passphrase that
+        lives in the Android Keystore, which itself does not survive a
+        reinstall. Even if we backed up the file we couldn't decrypt it
+        on the new install. Subscription URL, auth tokens, panel info,
+        traffic logs all live here, so excluding the file is also the
+        right call from a security standpoint.
 -->
 <full-backup-content>
     <exclude domain="database" path="tobevpn.db" />
     <exclude domain="database" path="tobevpn.db-shm" />
     <exclude domain="database" path="tobevpn.db-wal" />
-    <exclude domain="file" path="datastore/tobevpn_prefs.preferences_pb" />
 </full-backup-content>

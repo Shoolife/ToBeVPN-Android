@@ -324,11 +324,11 @@ class AuthRepository @Inject constructor(
                     return@withLock
                 }
             }
-            runSyncSubscription(overwriteUsage)
+            runSyncSubscription(overwriteUsage, trustPanelPlan = force)
         }
     }
 
-    private suspend fun runSyncSubscription(overwriteUsage: Boolean) {
+    private suspend fun runSyncSubscription(overwriteUsage: Boolean, trustPanelPlan: Boolean) {
         try {
             var session = sessionDao.getSession() ?: return
             var panelUser: com.tobevpn.app.data.remote.dto.PanelUserDto? = null
@@ -365,20 +365,36 @@ class AuthRepository @Inject constructor(
             // and the response carries the panel-recommended auto-refresh
             // cadence we use to throttle subsequent calls.
             val effectiveUrl = panelUser?.subscriptionUrl ?: subInfo.subscriptionUrl
-            prefsDataStore.setCachedSubscriptionUrl(effectiveUrl)
+            sessionStore.update { it.copy(subscriptionUrl = effectiveUrl) }
             val intervalMs = subscriptionPinger.ping(effectiveUrl)
             persistSyncState(intervalMs)
 
             val sub = subInfo.user
             val isActive = sub.isActive && sub.userStatus == "ACTIVE"
+            val cachedPlan = session.userPlan
 
-            // Determine plan from panel data
-            val plan = if (!isActive) {
-                "EXPIRED"
-            } else if (session.authState == "AUTHENTICATED" && panelUser != null) {
-                planForPanelUser(panelUser)
-            } else {
-                if (sub.trafficLimitStrategy == "MONTH") "PAID" else "FREE_TRIAL"
+            // Plan derivation order:
+            //   1. Inactive subscription => EXPIRED, regardless of cache.
+            //   2. Panel data with a non-trivial squad (ADMIN / PAID) wins.
+            //   3. MONTH-strategy traffic limit is the canonical "paid"
+            //      signal in the subscription payload — trust it even if
+            //      the panel response arrived without a squad list.
+            //   4. Ambient (non-forced) syncs never silently downgrade an
+            //      already-PAID/ADMIN cached plan to FREE_TRIAL on a
+            //      transient/ambiguous response — a panel hiccup with
+            //      empty squads otherwise flips the badge to "Пробный"
+            //      and shows the wrong limits until the next sync.
+            //   5. Forced syncs (the user explicitly hit Refresh) skip
+            //      that protection: they're how the user diagnoses or
+            //      recovers from a stuck plan. If panel really says
+            //      FREE_TRIAL, we surface FREE_TRIAL.
+            val plan = when {
+                !isActive -> "EXPIRED"
+                panelUser != null && planForPanelUser(panelUser) != "FREE_TRIAL" ->
+                    planForPanelUser(panelUser)
+                sub.trafficLimitStrategy == "MONTH" -> "PAID"
+                !trustPanelPlan && (cachedPlan == "PAID" || cachedPlan == "ADMIN") -> cachedPlan
+                else -> "FREE_TRIAL"
             }
 
             // Parse expiry date
@@ -444,14 +460,14 @@ class AuthRepository @Inject constructor(
      * Bare HWID-marker ping — used by the connect path so backend
      * registers the device on every VPN start. Skips the JSON
      * `getSubscriptionInfo` call entirely; reads the subscription URL
-     * from the prefs cache populated by the most recent
-     * [syncSubscription]. If the cache is empty (very first connect on
-     * a fresh install before any sync has completed) we silently no-op
-     * — the next ambient sync will populate it.
+     * from the encrypted session row populated by the most recent
+     * [syncSubscription]. If it's empty (very first connect on a fresh
+     * install before any sync has completed) we silently no-op — the
+     * next ambient sync will populate it.
      */
     suspend fun pingHwidOnly() {
         try {
-            val url = prefsDataStore.getCachedSubscriptionUrl() ?: return
+            val url = sessionDao.getSession()?.subscriptionUrl ?: return
             subscriptionPinger.ping(url)
         } catch (_: Exception) {
         }

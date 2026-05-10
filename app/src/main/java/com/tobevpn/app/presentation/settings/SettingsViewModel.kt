@@ -10,8 +10,11 @@ import com.tobevpn.app.data.remote.BotApi
 import com.tobevpn.app.data.remote.dto.DeviceUnlinkRequestDto
 import com.tobevpn.app.data.remote.dto.LinkedDeviceDto
 import com.tobevpn.app.data.remote.dto.TvPairConfirmRequestDto
+import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.data.repository.AuthRepository
 import com.tobevpn.app.data.repository.VpnRepository
+import com.tobevpn.app.domain.model.AppFilterMode
+import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.util.LocaleManager
@@ -37,7 +40,15 @@ class SettingsViewModel @Inject constructor(
     private val botApi: BotApi,
     private val prefsDataStore: PrefsDataStore,
     private val sessionDao: SessionDao,
+    appFilterRepository: AppFilterRepository,
 ) : ViewModel() {
+
+    val appFilterSummary: StateFlow<AppFilterState> = appFilterRepository.observeState()
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            AppFilterState(AppFilterMode.OFF, emptySet()),
+        )
 
     val authState: StateFlow<AuthState> = authRepository.observeAuthState()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AuthState.Anonymous)

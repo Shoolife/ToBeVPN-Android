@@ -1,17 +1,21 @@
 package com.tobevpn.app.presentation.main
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tobevpn.app.R
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.remote.BotApi
 import com.tobevpn.app.data.remote.dto.PurchasePlansDto
+import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.data.repository.AuthRepository
 import com.tobevpn.app.data.repository.CurrencyRepository
 import com.tobevpn.app.data.repository.PurchaseRepository
 import com.tobevpn.app.data.repository.VpnRepository
+import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.domain.model.Server
@@ -19,6 +23,7 @@ import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.vpn.VpnConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -28,6 +33,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -49,6 +55,8 @@ class MainViewModel @Inject constructor(
     private val currencyRepository: CurrencyRepository,
     private val purchaseRepository: PurchaseRepository,
     private val botApi: BotApi,
+    private val appFilterRepository: AppFilterRepository,
+    @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
     private val _rubToUsdRate = MutableStateFlow<Double?>(null)
@@ -66,6 +74,31 @@ class MainViewModel @Inject constructor(
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
     val usageInfo: StateFlow<UsageInfo> = connectionManager.usageInfo
     val sessionTimeSeconds: StateFlow<Long> = connectionManager.sessionTimeSeconds
+
+    /**
+     * Reactive reminder shown on Home when the user's app-filter selection
+     * would silently trap their traffic — currently only the "Whitelist
+     * with no apps picked" case (a connect attempt would establish a TUN
+     * that nothing is allowed to use). Emits null when the filter is fine,
+     * a localized message when it isn't. The Home screen renders this as
+     * the same red ErrorCard it uses for connection errors, so the warning
+     * disappears the moment the user picks an app or switches mode.
+     */
+    val appFilterReminder: StateFlow<String?> = appFilterRepository.observeState()
+        .map { state ->
+            if (state.mode == AppFilterMode.WHITELIST && state.selectedPackages.isEmpty()) {
+                context.getString(R.string.app_filter_empty_warning)
+            } else {
+                null
+            }
+        }
+        // Eagerly so the reminder is computed at MainViewModel construction
+        // — otherwise the first paint of Home rides on the StateFlow's
+        // initial `null` until the WhileSubscribed window opens, and the
+        // user briefly sees a blank "Disconnected" line before the
+        // reminder pops in. With Eagerly the reminder is in its final
+        // state by the time Home composes for the first time.
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _serverPing = MutableStateFlow<Long>(-1)
 
@@ -94,7 +127,13 @@ class MainViewModel @Inject constructor(
             authRepository.fetchRemoteConfig()
             authRepository.getOrCreateDeviceId()
             authRepository.ensurePanelUser()
-            authRepository.syncSubscription()
+            // Force the first sync of each cold start — the throttle window
+            // exists to keep onResume / screen-open from hammering the panel,
+            // not to skip the user's expectation that opening the app shows
+            // the actual current plan. Otherwise a stale cached "FREE_TRIAL"
+            // (e.g. from a transient panel hiccup that returned empty squads)
+            // sticks for up to 12h until the next force-refresh.
+            authRepository.syncSubscription(force = true)
             vpnRepository.refreshServers()
             lastSyncTime = System.currentTimeMillis()
             initialized = true

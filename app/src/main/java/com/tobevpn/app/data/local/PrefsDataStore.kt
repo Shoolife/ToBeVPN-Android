@@ -43,9 +43,12 @@ class PrefsDataStore @Inject constructor(
         // surfaces in its "subscription auto-refresh" field.
         val LAST_SUB_SYNC_AT = longPreferencesKey("last_sub_sync_at")
         val SUB_UPDATE_INTERVAL_MS = longPreferencesKey("sub_update_interval_ms")
-        // Cached subscription URL so the connect-time HWID ping can fire
-        // without a fresh /api/panel/sub/.../info round-trip.
-        val SUBSCRIPTION_URL = stringPreferencesKey("subscription_url")
+        // Per-app VPN filter mode: "OFF", "WHITELIST" or "BLACKLIST".
+        // The set of selected packages lives in the Room app_filter table —
+        // we keep the mode in Prefs so a destructive DB migration doesn't
+        // accidentally land us in WHITELIST with an empty selection (which
+        // would block every app's traffic).
+        val APP_FILTER_MODE = stringPreferencesKey("app_filter_mode")
     }
 
     val deviceId: Flow<String?> = context.dataStore.data.map { it[Keys.DEVICE_ID] }
@@ -153,14 +156,14 @@ class PrefsDataStore @Inject constructor(
         }
     }
 
-    suspend fun getCachedSubscriptionUrl(): String? {
-        return context.dataStore.data.first()[Keys.SUBSCRIPTION_URL]
+    val appFilterMode: Flow<String?> = context.dataStore.data.map { it[Keys.APP_FILTER_MODE] }
+
+    suspend fun getAppFilterMode(): String? {
+        return context.dataStore.data.first()[Keys.APP_FILTER_MODE]
     }
 
-    suspend fun setCachedSubscriptionUrl(url: String?) {
-        context.dataStore.edit {
-            if (url.isNullOrBlank()) it.remove(Keys.SUBSCRIPTION_URL) else it[Keys.SUBSCRIPTION_URL] = url
-        }
+    suspend fun setAppFilterMode(mode: String) {
+        context.dataStore.edit { it[Keys.APP_FILTER_MODE] = mode }
     }
 
     companion object {

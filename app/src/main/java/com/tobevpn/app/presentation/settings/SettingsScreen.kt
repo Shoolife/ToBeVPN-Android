@@ -82,6 +82,7 @@ import com.tobevpn.app.util.TelegramLinks
 fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToAuth: () -> Unit,
+    onNavigateToAppFilter: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
@@ -297,6 +298,13 @@ fun SettingsScreen(
                     )
                 }
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            AppFilterRow(
+                state = viewModel.appFilterSummary.collectAsStateWithLifecycle().value,
+                onClick = onNavigateToAppFilter,
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -957,6 +965,57 @@ private fun EmailInput(
             },
         ) {
             Text(stringResource(R.string.cancel))
+        }
+    }
+}
+
+@Composable
+private fun AppFilterRow(
+    state: com.tobevpn.app.domain.model.AppFilterState,
+    onClick: () -> Unit,
+) {
+    val subtitle = when (state.mode) {
+        com.tobevpn.app.domain.model.AppFilterMode.OFF ->
+            stringResource(R.string.app_filter_subtitle_off)
+        com.tobevpn.app.domain.model.AppFilterMode.WHITELIST ->
+            stringResource(R.string.app_filter_subtitle_whitelist, state.selectedPackages.size)
+        com.tobevpn.app.domain.model.AppFilterMode.BLACKLIST ->
+            stringResource(R.string.app_filter_subtitle_blacklist, state.selectedPackages.size)
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClick = onClick)
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.settings_app_filter),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        Color.Black
+                    },
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

@@ -13,6 +13,9 @@ import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import com.tobevpn.app.MainActivity
 import com.tobevpn.app.R
+import com.tobevpn.app.data.repository.AppFilterRepository
+import com.tobevpn.app.domain.model.AppFilterMode
+import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.ConnectionState
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
@@ -29,6 +32,9 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
 
     @Inject
     lateinit var connectionManager: VpnConnectionManager
+
+    @Inject
+    lateinit var appFilterRepository: AppFilterRepository
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
@@ -103,8 +109,9 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         }
     }
 
-    private fun setupTunInterface(): ParcelFileDescriptor? {
-        return Builder()
+    private suspend fun setupTunInterface(): ParcelFileDescriptor? {
+        val filter = appFilterRepository.getSnapshot()
+        val builder = Builder()
             .setSession("ToBeVPN")
             .setMtu(1500)
             .addAddress("10.10.14.1", 30)
@@ -115,8 +122,51 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             .addDnsServer("8.8.8.8")
             .addDnsServer("2606:4700:4700::1111")
             .addDnsServer("2001:4860:4860::8888")
-            .addDisallowedApplication(packageName)
-            .establish()
+        applyAppFilter(builder, filter)
+        return builder.establish()
+    }
+
+    /**
+     * Translates an [AppFilterState] into Builder allow/disallow calls.
+     *
+     * Routing rules:
+     *   * OFF       — every app uses the VPN; we still disallow our own
+     *                 process so VPN traffic doesn't recurse through itself
+     *                 (the standard fix for the "loops back into the
+     *                 tunnel" deadlock).
+     *   * WHITELIST — only listed apps are allowed; everything else
+     *                 (including this app) bypasses the VPN. We deliberately
+     *                 don't add ourselves to either list — being absent
+     *                 from `addAllowedApplication` already keeps our
+     *                 traffic outside the tunnel.
+     *   * BLACKLIST — listed apps + this app bypass the VPN; everyone else
+     *                 is tunnelled.
+     *
+     * Stale entries (the user uninstalled an app after picking it) make
+     * `addAllowedApplication` throw NameNotFoundException. We silently
+     * skip those — no point failing the connect over a stale row.
+     */
+    private fun applyAppFilter(builder: Builder, state: AppFilterState) {
+        when (state.mode) {
+            AppFilterMode.OFF -> {
+                tryDisallow(builder, packageName)
+            }
+            AppFilterMode.WHITELIST -> {
+                state.selectedPackages.forEach { tryAllow(builder, it) }
+            }
+            AppFilterMode.BLACKLIST -> {
+                tryDisallow(builder, packageName)
+                state.selectedPackages.forEach { tryDisallow(builder, it) }
+            }
+        }
+    }
+
+    private fun tryAllow(builder: Builder, pkg: String) {
+        try { builder.addAllowedApplication(pkg) } catch (_: android.content.pm.PackageManager.NameNotFoundException) {}
+    }
+
+    private fun tryDisallow(builder: Builder, pkg: String) {
+        try { builder.addDisallowedApplication(pkg) } catch (_: android.content.pm.PackageManager.NameNotFoundException) {}
     }
 
     /**

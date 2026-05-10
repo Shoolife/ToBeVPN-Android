@@ -222,4 +222,21 @@
     <string name="update_check_button">Check</string>
     <string name="update_check_uptodate">Version %1$s</string>
     <string name="update_available_short">Version %1$s · v%2$s available</string>
+    <!-- Per-app VPN filter -->
+    <string name="settings_app_filter">VPN apps</string>
+    <string name="app_filter_title">VPN apps</string>
+    <string name="app_filter_mode_off">All apps</string>
+    <string name="app_filter_mode_whitelist">Only selected</string>
+    <string name="app_filter_mode_blacklist">Except selected</string>
+    <string name="app_filter_subtitle_off">All apps go through the VPN</string>
+    <string name="app_filter_subtitle_whitelist">Only selected: %1$d</string>
+    <string name="app_filter_subtitle_blacklist">Except selected: %1$d</string>
+    <string name="app_filter_search_hint">Search apps</string>
+    <string name="app_filter_show_system">Show system apps</string>
+    <string name="app_filter_select_all">Select all</string>
+    <string name="app_filter_clear_all">Clear</string>
+    <string name="app_filter_selected_count">%1$d of %2$d selected</string>
+    <string name="app_filter_off_explainer">Every app on the device routes its traffic through the VPN. Pick a different mode to choose specific apps.</string>
+    <string name="app_filter_empty_warning">Select at least one app — otherwise no traffic will go through the VPN.</string>
+    <string name="app_filter_reconnect_hint">VPN will reconnect to apply changes</string>
 </resources>

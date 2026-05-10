@@ -20,4 +20,10 @@ data class SessionEntity(
     val shortUuid: String? = null,
     val panelUserUuid: String? = null,
     val email: String? = null,
+    // Per-user subscription URL (https://<panel-host>/<KEY>). The path
+    // segment is a secret token issued by the panel — anyone with the
+    // URL can pull the user's VPN config. Lives here in the encrypted
+    // SessionEntity so it never leaks into Auto Backup, which is allowed
+    // to copy the plaintext PrefsDataStore file off-device.
+    val subscriptionUrl: String? = null,
 )

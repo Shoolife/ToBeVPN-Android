@@ -6,6 +6,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.tobevpn.app.data.local.AppDatabase
 import com.tobevpn.app.data.local.DatabasePassphrase
+import com.tobevpn.app.data.local.dao.AppFilterDao
 import com.tobevpn.app.data.local.dao.ServerDao
 import com.tobevpn.app.data.local.dao.SessionDao
 import com.tobevpn.app.data.local.dao.TrafficLogDao
@@ -37,7 +38,7 @@ object DatabaseModule {
             "tobevpn.db",
         )
             .openHelperFactory(SupportOpenHelperFactory(passphrase))
-            .addMigrations(MIGRATION_8_9)
+            .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
             .fallbackToDestructiveMigration(dropAllTables = false)
             .build()
     }
@@ -47,6 +48,32 @@ object DatabaseModule {
     private val MIGRATION_8_9 = object : Migration(8, 9) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE session ADD COLUMN email TEXT")
+        }
+    }
+
+    // v9 → v10: per-app VPN filter selection. Stores only the package names
+    // chosen by the user; the mode (off/whitelist/blacklist) lives in
+    // PrefsDataStore so a wipe of the encrypted DB doesn't strand an
+    // empty whitelist that would block all traffic on next connect.
+    private val MIGRATION_9_10 = object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS app_filter (" +
+                    "packageName TEXT NOT NULL PRIMARY KEY" +
+                    ")",
+            )
+        }
+    }
+
+    // v10 → v11: SessionEntity gained a `subscriptionUrl` column. The
+    // URL contains a per-user secret key, so we moved it out of plaintext
+    // PrefsDataStore into the encrypted session row — that lets us drop
+    // the blanket Auto-Backup exclusion on tobevpn_prefs and start
+    // restoring non-secret settings (filter mode, language, etc.) across
+    // reinstalls.
+    private val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE session ADD COLUMN subscriptionUrl TEXT")
         }
     }
 
@@ -84,4 +111,7 @@ object DatabaseModule {
 
     @Provides
     fun provideTrafficLogDao(db: AppDatabase): TrafficLogDao = db.trafficLogDao()
+
+    @Provides
+    fun provideAppFilterDao(db: AppDatabase): AppFilterDao = db.appFilterDao()
 }

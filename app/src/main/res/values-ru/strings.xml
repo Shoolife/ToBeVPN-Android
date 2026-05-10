@@ -222,4 +222,21 @@
     <string name="update_check_button">Проверить</string>
     <string name="update_check_uptodate">Версия %1$s</string>
     <string name="update_available_short">Версия %1$s · доступна v%2$s</string>
+    <!-- Раздельное туннелирование (per-app) -->
+    <string name="settings_app_filter">Приложения VPN</string>
+    <string name="app_filter_title">Приложения VPN</string>
+    <string name="app_filter_mode_off">Все приложения</string>
+    <string name="app_filter_mode_whitelist">Только выбранные</string>
+    <string name="app_filter_mode_blacklist">Кроме выбранных</string>
+    <string name="app_filter_subtitle_off">Все приложения идут через VPN</string>
+    <string name="app_filter_subtitle_whitelist">Только выбранные: %1$d</string>
+    <string name="app_filter_subtitle_blacklist">Кроме выбранных: %1$d</string>
+    <string name="app_filter_search_hint">Поиск приложений</string>
+    <string name="app_filter_show_system">Показать системные</string>
+    <string name="app_filter_select_all">Выбрать все</string>
+    <string name="app_filter_clear_all">Очистить</string>
+    <string name="app_filter_selected_count">Выбрано: %1$d из %2$d</string>
+    <string name="app_filter_off_explainer">Все приложения на устройстве используют VPN. Выберите другой режим, чтобы указать конкретные приложения.</string>
+    <string name="app_filter_empty_warning">Выберите хотя бы одно приложение — иначе через VPN ничего не пойдёт.</string>
+    <string name="app_filter_reconnect_hint">VPN переподключится для применения изменений</string>
 </resources>

@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -157,7 +158,15 @@ fun MainScreen(
                 },
                 actions = {
                     IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings))
+                        Icon(
+                            Icons.Default.Settings,
+                            contentDescription = stringResource(R.string.settings),
+                            tint = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                Color.Black
+                            },
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -192,7 +201,12 @@ fun MainScreen(
             // When the anonymous limit is exhausted we surface a dedicated banner
             // below, so suppress the generic red error text to avoid duplication.
             val isAnonExhausted = authState is AuthState.Anonymous && usageInfo.isExhausted
-            StatusText(connectionState, suppressError = isAnonExhausted)
+            val appFilterReminder by viewModel.appFilterReminder.collectAsStateWithLifecycle()
+            StatusText(
+                connectionState = connectionState,
+                suppressError = isAnonExhausted,
+                reminder = appFilterReminder,
+            )
 
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -401,17 +415,31 @@ private fun ConnectButtonLarge(
 }
 
 @Composable
-private fun StatusText(connectionState: ConnectionState, suppressError: Boolean = false) {
+private fun StatusText(
+    connectionState: ConnectionState,
+    suppressError: Boolean = false,
+    reminder: String? = null,
+) {
     val disconnected = stringResource(R.string.state_disconnected)
+    // Connection errors win over the ambient reminder — once the user has
+    // hit Connect, the actual error text is more useful than a generic
+    // "pick at least one app" hint. When there's no error, show the
+    // reminder instead (rendered with the same red ErrorCard so the
+    // visual weight matches). The reminder vanishes the moment its
+    // condition flips (mode flipped to Off, or user picked an app).
+    val errorMessage = (connectionState as? ConnectionState.Error)
+        ?.takeUnless { suppressError }
+        ?.message
+        ?: reminder
+    if (errorMessage != null) {
+        ErrorCard(message = errorMessage)
+        return
+    }
     val (text, color) = when (connectionState) {
         is ConnectionState.Disconnected -> disconnected to MaterialTheme.colorScheme.onSurfaceVariant
         is ConnectionState.Connecting -> stringResource(R.string.state_connecting) to VpnOrange
         is ConnectionState.Connected -> stringResource(R.string.state_connected) to VpnGreen
-        is ConnectionState.Error -> if (suppressError) {
-            disconnected to MaterialTheme.colorScheme.onSurfaceVariant
-        } else {
-            connectionState.message to VpnRed
-        }
+        is ConnectionState.Error -> disconnected to MaterialTheme.colorScheme.onSurfaceVariant
     }
     Text(
         text = text,
@@ -419,6 +447,56 @@ private fun StatusText(connectionState: ConnectionState, suppressError: Boolean 
         fontWeight = FontWeight.SemiBold,
         color = color,
     )
+}
+
+@Composable
+private fun ErrorCard(message: String) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    // Soft red wash that matches the rest of the card-based brand
+    // styling on Home — full-bleed VpnRed text was visually shouting
+    // against the otherwise-grey palette. Card height shrinks to the
+    // wrap-content of the message so a single-line warning doesn't
+    // leave a tall empty box.
+    val container = if (isDark) Color(0xFF3A1F22) else Color(0xFFFDECEE)
+    val border = if (isDark) Color(0xFF6B2A2F) else Color(0xFFF3C4CA)
+    val accent = VpnRed
+    val onSurfaceStrong = if (isDark) MaterialTheme.colorScheme.onSurface else Color(0xFF2D2F37)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 32.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = container),
+        border = androidx.compose.foundation.BorderStroke(1.dp, border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.15f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ErrorOutline,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = onSurfaceStrong,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
 }
 
 @Composable

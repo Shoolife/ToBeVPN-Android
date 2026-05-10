@@ -22,3 +22,6 @@ object SpeedTestRoute
 
 @Serializable
 object OnboardingRoute
+
+@Serializable
+object AppFilterRoute
