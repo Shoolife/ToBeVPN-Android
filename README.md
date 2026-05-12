@@ -21,7 +21,7 @@
 
 ToBeVPN — нативный Android-клиент к VPN-сети на стеке **XRay + VLESS Reality**, с управлением через **backend**, авторизацией через **Telegram flow** и оплатой подписки в **in-app payment**. Разделение трафика по приложениям, кросс-устройственная пара через QR, в-апп обновлятор, шифрованное локальное хранилище — всё это.
 
-> **Не public distribution.** Проект распространяется через release assets (sideload через APK) и RuStore (AAB).
+> **Не public distribution.** Проект распространяется через release assets (sideload через APK).
 
 ## Главное
 
@@ -122,7 +122,7 @@ keystore.keyPassword=...
 ./gradlew installDebug          # debug-сборка → подключенное устройство
 ./gradlew installRelease        # release-сборка (требует keystore)
 ./gradlew assembleRelease       # APK-сплиты в app/build/outputs/apk/release/
-./gradlew bundleRelease -PdisableAbiSplits   # AAB для Play / RuStore
+./gradlew bundleRelease -PdisableAbiSplits   # AAB (резервный формат, CI кладёт в release)
 ```
 
 > При сборке APK-сплитов Gradle создаёт **4 файла** — `arm64-v8a`, `armeabi-v7a`, `x86_64` плюс универсальный fallback. Это уменьшает размер скачивания на устройстве с 30 МБ до 10–13 МБ.
