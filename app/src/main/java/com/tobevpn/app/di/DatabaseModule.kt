@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.room.RoomDatabase
 import com.tobevpn.app.data.local.AppDatabase
 import com.tobevpn.app.data.local.DatabasePassphrase
 import com.tobevpn.app.data.local.dao.AppFilterDao
@@ -40,6 +41,15 @@ object DatabaseModule {
             .openHelperFactory(SupportOpenHelperFactory(passphrase))
             .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
             .fallbackToDestructiveMigration(dropAllTables = false)
+            // TRUNCATE journal (no WAL) — committed writes land in the
+            // main .db file synchronously, so a process kill / force-stop
+            // between sessions can't lose data that's already been
+            // emitted by the DAO observer. Default (WAL) batches writes
+            // into a separate -wal file that's only checkpointed back
+            // periodically; a SIGKILL between commit and checkpoint
+            // silently loses the staged rows on next open, which is
+            // exactly the symptom we saw on app_filter and usage tables.
+            .setJournalMode(RoomDatabase.JournalMode.TRUNCATE)
             .build()
     }
 
@@ -77,6 +87,22 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * Probe the DB file to make sure it's openable with the current
+     * SQLCipher passphrase. Originally this wiped the file on any
+     * exception ("upgrading from non-SQLCipher build" recovery), but
+     * the catch-all was too aggressive — *any* transient failure
+     * (UnsatisfiedLinkError on the first open before
+     * System.loadLibrary("sqlcipher") finished registering JNI symbols,
+     * temporary file locks, etc.) would silently delete the user's
+     * data on every cold start.
+     *
+     * We now only wipe on **real** corruption (a SQLite-level error
+     * like "file is not a database"), and rethrow anything else so the
+     * caller can decide. NativeMethodNotFoundError (the "No
+     * implementation found for nativeOpen" race that ate our writes)
+     * no longer triggers a wipe.
+     */
     private fun ensureCipherCompatible(
         context: Context,
         dbName: String,
@@ -93,10 +119,17 @@ object DatabaseModule {
                 null,
                 null,
             ).close()
-        } catch (_: Throwable) {
+        } catch (_: android.database.SQLException) {
+            // Real SQLite-level failure (decryption mismatch, corruption)
+            // — the file is unrecoverable, drop it so Room recreates schema.
             dbFile.delete()
             java.io.File("${dbFile.absolutePath}-shm").delete()
             java.io.File("${dbFile.absolutePath}-wal").delete()
+        } catch (_: Throwable) {
+            // Anything else (JNI registration race, file lock, permission
+            // hiccup) — SKIP the wipe. Room's own open path will surface
+            // a real corruption error if there is one, while transient
+            // failures don't cost us the user's data on every cold start.
         }
     }
 

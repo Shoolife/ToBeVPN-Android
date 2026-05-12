@@ -99,26 +99,26 @@ class AppFilterViewModel @Inject constructor(
     }
 
     fun setMode(mode: AppFilterMode) {
-        viewModelScope.launch { repo.setMode(mode) }
+        // Repository owns the coroutine for writes — fire-and-forget here
+        // so a quick back-out from the screen can't cancel the DB write
+        // mid-flight (the v1.0.11 silent-data-loss bug).
+        repo.setMode(mode)
         flashReconnectBanner()
     }
 
     fun toggle(packageName: String) {
-        viewModelScope.launch { repo.toggle(packageName) }
+        repo.toggle(packageName)
         flashReconnectBanner()
     }
 
     fun selectAll() {
-        viewModelScope.launch {
-            val visible = state.value.visibleApps.map { it.packageName }
-            val merged = (selected.value + visible).toSet()
-            repo.setSelected(merged)
-        }
+        val visible = state.value.visibleApps.map { it.packageName }
+        repo.setSelected((selected.value + visible).toSet())
         flashReconnectBanner()
     }
 
     fun clearAll() {
-        viewModelScope.launch { repo.clearAll() }
+        repo.clearAll()
         flashReconnectBanner()
     }
 

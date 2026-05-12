@@ -5,9 +5,13 @@ import com.tobevpn.app.data.local.dao.AppFilterDao
 import com.tobevpn.app.data.local.entity.AppFilterEntry
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,6 +20,13 @@ class AppFilterRepository @Inject constructor(
     private val dao: AppFilterDao,
     private val prefs: PrefsDataStore,
 ) {
+    // Writes run on this singleton-scoped coroutine, *not* the calling
+    // ViewModel's viewModelScope. Otherwise a fast user (tap a checkbox,
+    // immediately back out of the screen) would have the toggle coroutine
+    // cancelled before dao.insert() ever ran — exactly the data-loss
+    // we hit in v1.0.11 (TBV-FILTER logs showed an empty table on every
+    // cold start despite the user having ticked apps).
+    private val writeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     fun observeMode(): Flow<AppFilterMode> = prefs.appFilterMode.map { parseMode(it) }
 
     fun observeSelectedPackages(): Flow<Set<String>> =
@@ -40,23 +51,28 @@ class AppFilterRepository @Inject constructor(
         return AppFilterState(mode = mode, selectedPackages = selected)
     }
 
-    suspend fun setMode(mode: AppFilterMode) {
-        prefs.setAppFilterMode(mode.name)
+    fun setMode(mode: AppFilterMode) {
+        writeScope.launch { prefs.setAppFilterMode(mode.name) }
     }
 
-    suspend fun toggle(packageName: String) {
-        val current = dao.getPackages().toSet()
-        if (packageName in current) dao.delete(packageName)
-        else dao.insert(AppFilterEntry(packageName))
+    fun toggle(packageName: String) {
+        writeScope.launch {
+            val current = dao.getPackages().toSet()
+            if (packageName in current) dao.delete(packageName)
+            else dao.insert(AppFilterEntry(packageName))
+        }
     }
 
-    suspend fun setSelected(packageNames: Collection<String>) {
-        dao.clear()
-        packageNames.forEach { dao.insert(AppFilterEntry(it)) }
+    fun setSelected(packageNames: Collection<String>) {
+        val snapshot = packageNames.toList()
+        writeScope.launch {
+            dao.clear()
+            snapshot.forEach { dao.insert(AppFilterEntry(it)) }
+        }
     }
 
-    suspend fun clearAll() {
-        dao.clear()
+    fun clearAll() {
+        writeScope.launch { dao.clear() }
     }
 
     private fun parseMode(raw: String?): AppFilterMode = when (raw) {
