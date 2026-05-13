@@ -25,8 +25,8 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 13
-        versionName = "1.0.12"
+        versionCode = 14
+        versionName = "1.0.13"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -56,11 +56,12 @@ android {
         // empty default last so a missing config degrades gracefully
         // instead of breaking the build.
         //
-        //   FALLBACK_BOT_DOMAIN  — bare hostname of the bot mirror gateway
-        //                          (no scheme, no path). The interceptor
-        //                          swaps the primary host for this one when
-        //                          the primary is unreachable, preserving
-        //                          path / query / headers / body verbatim.
+        //   FALLBACK_BOT_DOMAIN  — full URL of the bot fallback proxy function,
+        //                          e.g. https://<fallback-host>/<id>?u=.
+        //                          The interceptor retries through it when the
+        //                          primary is unreachable, passing the original
+        //                          host / path / query in the `u` parameter and
+        //                          preserving headers / body / method verbatim.
         //   FALLBACK_SUBS_DOMAIN — full URL ending in `?sub=`. The trailing
         //                          path segment of the panel's subscription
         //                          URL is appended directly.

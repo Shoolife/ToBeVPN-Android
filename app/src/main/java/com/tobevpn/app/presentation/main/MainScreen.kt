@@ -629,6 +629,13 @@ private fun ServerSelectorCard(
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
+            } else if (server != null && server.ping < 0) {
+                Text(
+                    text = stringResource(R.string.server_unavailable),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = VpnRed,
+                )
+                Spacer(modifier = Modifier.width(8.dp))
             }
             Icon(
                 Icons.Default.KeyboardArrowRight,
@@ -861,13 +868,21 @@ private fun SubscriptionBottomSheet(
             )
 
             // Current plan info
+            val quotaMonth = stringResource(R.string.plan_quota_month)
             val trafficGb: Int? = currentLimits?.trafficLimitBytes
                 ?.takeIf { it > 0 }
                 ?.let { (it / (1024L * 1024L * 1024L)).toInt() }
             val deviceLimit: Int? = currentLimits?.deviceLimit?.takeIf { it > 0 }
             val showLimits = authState is AuthState.Authenticated &&
-                (authState.plan == UserPlan.PAID || authState.plan == UserPlan.ADMIN) &&
-                (trafficGb != null || deviceLimit != null)
+                (authState.plan == UserPlan.PAID || authState.plan == UserPlan.ADMIN)
+            val trafficLimitValue = trafficGb
+                ?.let { "$it ${stringResource(R.string.unit_gb)}" }
+                ?: if (currentLimits != null && currentLimits.trafficLimitBytes <= 0) {
+                    "\u221E"
+                } else {
+                    "XXX ${stringResource(R.string.unit_gb)}"
+                }
+            val deviceLimitValue = deviceLimit?.toString() ?: "XX"
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -972,26 +987,20 @@ private fun SubscriptionBottomSheet(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
-                            if (trafficGb != null) {
-                                LimitStat(
-                                    value = "$trafficGb ${stringResource(R.string.unit_gb)}",
-                                    label = stringResource(R.string.per_month_short),
-                                )
-                            }
-                            if (trafficGb != null && deviceLimit != null) {
-                                Text(
-                                    text = "·",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 22.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            if (deviceLimit != null) {
-                                LimitStat(
-                                    value = deviceLimit.toString(),
-                                    label = stringResource(R.string.devices_label),
-                                )
-                            }
+                            LimitStat(
+                                value = trafficLimitValue,
+                                label = stringResource(R.string.per_month_short),
+                            )
+                            Text(
+                                text = "·",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 22.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            LimitStat(
+                                value = deviceLimitValue,
+                                label = stringResource(R.string.devices_label),
+                            )
                         }
                     }
                 }
@@ -1011,11 +1020,10 @@ private fun SubscriptionBottomSheet(
 
             data class PlanInfo(val key: String, val title: String, val priceDisplay: String, val description: String, val botPaymentUrl: String? = null)
 
-            val quotaMonth = stringResource(R.string.plan_quota_month)
             val isRussian = LocalContext.current.resources.configuration.locales[0].language == "ru"
 
             // Build the per-row description ("200 ГБ / месяц · до 5 устройств") from the
-            // backend plan, falling back to the hardcoded quota text when the data is missing.
+            // backend plan, falling back to an explicit unknown quota when the data is missing.
             val planDescription: String = run {
                 val sourcePlanForDesc = purchasePlans?.plans
                     ?.filter { it.durations.any { d -> d.days > 0 } }
@@ -1030,7 +1038,8 @@ private fun SubscriptionBottomSheet(
                 val devicePart = deviceLimit
                     ?.takeIf { it > 0 }
                     ?.let { stringResource(R.string.plan_devices_fmt, it) }
-                if (devicePart != null) "$trafficPart \u00B7 $devicePart" else trafficPart
+                    ?: stringResource(R.string.plan_devices_unknown)
+                "$trafficPart \u00B7 $devicePart"
             }
 
             fun formatRubAmount(amount: String): String {
@@ -1113,7 +1122,7 @@ private fun SubscriptionBottomSheet(
                         )
                     }
             } else {
-                // Fallback hardcode while data is loading or request failed.
+                // Fallback prices while data is loading or request failed.
                 val rubPrices = listOf(15, 65, 200, 500, 1500)
                 fun fallbackPrice(rubPrice: Int): String {
                     return if (isRussian) {
@@ -1126,11 +1135,11 @@ private fun SubscriptionBottomSheet(
                     }
                 }
                 listOf(
-                    PlanInfo("day", stringResource(R.string.plan_day), fallbackPrice(rubPrices[0]), quotaMonth),
-                    PlanInfo("week", stringResource(R.string.plan_week), fallbackPrice(rubPrices[1]), quotaMonth),
-                    PlanInfo("month", stringResource(R.string.plan_month), fallbackPrice(rubPrices[2]), quotaMonth),
-                    PlanInfo("3month", stringResource(R.string.plan_3month), fallbackPrice(rubPrices[3]), quotaMonth),
-                    PlanInfo("year", stringResource(R.string.plan_year), fallbackPrice(rubPrices[4]), quotaMonth),
+                    PlanInfo("day", stringResource(R.string.plan_day), fallbackPrice(rubPrices[0]), planDescription),
+                    PlanInfo("week", stringResource(R.string.plan_week), fallbackPrice(rubPrices[1]), planDescription),
+                    PlanInfo("month", stringResource(R.string.plan_month), fallbackPrice(rubPrices[2]), planDescription),
+                    PlanInfo("3month", stringResource(R.string.plan_3month), fallbackPrice(rubPrices[3]), planDescription),
+                    PlanInfo("year", stringResource(R.string.plan_year), fallbackPrice(rubPrices[4]), planDescription),
                 )
             }
             var selectedPlan by remember(plans) {

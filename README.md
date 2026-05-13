@@ -37,7 +37,7 @@ ToBeVPN — нативный Android-клиент к VPN-сети на стек�
 | 🔄 **In-app updater** | Скачивание .apk-сплита под текущий ABI, прогресс-баннер, persistent dismiss |
 | 🌗 **Light / Dark / RU / EN** | Compose Material 3, ручное переключение языка |
 | 🔒 **SQLCipher-шифрование** | Локальная БД зашифрована, passphrase в Android Keystore |
-| 🛟 **Fallback proxy** | При недоступности основного бэкенда — автоматическая подмена хоста на резервный |
+| 🛟 **Fallback proxy** | При недоступности основного бэкенда — автоматический повтор через резервную proxy-функцию |
 
 ## Скриншоты
 
@@ -103,8 +103,8 @@ sdk.dir=/path/to/Android/Sdk
 # Bot backend (обязательно — production builds иначе не соберутся)
 bot.api.url=https://your.backend/
 
-# Резервный путь к bot API (опционально). Бар хостнейм, без https://.
-fallback.bot.domain=
+# Резервный путь к bot API (опционально). Полный URL функции с параметром ?u=.
+fallback.bot.domain=https://<fallback-host>/<id>?u=
 
 # Резервный URL подписки (опционально). Полный URL заканчивающийся на ?sub=.
 fallback.subs.domain=

@@ -100,7 +100,8 @@ class MainViewModel @Inject constructor(
         // state by the time Home composes for the first time.
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    private val _serverPing = MutableStateFlow<Long>(-1)
+    // 0 = not measured yet, >0 = successful TCP connect latency, <0 = unreachable.
+    private val _serverPing = MutableStateFlow<Long>(0)
 
     // Show the selected server (from prefs), not just the connected one
     val currentServer: StateFlow<Server?> = combine(
@@ -113,7 +114,7 @@ class MainViewModel @Inject constructor(
         } else {
             servers.firstOrNull()
         }
-        server?.copy(ping = if (ping >= 0) ping else server.ping)
+        server?.copy(ping = ping)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val authState: StateFlow<AuthState> = authRepository.observeAuthState()
@@ -273,6 +274,7 @@ class MainViewModel @Inject constructor(
 
     private fun loadCurrentLimits() {
         viewModelScope.launch {
+            _currentLimits.value = null
             val authenticated = authState
                 .filterIsInstance<AuthState.Authenticated>()
                 .first()
@@ -287,7 +289,7 @@ class MainViewModel @Inject constructor(
                     )
                 }
             } catch (_: Exception) {
-                // ignore — UI falls back to generic subtitle
+                _currentLimits.value = null
             }
         }
     }

@@ -56,8 +56,8 @@
     <string name="plan_until">until %1$s</string>
     <string name="plan_renew">Renew subscription</string>
     <string name="plan_active_until">Active until %1$s</string>
-    <string name="plan_quota_month">150 GB / month</string>
-    <string name="plan_renew_full">Renew subscription (150 GB / mo)</string>
+    <string name="plan_quota_month">XXX GB / month</string>
+    <string name="plan_renew_full">Renew subscription (XXX GB / month · up to XX devices)</string>
     <string name="plan_unlimited_access">Unlimited access</string>
     <string name="plan_limited_traffic">Limited traffic</string>
     <string name="current_plan">Current plan</string>
@@ -66,6 +66,7 @@
     <string name="devices_label">devices</string>
     <string name="plan_traffic_month_fmt">%1$d GB / month</string>
     <string name="plan_devices_fmt">up to %1$d devices</string>
+    <string name="plan_devices_unknown">up to XX devices</string>
     <string name="plan_unlimited_traffic">Unlimited traffic</string>
     <string name="available_plans">Available plans</string>
     <string name="payment_via_telegram">Payment via Telegram</string>

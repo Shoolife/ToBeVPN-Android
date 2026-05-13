@@ -178,10 +178,16 @@ private fun ServerItem(
                     )
                 }
             }
-            // Ping or offline
+            // Ping, unreachable or offline
             if (!server.isOnline) {
                 Text(
                     text = stringResource(R.string.server_offline),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = VpnRed,
+                )
+            } else if (server.ping < 0) {
+                Text(
+                    text = stringResource(R.string.server_unavailable),
                     style = MaterialTheme.typography.labelSmall,
                     color = VpnRed,
                 )

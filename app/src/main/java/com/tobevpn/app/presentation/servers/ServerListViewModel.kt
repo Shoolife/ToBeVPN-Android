@@ -35,7 +35,7 @@ class ServerListViewModel @Inject constructor(
     val servers: StateFlow<List<Server>> = vpnRepository.observeServers()
         .combine(_pings) { serverList, pingMap ->
             serverList.map { server ->
-                pingMap[server.id]?.let { server.copy(ping = it) } ?: server
+                pingMap[server.id]?.let { server.copy(ping = it) } ?: server.copy(ping = 0)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -87,7 +87,7 @@ class ServerListViewModel @Inject constructor(
                     server.id to measureTcpPing(server.address, server.port)
                 }
             }.awaitAll()
-            _pings.value = results.filter { it.second > 0 }.toMap()
+            _pings.value = results.toMap()
         }
     }
 
