@@ -75,7 +75,6 @@
     <string name="buy_plan">Buy "%1$s" for %2$s</string>
     <string name="price_rub">%1$s\u20BD</string>
     <string name="price_usd">$%1$s</string>
-    <string name="price_in-app currency">%1$s ⭐</string>
     <string name="plan_day">1 day</string>
     <string name="plan_week">7 days</string>
     <string name="plan_month">1 month</string>
@@ -84,11 +83,11 @@
 
     <!-- Auth screen -->
     <string name="auth_telegram_title">Sign in via Telegram</string>
-    <string name="auth_telegram_description">Sign in through our Telegram flow to manage your subscription and pay in app.</string>
+    <string name="auth_telegram_description">Sign in through Telegram to manage your subscription.</string>
     <string name="auth_open_telegram">Open Telegram</string>
     <string name="auth_opening_telegram">Opening Telegram…</string>
     <string name="auth_waiting">Waiting for authorization…</string>
-    <string name="auth_press_start">Press Start in the Telegram flow, then come back here.</string>
+    <string name="auth_press_start">Confirm sign-in in Telegram, then come back here.</string>
     <string name="auth_success">Authorization successful!</string>
     <string name="auth_success_description">Your account is linked to Telegram.</string>
     <string name="auth_error_server">Could not reach the server. Check your connection.</string>
@@ -176,7 +175,7 @@
     <string name="devices_refresh">Refresh</string>
     <string name="devices_loading">Loading devices…</string>
     <string name="devices_limit_reached">You have reached the device limit. Disconnect one device before linking a new one.</string>
-    <string name="devices_scanner_unavailable">QR scanner is unavailable. Update public distribution Services.</string>
+    <string name="devices_scanner_unavailable">QR scanner is unavailable. Update device services.</string>
     <string name="devices_unsupported_qr">This QR code is not supported for device sign-in.</string>
     <string name="devices_this_device">This device</string>
     <string name="devices_other_devices">Other devices</string>

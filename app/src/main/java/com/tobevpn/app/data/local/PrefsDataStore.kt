@@ -39,8 +39,8 @@ class PrefsDataStore @Inject constructor(
         // wall-clock instant of the last successful sync, and
         // `SUB_UPDATE_INTERVAL_MS` is the panel-recommended cadence taken
         // from the `profile-update-interval` HTTP header on the subscription
-        // URL response. The default of 12h matches what backend's UI
-        // surfaces in its "subscription auto-refresh" field.
+        // URL response. The default of 12h matches the subscription
+        // auto-refresh cadence used by the backend.
         val LAST_SUB_SYNC_AT = longPreferencesKey("last_sub_sync_at")
         val SUB_UPDATE_INTERVAL_MS = longPreferencesKey("sub_update_interval_ms")
         // Per-app VPN filter mode: "OFF", "WHITELIST" or "BLACKLIST".

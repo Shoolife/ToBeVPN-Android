@@ -16,9 +16,8 @@
          pick which ones bypass / use the tunnel (split-tunnelling). Without
          QUERY_ALL_PACKAGES Android 11+ filters PackageManager.getInstalledApplications()
          down to a tiny visible-by-default subset, hiding most third-party
-         apps the user would actually want to choose between (Ozon, Avito,
-         banking apps, etc.). public distribution's policy explicitly allows this
-         permission for VPN / firewall apps. -->
+         apps the user would actually want to choose between. Store policy
+         allows this permission for VPN / firewall apps. -->
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 

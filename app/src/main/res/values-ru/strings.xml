@@ -75,7 +75,6 @@
     <string name="buy_plan">Купить «%1$s» за %2$s</string>
     <string name="price_rub">%1$s\u20BD</string>
     <string name="price_usd">$%1$s</string>
-    <string name="price_in-app currency">%1$s ⭐</string>
     <string name="plan_day">1 день</string>
     <string name="plan_week">7 дней</string>
     <string name="plan_month">1 месяц</string>
@@ -84,11 +83,11 @@
 
     <!-- Auth screen -->
     <string name="auth_telegram_title">Вход через Telegram</string>
-    <string name="auth_telegram_description">Авторизуйтесь через нашего Telegram flowа, чтобы управлять подпиской и оплачивать в приложении.</string>
+    <string name="auth_telegram_description">Авторизуйтесь через Telegram, чтобы управлять подпиской.</string>
     <string name="auth_open_telegram">Открыть Telegram</string>
     <string name="auth_opening_telegram">Открываем Telegram…</string>
     <string name="auth_waiting">Ожидаем авторизацию…</string>
-    <string name="auth_press_start">Нажмите Start в Telegram flowе, затем вернитесь сюда.</string>
+    <string name="auth_press_start">Подтвердите вход в Telegram, затем вернитесь сюда.</string>
     <string name="auth_success">Авторизация успешна!</string>
     <string name="auth_success_description">Ваш аккаунт привязан к Telegram.</string>
     <string name="auth_error_server">Не удалось связаться с сервером. Проверьте подключение.</string>
@@ -176,7 +175,7 @@
     <string name="devices_refresh">Обновить</string>
     <string name="devices_loading">Загружаем устройства…</string>
     <string name="devices_limit_reached">Достигнут лимит устройств. Отключите одно устройство перед новой привязкой.</string>
-    <string name="devices_scanner_unavailable">QR-сканер недоступен. Обновите public distribution Services.</string>
+    <string name="devices_scanner_unavailable">QR-сканер недоступен. Обновите сервисы устройства.</string>
     <string name="devices_unsupported_qr">Этот QR-код не подходит для входа устройства.</string>
     <string name="devices_this_device">Это устройство</string>
     <string name="devices_other_devices">Другие устройства</string>

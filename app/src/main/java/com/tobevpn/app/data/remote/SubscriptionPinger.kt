@@ -16,17 +16,17 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import javax.net.ssl.SSLException
 
-// Direct GET on the panel's public subscription URL with HWID headers.
-// This is the only request backend actually parses to create/refresh an
-// HWID device record; the bot's /api/* endpoints don't expose it to the panel.
+// Direct GET on the public subscription URL with HWID headers.
+// This request creates/refreshes the HWID device record; regular API
+// endpoints don't expose the same device-binding path.
 // We hit the URL (a) before each VPN connect, (b) on subscription refresh.
 //
-// Resiliency: if the panel host is unreachable (network-level block,
+// Resiliency: if the subscription host is unreachable (network-level block,
 // partner outage, TLS handshake failure, timeout) and the operator has
 // configured FALLBACK_SUBS_DOMAIN, we transparently retry against the
 // fallback — same HWID headers, same effective subscription key. HWID
 // still lands so the user keeps a working subscription record even when
-// the original panel proxy is gone.
+// the original subscription proxy is gone.
 @Singleton
 class SubscriptionPinger @Inject constructor(
     private val fingerprintProvider: DeviceFingerprintProvider,
@@ -37,12 +37,12 @@ class SubscriptionPinger @Inject constructor(
         .build()
 
     /**
-     * Sends an HWID-tagged GET to [subscriptionUrl] and returns the panel's
+     * Sends an HWID-tagged GET to [subscriptionUrl] and returns the service's
      * recommended auto-refresh cadence in milliseconds, parsed from the
      * `profile-update-interval` response header (an integer number of hours,
      * the V2Ray subscription convention also honoured by Happ/V2RayN).
      *
-     * Returns `null` when the URL is blank, both legs fail, or the panel
+     * Returns `null` when the URL is blank, both legs fail, or the service
      * didn't include a usable header — callers fall back to the cached /
      * default interval rather than hammering the panel.
      */
@@ -84,7 +84,7 @@ class SubscriptionPinger @Inject constructor(
     /**
      * Parses the V2Ray-style `profile-update-interval` header. The value is
      * a whole number of hours; we accept stray whitespace / decimals and
-     * clamp to a sane range so a 0 / negative / absurdly-large panel value
+     * clamp to a sane range so a 0 / negative / absurdly-large service value
      * can't disable refreshes entirely or push them years into the future.
      */
     private fun readIntervalMs(raw: String?): Long? {
@@ -109,16 +109,16 @@ class SubscriptionPinger @Inject constructor(
 
     /**
      * The fallback URL configured via FALLBACK_SUBS_DOMAIN already ends
-     * with `?sub=`. We extract the trailing path segment of the panel's
+     * with `?sub=`. We extract the trailing path segment of the subscription
      * subscription URL (the per-user key) and append it. Returns null
      * when the fallback isn't configured or the URL doesn't contain a
      * key segment.
      */
-    private fun buildFallbackRequest(panelUrl: String, base: Request): Request? {
+    private fun buildFallbackRequest(subscriptionUrl: String, base: Request): Request? {
         val fallbackBase = BuildConfig.FALLBACK_SUBS_DOMAIN
         if (fallbackBase.isBlank()) return null
         val key = try {
-            panelUrl.toHttpUrl().pathSegments.lastOrNull { it.isNotBlank() }
+            subscriptionUrl.toHttpUrl().pathSegments.lastOrNull { it.isNotBlank() }
         } catch (_: IllegalArgumentException) {
             null
         } ?: return null
@@ -128,7 +128,7 @@ class SubscriptionPinger @Inject constructor(
 
     private fun logFailure(stage: String, e: IOException) {
         // Log only the exception class — the exception message can include
-        // the panel subscription URL (UnknownHostException prefixes the
+        // the subscription URL (UnknownHostException prefixes the
         // bare hostname), which we don't want to leak into logcat on
         // release builds.
         Log.w(TAG, "$stage ping failed: ${e.javaClass.simpleName}")
@@ -136,7 +136,7 @@ class SubscriptionPinger @Inject constructor(
 
     private companion object {
         const val TAG = "SubscriptionPinger"
-        // Floor at 1h so a misconfigured panel can't cause the client to
+        // Floor at 1h so a misconfigured service can't cause the client to
         // hammer it; ceiling at 7d so a typo'd value doesn't disable
         // subscription refreshes for the foreseeable future.
         const val MIN_INTERVAL_HOURS = 1.0

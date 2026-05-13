@@ -33,7 +33,7 @@ data class SessionTokensDto(
     @SerializedName("is_linked") val isLinked: Boolean = false,
 )
 
-// Telegram auth — server binds the current device session and returns auth_token.
+// Deep-link auth — server binds the current device session and returns auth_token.
 data class AuthRequestDto(
     @SerializedName("device_id") val deviceId: String? = null,
     @SerializedName("panel_user_uuid") val panelUserUuid: String? = null,
@@ -60,7 +60,7 @@ data class DeviceRegisterRequestDto(
     val platform: String,
 )
 
-// Unlinks a device belonging to the current Telegram user.
+// Unlinks a device belonging to the current account.
 data class DeviceUnlinkRequestDto(
     @SerializedName("device_id") val deviceId: String,
 )
@@ -79,7 +79,7 @@ data class LinkedDevicesDto(
     val devices: List<LinkedDeviceDto>,
 )
 
-// TV pairing — phone confirms with the code shown on TV; telegram_id is taken from session.
+// TV pairing — phone confirms with the code shown on TV; identity is taken from session.
 data class TvPairConfirmRequestDto(
     val code: String,
 )

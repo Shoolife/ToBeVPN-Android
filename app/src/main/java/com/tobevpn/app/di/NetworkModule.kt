@@ -100,8 +100,8 @@ object NetworkModule {
     }
 
     /**
-     * release assets API client used by the in-app updater. Independent OkHttp
-     * stack so its requests don't carry our session token (the GitHub API
+     * Release API client used by the in-app updater. Independent OkHttp
+     * stack so its requests don't carry our session token (the release API
      * doesn't need it and shouldn't see it) and don't pick up the BOT API's
      * user agent.
      */

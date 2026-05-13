@@ -56,8 +56,8 @@ android {
         // empty default last so a missing config degrades gracefully
         // instead of breaking the build.
         //
-        //   FALLBACK_BOT_DOMAIN  — full URL of the bot fallback proxy function,
-        //                          e.g. https://<fallback-host>/<id>?u=.
+        //   FALLBACK_BOT_DOMAIN  — full URL of the bot fallback proxy function
+        //                          ending in `?u=`.
         //                          The interceptor retries through it when the
         //                          primary is unreachable, passing the original
         //                          host / path / query in the `u` parameter and
@@ -117,7 +117,7 @@ android {
             }
             ndk {
                 abiFilters.clear()
-                // Production ABIs we ship to release assets. The splits {}
+                // Production ABIs we ship in release assets. The splits {}
                 // block below turns each into a separate APK so phones only
                 // download the native libs they actually need.
                 //   * arm64-v8a   — every modern Android phone (since 2017)

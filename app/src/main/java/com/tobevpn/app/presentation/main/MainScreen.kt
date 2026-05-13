@@ -1054,7 +1054,7 @@ private fun SubscriptionBottomSheet(
                 return "$%.2f".format(value)
             }
 
-            fun formatin-app currencyAmount(amount: String): String {
+            fun formatXtrAmount(amount: String): String {
                 val value = amount.toDoubleOrNull() ?: return "$amount \u2B50"
                 return "${value.toInt()} \u2B50"
             }
@@ -1068,7 +1068,7 @@ private fun SubscriptionBottomSheet(
                 return when {
                     isRussian -> prices["RUB"]?.amount?.let(::formatRubAmount)
                         ?: prices["USD"]?.amount?.let(::formatUsdAmount)
-                        ?: prices["XTR"]?.amount?.let(::formatin-app currencyAmount)
+                        ?: prices["XTR"]?.amount?.let(::formatXtrAmount)
                         ?: "—"
                     else -> prices["USD"]?.amount?.let(::formatUsdAmount)
                         ?: prices["RUB"]?.amount?.let { rub ->
@@ -1079,7 +1079,7 @@ private fun SubscriptionBottomSheet(
                                 formatRubAmount(rub)
                             }
                         }
-                        ?: prices["XTR"]?.amount?.let(::formatin-app currencyAmount)
+                        ?: prices["XTR"]?.amount?.let(::formatXtrAmount)
                         ?: "—"
                 }
             }
@@ -1203,7 +1203,7 @@ private fun SubscriptionBottomSheet(
                     onClick = {
                         val url = selectedLabel.botPaymentUrl
                         if (url != null) {
-                            // Extract bot username and start param from https://t.me/<bot>?start=<param>
+                            // Extract link target and start param from the auth URL.
                             val uri = Uri.parse(url)
                             val bot = uri.pathSegments?.firstOrNull() ?: ""
                             val startParam = uri.getQueryParameter("start") ?: ""

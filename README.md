@@ -4,7 +4,7 @@
 
 # ToBeVPN
 
-**Современный VPN-клиент для Android на базе XRay / VLESS с авторизацией через Telegram.**
+**Современный VPN-клиент для Android с подпиской, выбором серверов и встроенными обновлениями.**
 
 [![Latest Release](https://img.shields.io/github/v/release/Shoolife/ToBeVPN-Android?display_name=tag&sort=semver&color=4CAF50&label=release)](https://github.com/Shoolife/ToBeVPN-Android/releases/latest)
 [![Build](https://github.com/Shoolife/ToBeVPN-Android/actions/workflows/build.yml/badge.svg)](https://github.com/Shoolife/ToBeVPN-Android/actions/workflows/build.yml)
@@ -19,9 +19,7 @@
 
 ## Что это
 
-ToBeVPN — нативный Android-клиент к VPN-сети на стеке **XRay + VLESS Reality**, с управлением через **backend**, авторизацией через **Telegram flow** и оплатой подписки в **in-app payment**. Разделение трафика по приложениям, кросс-устройственная пара через QR, в-апп обновлятор, шифрованное локальное хранилище — всё это.
-
-> **Не public distribution.** Проект распространяется через release assets (sideload через APK).
+ToBeVPN — нативный Android-клиент к VPN-сети с защищённым подключением, управлением подпиской и привязкой устройств. Разделение трафика по приложениям, кросс-устройственная пара через QR, встроенный обновлятор, шифрованное локальное хранилище — всё это.
 
 ## Главное
 
@@ -29,12 +27,12 @@ ToBeVPN — нативный Android-клиент к VPN-сети на стек�
 |--|--|
 | 🛡️ **VLESS Reality** | XRay-core внутри, latest reality / xtls-rprx-vision |
 | 📲 **Per-app split tunneling** | Off / Whitelist / Blacklist, live-reconnect при изменении |
-| 🔐 **Telegram-авторизация** | Без логина/пароля — deep-link на бота, HWID-привязка устройств |
-| ⭐ **in-app payment** | Оплата подписки прямо в Telegram, без карт |
+| 🔐 **Авторизация** | Без логина/пароля, deep-link flow, HWID-привязка устройств |
+| 💳 **Подписка** | Продление и смена тарифа через backend flow |
 | 📺 **Парим TV** | QR-pairing для Android TV / другого устройства |
 | 🌍 **Выбор сервера** | Список нод с пингом, флагами, статусом online/offline |
-| 🚦 **Speed test** | Замер скорости через fallback provider speed |
-| 🔄 **In-app updater** | Скачивание .apk-сплита под текущий ABI, прогресс-баннер, persistent dismiss |
+| 🚦 **Speed test** | Замер скорости подключения |
+| 🔄 **In-app updater** | Проверка и установка обновлений внутри приложения |
 | 🌗 **Light / Dark / RU / EN** | Compose Material 3, ручное переключение языка |
 | 🔒 **SQLCipher-шифрование** | Локальная БД зашифрована, passphrase в Android Keystore |
 | 🛟 **Fallback proxy** | При недоступности основного бэкенда — автоматический повтор через резервную proxy-функцию |
@@ -103,8 +101,8 @@ sdk.dir=/path/to/Android/Sdk
 # Bot backend (обязательно — production builds иначе не соберутся)
 bot.api.url=https://your.backend/
 
-# Резервный путь к bot API (опционально). Полный URL функции с параметром ?u=.
-fallback.bot.domain=https://<fallback-host>/<id>?u=
+# Резервный путь к bot API (опционально). Полный URL proxy-function с параметром ?u=.
+fallback.bot.domain=https://<fallback-host>/<function-id>?u=
 
 # Резервный URL подписки (опционально). Полный URL заканчивающийся на ?sub=.
 fallback.subs.domain=
@@ -133,7 +131,7 @@ keystore.keyPassword=...
 1. Восстанавливает keystore из base64-секрета.
 2. Собирает APK-сплиты + AAB параллельно.
 3. Переименовывает артефакты в `ToBeVPN-<version>-<abi>-<sha>.apk`.
-4. Публикует release с APK + AAB на release assets.
+4. Публикует release assets с APK + AAB.
 
 Секреты репозитория, которые нужны:
 - `BOT_API_URL`
@@ -147,7 +145,7 @@ keystore.keyPassword=...
 - Subscription URL с секретным ключом, auth-токены, email — внутри зашифрованной БД, **исключены** из Auto Backup.
 - App filter mode / язык / выбранный сервер / agnostic preferences — попадают в Auto Backup, восстанавливаются при reinstall с тем же Google-аккаунтом.
 - Backend-хосты **не** хардкодятся в исходниках — инжектятся при сборке через CI-секреты, иначе билд падает.
-- Telegram flow deep-link генерируется на стороне backend'а, локально не хранятся long-lived tokens.
+- Auth deep-link генерируется на стороне backend'а, локально не хранятся long-lived tokens.
 
 Подробнее — `data/local/DatabasePassphrase.kt`, `xml/backup_rules.xml`, `xml/data_extraction_rules.xml`.
 

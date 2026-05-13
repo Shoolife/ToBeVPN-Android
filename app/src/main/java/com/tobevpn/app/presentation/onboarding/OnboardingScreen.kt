@@ -60,11 +60,11 @@ fun OnboardingScreen(
 
         FeatureItem("1 GB free traffic — no signup needed")
         Spacer(modifier = Modifier.height(12.dp))
-        FeatureItem("1 hour of VPN — enough to set up Telegram")
+        FeatureItem("1 hour of VPN — enough to finish setup")
         Spacer(modifier = Modifier.height(12.dp))
-        FeatureItem("Authorize via Telegram flow to unlock full plan")
+        FeatureItem("Authorize to unlock full plan")
         Spacer(modifier = Modifier.height(12.dp))
-        FeatureItem("Pay with in-app payment")
+        FeatureItem("Manage subscription in the app")
 
         Spacer(modifier = Modifier.height(48.dp))
 

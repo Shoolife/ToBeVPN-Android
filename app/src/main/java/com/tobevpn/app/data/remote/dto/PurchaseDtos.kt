@@ -2,7 +2,7 @@ package com.tobevpn.app.data.remote.dto
 
 import com.google.gson.annotations.SerializedName
 
-/** Response payload of GET /api/purchase/plans?telegram_id=... */
+/** Response payload of GET /api/purchase/plans. */
 data class PurchasePlansDto(
     @SerializedName("telegram_id") val telegramId: Long,
     @SerializedName("effective_discount_percent") val effectiveDiscountPercent: Int = 0,
@@ -42,14 +42,14 @@ data class PurchaseDurationDto(
 )
 
 data class PurchasePriceDto(
-    // "USD" | "RUB" | "XTR" (in-app payment)
+    // "USD" | "RUB" | "XTR" (server-defined in-app currency)
     val currency: String,
     // Decimal string, e.g. "15.00"
     val amount: String,
 )
 
 data class PurchasePaymentMethodDto(
-    // "TELEGRAM_STARS" | "CRYPTOMUS"
+    // Server-defined gateway type.
     @SerializedName("gateway_type") val gatewayType: String,
     val currency: String,
     @SerializedName("original_amount") val originalAmount: String,

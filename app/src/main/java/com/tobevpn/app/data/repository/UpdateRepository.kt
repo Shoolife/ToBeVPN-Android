@@ -13,13 +13,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Coordinates "is there a newer build?" check against release assets.
+ * Coordinates the "is there a newer build?" check against the release API.
  *
- * The check is best-effort: any error (no network, GitHub rate-limit, malformed
+ * The check is best-effort: any error (no network, rate-limit, malformed
  * response) returns [UpdateCheckResult.UpToDate] so the UI never blocks startup
  * because of an update probe.
  *
- * Caching: GitHub's unauthenticated API has a 60-req/hour cap per IP. With
+ * Caching: unauthenticated release API calls are rate-limited per IP. With
  * many users behind one carrier-grade NAT we'd burn that budget on cold-launch
  * spam. We cache the result for [CACHE_TTL_MS] (7 days) — that's the cadence
  * we expect to ship at, and the user can manually re-check from Settings if

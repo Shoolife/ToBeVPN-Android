@@ -24,10 +24,9 @@ import javax.net.ssl.SSLHandshakeException
  *   fallback: <method> https://<fallback-function>?u=<primary-host><path>?<query>
  *
  * The fallback endpoint is a proxy function. [BuildConfig.FALLBACK_BOT_DOMAIN]
- * stores its full URL (for example,
- * "https://<fallback-host>/<id>?u="). The original API target is
+ * stores its full URL, usually ending in `?u=`. The original API target is
  * passed through the `u` query parameter, using the host + path + query form
- * accepted by the proxy (for example, "primary-api.example/api/config"). Headers,
+ * accepted by the proxy (for example, "<primary-host>/api/config"). Headers,
  * body and HTTP method are preserved.
  *
  * A non-2xx HTTP response from the primary is **not** a fallback trigger —

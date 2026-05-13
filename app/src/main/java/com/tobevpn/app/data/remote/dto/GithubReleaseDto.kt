@@ -3,14 +3,8 @@ package com.tobevpn.app.data.remote.dto
 import com.google.gson.annotations.SerializedName
 
 /**
- * Subset of the release assets API response we care about.
- *
- * Endpoint: GET https://api.github.com/repos/{owner}/{repo}/releases/latest
- * Docs:     https://docs.github.com/rest/releases/releases#get-the-latest-release
- *
- * Unauthenticated requests are limited to 60/hour per IP — well above what we
- * need (one check per app launch). Authenticating would just complicate the
- * client and add no value here.
+ * Subset of the release API response we care about. Unauthenticated requests
+ * are enough for the app's normal update-check cadence.
  */
 data class GithubReleaseDto(
     @SerializedName("tag_name") val tagName: String,

@@ -46,11 +46,11 @@ class AuthRepository @Inject constructor(
     // Serialises concurrent syncSubscription() callers (MainViewModel.init,
     // ServerListViewModel.init and onResume() can fire near-simultaneously
     // on a fresh app launch). Without this each one independently hits the
-    // panel; with it, the second caller suspends, then sees the throttle
+    // backend; with it, the second caller suspends, then sees the throttle
     // window updated by the first and exits without a network call.
     private val syncMutex = Mutex()
 
-    /** Fetches remote config from backend. Call once on app start. */
+    /** Fetches remote config from the backend. Call once on app start. */
     suspend fun fetchRemoteConfig() {
         try {
             botApi.getConfig()
@@ -214,7 +214,7 @@ class AuthRepository @Inject constructor(
     }
 
     /**
-     * Requests Telegram auth via backend.
+     * Requests Telegram auth via the backend.
      * Returns Result with server-generated auth token on success.
      */
     suspend fun requestTelegramAuth(): Result<String> {
@@ -249,7 +249,7 @@ class AuthRepository @Inject constructor(
     }
 
     /**
-     * Polls backend for auth completion.
+     * Polls the backend for auth completion.
      * Returns true when Telegram auth is confirmed.
      */
     suspend fun checkAuthStatus(authToken: String): Boolean {
@@ -360,9 +360,9 @@ class AuthRepository @Inject constructor(
             val subInfo = botApi.getSubscriptionInfo(shortUuid).response
             if (!subInfo.isFound || subInfo.user == null) return
 
-            // Direct hit on the panel's public sub URL with HWID headers —
-            // only request backend actually parses for HWID device tracking,
-            // and the response carries the panel-recommended auto-refresh
+            // Direct hit on the public subscription URL with HWID headers —
+            // this is the request that refreshes HWID device tracking,
+            // and the response carries the service-recommended auto-refresh
             // cadence we use to throttle subsequent calls.
             val effectiveUrl = panelUser?.subscriptionUrl ?: subInfo.subscriptionUrl
             sessionStore.update { it.copy(subscriptionUrl = effectiveUrl) }
@@ -457,8 +457,8 @@ class AuthRepository @Inject constructor(
     }
 
     /**
-     * Bare HWID-marker ping — used by the connect path so backend
-     * registers the device on every VPN start. Skips the JSON
+     * Bare HWID-marker ping — used by the connect path so the subscription
+     * service registers the device on every VPN start. Skips the JSON
      * `getSubscriptionInfo` call entirely; reads the subscription URL
      * from the encrypted session row populated by the most recent
      * [syncSubscription]. If it's empty (very first connect on a fresh

@@ -179,8 +179,8 @@ class VpnConnectionManager @Inject constructor(
                 _connectionState.value = ConnectionState.Connecting
             }
 
-            // Fire-and-forget: hits the panel's public sub URL with HWID headers
-            // so backend registers/refreshes the HWID device on every connect.
+            // Fire-and-forget: hits the public subscription URL with HWID headers
+            // so the service registers/refreshes the HWID device on every connect.
             // Bare ping only — the JSON /api/panel/sub/.../info refresh is
             // throttled by syncSubscription's profile-update-interval window
             // and shouldn't be coupled to the connect cadence.

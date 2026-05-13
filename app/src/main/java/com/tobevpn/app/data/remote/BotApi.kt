@@ -90,7 +90,7 @@ interface BotApi {
         @Path("shortUuid") shortUuid: String,
     ): PanelResponse<PanelSubInfoDto>
 
-    // Purchase / tariff plans (primary-api backend) — server uses session for telegram_id.
+    // Purchase / tariff plans — server uses session identity.
 
     @GET("api/purchase/plans")
     suspend fun getPurchasePlans(): ApiResponse<PurchasePlansDto>

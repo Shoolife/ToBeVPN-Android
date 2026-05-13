@@ -172,7 +172,7 @@ class BootstrapManager @Inject constructor(
                     pendingAuthToken = null,
                 )
                 // The /auth/refresh endpoint can echo back stale isLinked=false even
-                // after Telegram auth completed via /auth/check, because the original
+                // after link auth completed via /auth/check, because the original
                 // session was opened anonymously. Without this guard, every token
                 // refresh would silently downgrade the user to ANONYMOUS, then
                 // ensurePanelUser would re-upgrade, then the next refresh downgrades

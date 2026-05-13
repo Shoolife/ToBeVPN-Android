@@ -6,11 +6,8 @@ import retrofit2.http.Headers
 import retrofit2.http.Path
 
 /**
- * Read-only client for release assets API. Used by the in-app updater to
- * discover the latest published APK without a custom backend endpoint.
- *
- * The Accept header is the GitHub-recommended pinning of API v3 — without it
- * GitHub may switch to a newer schema in the future and break our parser.
+ * Read-only release API client used by the in-app updater to discover the
+ * latest published APK without a custom backend endpoint.
  */
 interface GithubReleasesApi {
 
