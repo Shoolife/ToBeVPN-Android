@@ -29,7 +29,7 @@ ToBeVPN — нативный Android-клиент к VPN-сети с защищ�
 | 📲 **Per-app split tunneling** | Off / Whitelist / Blacklist, live-reconnect при изменении |
 | 🔐 **Авторизация** | Без логина/пароля, deep-link flow, HWID-привязка устройств |
 | 💳 **Подписка** | Продление и смена тарифа через backend flow |
-| 📺 **Парим TV** | QR-pairing для Android TV / другого устройства |
+| 📺 **Подключение ТВ** | QR-привязка Android TV или другого устройства |
 | 🌍 **Выбор сервера** | Список нод с пингом, флагами, статусом online/offline |
 | 🚦 **Speed test** | Замер скорости подключения |
 | 🔄 **In-app updater** | Проверка и установка обновлений внутри приложения |
@@ -152,7 +152,7 @@ keystore.keyPassword=...
 ## Связанные репозитории
 
 - **Desktop-клиент:** [ToBeVPN-Desktop](https://github.com/Shoolife/ToBeVPN-Desktop) — Tauri 2 + React (Linux/Windows/macOS)
-- *(планируется)* iOS / Android TV — отдельный экран pairing уже в этой кодовой базе
+- *(планируется)* iOS / Android TV — отдельный экран привязки уже в этой кодовой базе
 
 ## Roadmap
 

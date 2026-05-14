@@ -150,8 +150,8 @@
 
     <!-- Speed test -->
     <string name="speed_press_start">Нажмите «Начать»</string>
-    <string name="speed_via_vpn">Измеряется через VPN-туннель.</string>
-    <string name="speed_direct">Измеряется напрямую (VPN отключён).</string>
+    <string name="speed_via_vpn">Через VPN</string>
+    <string name="speed_direct">Напрямую</string>
     <string name="speed_no_tunnel">Подключитесь к VPN, чтобы измерить скорость туннеля.</string>
     <string name="speed_measuring_ping">Измерение пинга…</string>
     <string name="speed_downloading">Загрузка…</string>

@@ -150,8 +150,8 @@
 
     <!-- Speed test -->
     <string name="speed_press_start">Press "Start"</string>
-    <string name="speed_via_vpn">Measured through the VPN tunnel.</string>
-    <string name="speed_direct">Measured on your direct connection (VPN is off).</string>
+    <string name="speed_via_vpn">Via VPN</string>
+    <string name="speed_direct">Direct</string>
     <string name="speed_no_tunnel">Connect to the VPN to measure tunnel speed.</string>
     <string name="speed_measuring_ping">Measuring ping…</string>
     <string name="speed_downloading">Downloading…</string>

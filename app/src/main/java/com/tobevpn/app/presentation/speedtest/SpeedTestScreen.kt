@@ -2,6 +2,7 @@ package com.tobevpn.app.presentation.speedtest
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -24,6 +26,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -39,6 +42,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -58,11 +62,19 @@ fun SpeedTestScreen(
     viewModel: SpeedTestViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val viaVpn by viewModel.viaVpn.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.speed_test_title), fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        text = stringResource(R.string.speed_test_title),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -74,6 +86,12 @@ fun SpeedTestScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
+                actions = {
+                    SpeedRouteBadge(
+                        viaVpn = viaVpn,
+                        modifier = Modifier.padding(end = 12.dp),
+                    )
+                },
             )
         },
     ) { paddingValues ->
@@ -108,23 +126,7 @@ fun SpeedTestScreen(
                 color = if (state.errorRes != null) VpnRed else MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Tunnel-vs-direct disclosure. When VPN is active, traffic is routed
-            // through xray's local SOCKS5 inbound, so the measurement reflects
-            // the VLESS tunnel; otherwise it's a plain direct connection.
-            val viaVpn by viewModel.viaVpn.collectAsStateWithLifecycle()
-            Text(
-                text = stringResource(
-                    if (viaVpn) R.string.speed_via_vpn else R.string.speed_direct,
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 32.dp),
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(36.dp))
 
             // Results
             Row(
@@ -188,6 +190,53 @@ fun SpeedTestScreen(
                     modifier = Modifier.padding(vertical = 4.dp),
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SpeedRouteBadge(
+    viaVpn: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val backgroundColor = if (viaVpn) {
+        VpnGreen.copy(alpha = 0.16f)
+    } else {
+        MaterialTheme.colorScheme.surfaceContainerLow
+    }
+    val contentColor = if (viaVpn) {
+        VpnGreen
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val borderColor = if (viaVpn) {
+        VpnGreen.copy(alpha = 0.32f)
+    } else {
+        MaterialTheme.colorScheme.outlineVariant
+    }
+
+    Surface(
+        modifier = modifier
+            .height(28.dp)
+            .widthIn(min = 76.dp, max = 120.dp),
+        shape = RoundedCornerShape(percent = 50),
+        color = backgroundColor,
+        contentColor = contentColor,
+        border = BorderStroke(1.dp, borderColor),
+    ) {
+        Box(
+            modifier = Modifier.padding(horizontal = 10.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = stringResource(
+                    if (viaVpn) R.string.speed_via_vpn else R.string.speed_direct,
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
