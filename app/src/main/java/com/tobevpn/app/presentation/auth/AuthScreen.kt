@@ -39,6 +39,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.presentation.theme.VpnGreen
@@ -53,6 +54,11 @@ fun AuthScreen(
     val showEmailPrompt by viewModel.showEmailPrompt.collectAsStateWithLifecycle()
     val emailSaving by viewModel.emailSaving.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    LifecycleResumeEffect(Unit) {
+        viewModel.onReturnedFromTelegram()
+        onPauseOrDispose {}
+    }
 
     if (showEmailPrompt) {
         EmailPromptDialog(
@@ -186,12 +192,16 @@ private fun SuccessContent(onBack: () -> Unit) {
     Text(
         text = stringResource(R.string.auth_success),
         style = MaterialTheme.typography.headlineMedium,
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
     )
     Spacer(modifier = Modifier.height(8.dp))
     Text(
         text = stringResource(R.string.auth_success_description),
         style = MaterialTheme.typography.bodyMedium,
+        textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
     )
     Spacer(modifier = Modifier.height(32.dp))
     Button(

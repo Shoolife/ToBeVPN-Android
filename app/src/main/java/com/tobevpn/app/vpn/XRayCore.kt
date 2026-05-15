@@ -31,13 +31,17 @@ object XRayCore {
 
     private val loopGeneration = java.util.concurrent.atomic.AtomicInteger(0)
 
-    fun startLoop(configJson: String, tunFd: Int) {
+    val currentLoopGeneration: Int
+        get() = loopGeneration.get()
+
+    fun startLoop(configJson: String, tunFd: Int): Int {
         // Stop any leftover loop from a previous connection (e.g. after Error state)
         if (controller?.isRunning == true) {
             controller?.stopLoop()
         }
-        loopGeneration.incrementAndGet()
+        val generation = loopGeneration.incrementAndGet()
         controller?.startLoop(configJson, tunFd)
+        return generation
     }
 
     /**

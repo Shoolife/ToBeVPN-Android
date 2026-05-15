@@ -3,6 +3,7 @@ package com.tobevpn.app.data.repository
 import com.tobevpn.app.data.local.dao.ServerDao
 import com.tobevpn.app.data.local.dao.SessionDao
 import com.tobevpn.app.data.local.entity.ServerEntity
+import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.remote.BotApi
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.vpn.VlessUrlParser
@@ -18,6 +19,7 @@ import javax.inject.Singleton
 class VpnRepository @Inject constructor(
     private val serverDao: ServerDao,
     private val sessionDao: SessionDao,
+    private val prefsDataStore: PrefsDataStore,
     private val botApi: BotApi,
 ) {
     fun observeServers(): Flow<List<Server>> {
@@ -31,12 +33,16 @@ class VpnRepository @Inject constructor(
     }
 
     suspend fun refreshServers(): Result<List<Server>> {
-        return try {
-            val shortUuid = sessionDao.getSession()?.shortUuid
-                ?: return Result.failure(Exception("Нет подписки"))
+        val shortUuid = sessionDao.getSession()?.shortUuid
+        if (shortUuid.isNullOrBlank()) {
+            clearServerCache()
+            return Result.failure(Exception("Нет подписки"))
+        }
 
+        return try {
             val subInfo = botApi.getSubscriptionInfo(shortUuid).response
             if (!subInfo.isFound || subInfo.links.isNullOrEmpty()) {
+                clearServerCache()
                 return Result.failure(Exception("Подписка не найдена"))
             }
 
@@ -61,6 +67,7 @@ class VpnRepository @Inject constructor(
             // — handing it to xray would SIGSEGV the native loop.
 
             if (servers.isEmpty()) {
+                clearServerCache()
                 return Result.failure(Exception("Нет доступных серверов"))
             }
 
@@ -99,15 +106,26 @@ class VpnRepository @Inject constructor(
             }
 
             serverDao.replaceAll(entities)
+            prefsDataStore.setServerCacheOwner(shortUuid)
             Result.success(entities.map { it.toDomain() })
         } catch (e: Exception) {
-            val cached = serverDao.getAll().map { it.toDomain() }
+            val cached = if (prefsDataStore.isServerCacheOwner(shortUuid)) {
+                serverDao.getAll().map { it.toDomain() }.filterNot { it.isSentinel }
+            } else {
+                clearServerCache()
+                emptyList()
+            }
             if (cached.isNotEmpty()) {
                 Result.success(cached)
             } else {
                 Result.failure(e)
             }
         }
+    }
+
+    private suspend fun clearServerCache() {
+        serverDao.deleteAll()
+        prefsDataStore.clearServerCacheOwner()
     }
 
     suspend fun getServers(): List<Server> {

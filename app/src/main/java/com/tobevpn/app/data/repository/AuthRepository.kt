@@ -50,6 +50,22 @@ class AuthRepository @Inject constructor(
     // window updated by the first and exits without a network call.
     private val syncMutex = Mutex()
 
+    private fun planFromString(plan: String): UserPlan {
+        return runCatching { UserPlan.valueOf(plan) }.getOrDefault(UserPlan.FREE_TRIAL)
+    }
+
+    private fun sessionToAuthState(session: SessionEntity?): AuthState {
+        return if (session?.authState == "AUTHENTICATED" && session.telegramId != null) {
+            AuthState.Authenticated(
+                telegramId = session.telegramId,
+                plan = planFromString(session.userPlan),
+                planExpiresAt = session.planExpiresAt,
+            )
+        } else {
+            AuthState.Anonymous
+        }
+    }
+
     /** Fetches remote config from the backend. Call once on app start. */
     suspend fun fetchRemoteConfig() {
         try {
@@ -60,21 +76,13 @@ class AuthRepository @Inject constructor(
     }
 
     fun observeAuthState(): Flow<AuthState> {
-        return sessionDao.observeSession().map { session ->
-            if (session?.authState == "AUTHENTICATED" && session.telegramId != null) {
-                AuthState.Authenticated(
-                    telegramId = session.telegramId,
-                    plan = UserPlan.valueOf(session.userPlan),
-                    planExpiresAt = session.planExpiresAt,
-                )
-            } else {
-                AuthState.Anonymous
-            }
-            // Suppress redundant emissions — sessionStore.update writes the
-            // whole row even when only fields outside AuthState change (email,
-            // tokens, shortUuid). Without this the UI gets recomposition churn
-            // for no visible state change.
-        }.distinctUntilChanged()
+        // Suppress redundant emissions — sessionStore.update writes the whole
+        // row even when only fields outside AuthState change (email, tokens,
+        // shortUuid). Without this the UI gets recomposition churn for no
+        // visible state change.
+        return sessionDao.observeSession()
+            .map { session -> sessionToAuthState(session) }
+            .distinctUntilChanged()
     }
 
     suspend fun getOrCreateDeviceId(): String {
@@ -92,6 +100,14 @@ class AuthRepository @Inject constructor(
      */
     suspend fun getPendingAuthToken(): String? {
         return sessionDao.getSession()?.pendingAuthToken?.takeIf { it.isNotBlank() }
+    }
+
+    suspend fun clearPendingAuthToken() {
+        sessionStore.update { it.copy(pendingAuthToken = null) }
+    }
+
+    suspend fun getAuthStateSnapshot(): AuthState {
+        return sessionToAuthState(sessionDao.getSession())
     }
 
     private fun currentDeviceName(): String {
@@ -315,8 +331,17 @@ class AuthRepository @Inject constructor(
      *                       false for ambient triggers like onResume / screen
      *                       open so we don't hammer the panel every time the
      *                       user tabs away and back.
+     * @param trustPanelPlan when false, a transient ambiguous panel response
+     *                       cannot downgrade a cached PAID / ADMIN plan. This
+     *                       is important during post-payment polling, where
+     *                       freshness matters but stale payment propagation
+     *                       should not briefly flip the UI backwards.
      */
-    suspend fun syncSubscription(overwriteUsage: Boolean = true, force: Boolean = false) {
+    suspend fun syncSubscription(
+        overwriteUsage: Boolean = true,
+        force: Boolean = false,
+        trustPanelPlan: Boolean = force,
+    ) {
         syncMutex.withLock {
             if (!force) {
                 val (lastSyncAt, intervalMs) = prefsDataStore.getSubscriptionSyncState()
@@ -324,7 +349,7 @@ class AuthRepository @Inject constructor(
                     return@withLock
                 }
             }
-            runSyncSubscription(overwriteUsage, trustPanelPlan = force)
+            runSyncSubscription(overwriteUsage, trustPanelPlan = trustPanelPlan)
         }
     }
 
@@ -533,6 +558,7 @@ class AuthRepository @Inject constructor(
         // Switching identity — drop the previous user's local usage counters
         // (bytes will be re-populated from panel by syncSubscription below).
         prefsDataStore.clearAnonymousUsageState()
+        prefsDataStore.clearPendingPurchase()
         usageRepository.resetSession()
         bootstrapManager.clear()
         // Restore an anonymous device-session immediately so the UI can fetch

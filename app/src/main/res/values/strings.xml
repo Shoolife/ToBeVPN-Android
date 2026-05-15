@@ -20,6 +20,7 @@
     <string name="error_limit_exhausted">Limit exhausted. Sign in via Telegram.</string>
     <string name="error_subscription_expired">Subscription expired. Renew it to connect.</string>
     <string name="error_vpn_interface">Failed to create VPN interface</string>
+    <string name="error_tunnel_unhealthy">VPN connected, but traffic is not passing through the server. Try another server.</string>
     <string name="error_unknown">Unknown error</string>
     <string name="error_network">Network error</string>
     <string name="error_auth_required">Sign-in required</string>
@@ -41,6 +42,10 @@
     <string name="speed_test_subtitle">Check your internet speed</string>
     <string name="subscription">Subscription</string>
     <string name="free_tier_hint">Free tier • Sign in to upgrade</string>
+    <string name="temporary_access_banner">SIGN IN SO YOU DO NOT LOSE ACCESS</string>
+    <string name="temporary_access_title">Temporary access</string>
+    <string name="temporary_access_description">You are using temporary trial access. It is issued once, ends quickly, and can be lost after reinstalling the app or changing devices. Sign in to attach access to your account.</string>
+    <string name="temporary_access_authorize">Sign in</string>
     <string name="current_session">Current session</string>
     <string name="detailed_stats">Detailed statistics</string>
     <string name="downloaded">Downloaded</string>

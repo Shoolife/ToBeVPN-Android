@@ -20,6 +20,7 @@
     <string name="error_limit_exhausted">Лимит исчерпан. Авторизуйтесь через Telegram.</string>
     <string name="error_subscription_expired">Подписка истекла. Продлите, чтобы подключиться.</string>
     <string name="error_vpn_interface">Не удалось создать VPN-интерфейс</string>
+    <string name="error_tunnel_unhealthy">VPN подключился, но трафик через сервер не проходит. Попробуйте другой сервер.</string>
     <string name="error_unknown">Неизвестная ошибка</string>
     <string name="error_network">Ошибка сети</string>
     <string name="error_auth_required">Требуется авторизация</string>
@@ -41,6 +42,10 @@
     <string name="speed_test_subtitle">Проверить скорость интернета</string>
     <string name="subscription">Подписка</string>
     <string name="free_tier_hint">Бесплатный тариф • Войдите для расширения</string>
+    <string name="temporary_access_banner">АВТОРИЗИРУЙТЕСЬ, ЧТОБЫ НЕ ПОТЕРЯТЬ ДОСТУП</string>
+    <string name="temporary_access_title">Временный доступ</string>
+    <string name="temporary_access_description">Сейчас вы используете временный пробный доступ. Он выдаётся один раз, быстро заканчивается и может быть потерян при переустановке или смене устройства. Авторизуйтесь, чтобы закрепить доступ за аккаунтом.</string>
+    <string name="temporary_access_authorize">Авторизоваться</string>
     <string name="current_session">Текущая сессия</string>
     <string name="detailed_stats">Подробная статистика</string>
     <string name="downloaded">Загружено</string>

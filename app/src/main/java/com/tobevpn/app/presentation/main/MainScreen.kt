@@ -1,8 +1,6 @@
 package com.tobevpn.app.presentation.main
 
 import android.app.Activity
-import android.content.Intent
-import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -21,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
@@ -46,6 +45,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -107,6 +107,8 @@ fun MainScreen(
     }
 
     var showSubscriptionSheet by remember { mutableStateOf(false) }
+    var showTemporaryAccessDialog by remember { mutableStateOf(false) }
+    val showTemporaryAccessBanner = authState is AuthState.Anonymous
 
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -125,9 +127,10 @@ fun MainScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
+    Box(modifier = Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                TopAppBar(
                 title = {
                     // Baseline-align the partner suffix with the app name so
                     // the smaller text sits on the same typographic baseline
@@ -172,9 +175,9 @@ fun MainScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
                 ),
-            )
-        },
-    ) { paddingValues ->
+                )
+            },
+        ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -188,6 +191,12 @@ fun MainScreen(
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
+            if (showTemporaryAccessBanner) {
+                TemporaryAccessBanner(
+                    onClick = { showTemporaryAccessDialog = true },
+                )
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
 
             // Connect button
@@ -341,6 +350,16 @@ fun MainScreen(
             Spacer(modifier = Modifier.height(24.dp))
         }
         }
+        }
+        if (showTemporaryAccessDialog && showTemporaryAccessBanner) {
+            TemporaryAccessTopDialog(
+                onAuthorize = {
+                    showTemporaryAccessDialog = false
+                    onNavigateToAuth()
+                },
+                onDismiss = { showTemporaryAccessDialog = false },
+            )
+        }
     }
 
     if (showSubscriptionSheet) {
@@ -350,9 +369,145 @@ fun MainScreen(
             purchasePlans = purchasePlans,
             currentLimits = currentLimits,
             onLoadPurchasePlans = viewModel::loadPurchasePlans,
+            onOpenPurchaseUrl = { url -> viewModel.openPurchaseUrl(activity, url) },
             onDismiss = { showSubscriptionSheet = false },
             onNavigateToAuth = onNavigateToAuth,
         )
+    }
+}
+
+@Composable
+private fun TemporaryAccessBanner(
+    onClick: () -> Unit,
+) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val container = if (isDark) Color(0xFF2A2021) else Color(0xFFFFF1F1)
+    val border = if (isDark) Color(0xFF7A3430) else Color(0xFFFFC6C2)
+    val accent = if (isDark) Color(0xFFFF8A80) else VpnRed
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth(0.82f)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = container),
+        border = androidx.compose.foundation.BorderStroke(1.dp, border),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(accent.copy(alpha = 0.14f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ErrorOutline,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = stringResource(R.string.temporary_access_banner),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                color = accent,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun TemporaryAccessTopDialog(
+    onAuthorize: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.32f))
+            .clickable(onClick = onDismiss)
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        contentAlignment = Alignment.TopCenter,
+    ) {
+        Card(
+            modifier = Modifier
+                .widthIn(max = 520.dp)
+                .fillMaxWidth()
+                .clickable(
+                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    indication = null,
+                    onClick = {},
+                ),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface,
+            ),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(34.dp)
+                            .clip(CircleShape)
+                            .background(VpnRed.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Outlined.ErrorOutline,
+                            contentDescription = null,
+                            tint = VpnRed,
+                            modifier = Modifier.size(21.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = stringResource(R.string.temporary_access_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = stringResource(R.string.temporary_access_description),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                Spacer(modifier = Modifier.height(18.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onDismiss) {
+                        Text(text = stringResource(R.string.cancel))
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(onClick = onAuthorize) {
+                        Text(
+                            text = stringResource(R.string.temporary_access_authorize),
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -829,6 +984,7 @@ private fun SubscriptionBottomSheet(
     purchasePlans: com.tobevpn.app.data.remote.dto.PurchasePlansDto?,
     currentLimits: CurrentPlanLimits?,
     onLoadPurchasePlans: () -> Unit,
+    onOpenPurchaseUrl: (String?) -> Unit,
     onDismiss: () -> Unit,
     onNavigateToAuth: () -> Unit,
 ) {
@@ -1201,24 +1357,8 @@ private fun SubscriptionBottomSheet(
                     ?: return@Column
                 Button(
                     onClick = {
-                        val url = selectedLabel.botPaymentUrl
-                        if (url != null) {
-                            // Extract link target and start param from the auth URL.
-                            val uri = Uri.parse(url)
-                            val bot = uri.pathSegments?.firstOrNull() ?: ""
-                            val startParam = uri.getQueryParameter("start") ?: ""
-                            // Try direct Telegram first
-                            val tgIntent = Intent(
-                                Intent.ACTION_VIEW,
-                                Uri.parse("tg://resolve?domain=$bot&start=$startParam"),
-                            )
-                            try {
-                                context.startActivity(tgIntent)
-                            } catch (_: Exception) {
-                                // Fallback to web URL
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                            }
-                        }
+                        onDismiss()
+                        onOpenPurchaseUrl(selectedLabel.botPaymentUrl)
                     },
                     enabled = selectedLabel.botPaymentUrl != null,
                     modifier = Modifier.fillMaxWidth(),

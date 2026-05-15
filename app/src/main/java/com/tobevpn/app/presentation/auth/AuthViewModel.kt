@@ -79,14 +79,19 @@ class AuthViewModel @Inject constructor(
             if (TelegramLinks.openStartLink(context, startParam = authToken)) {
                 startPolling(authToken)
             } else {
+                currentAuthToken = null
+                authRepository.clearPendingAuthToken()
                 _uiState.value = AuthUiState.Error(R.string.auth_error_open_telegram)
             }
         }
     }
 
     fun onReturnedFromTelegram() {
-        currentAuthToken?.let { token ->
-            if (pollingJob?.isActive != true) {
+        if (pollingJob?.isActive == true) return
+        viewModelScope.launch {
+            val token = currentAuthToken ?: authRepository.getPendingAuthToken()
+            if (token != null) {
+                currentAuthToken = token
                 startPolling(token)
             }
         }
@@ -109,10 +114,13 @@ class AuthViewModel @Inject constructor(
                     }
                     if (confirmed) {
                         onAuthSuccess()
+                    } else if (token != null && pollingJob?.isActive != true) {
+                        currentAuthToken = token
+                        startPolling(token)
                     }
-                    // If not confirmed, leave UI in its current state — the
-                    // active polling job (if any) will catch up; otherwise the
-                    // user simply hasn't really authenticated yet.
+                    // If the callback arrives before the backend has marked
+                    // the auth as completed, keep polling from the recovered
+                    // token instead of leaving the user on a stale screen.
                 }
             }
         }
@@ -124,24 +132,26 @@ class AuthViewModel @Inject constructor(
 
         pollingJob = viewModelScope.launch {
             repeat(MAX_POLL_ATTEMPTS) {
-                delay(POLL_INTERVAL_MS)
                 val authenticated = authRepository.checkAuthStatus(authToken)
                 if (authenticated) {
                     onAuthSuccess()
                     return@launch
                 }
+                delay(POLL_INTERVAL_MS)
             }
+            currentAuthToken = null
+            authRepository.clearPendingAuthToken()
             _uiState.value = AuthUiState.Error(R.string.auth_error_timeout)
         }
     }
 
     private suspend fun onAuthSuccess() {
-        // Refresh servers with new subscription (user may have been upgraded)
-        vpnRepository.refreshServers()
         // Force the sync — we just authenticated and the user expects to
         // immediately see the right plan (PAID / FREE_TRIAL), not whatever
         // was cached before login.
         authRepository.syncSubscription(force = true)
+        // Refresh servers with the subscription data that sync just populated.
+        vpnRepository.refreshServers()
         _uiState.value = AuthUiState.Success
         pollingJob?.cancel()
 
@@ -173,6 +183,9 @@ class AuthViewModel @Inject constructor(
         _uiState.value = AuthUiState.Idle
         _showEmailPrompt.value = false
         currentAuthToken = null
+        viewModelScope.launch {
+            authRepository.clearPendingAuthToken()
+        }
     }
 
     override fun onCleared() {

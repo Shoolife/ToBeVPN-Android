@@ -2,6 +2,8 @@ package com.tobevpn.app.vpn
 
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.local.dao.SessionDao
@@ -30,6 +32,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.net.InetSocketAddress
+import java.net.Proxy
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -60,11 +67,21 @@ class VpnConnectionManager @Inject constructor(
     val sessionTimeSeconds: StateFlow<Long> = _sessionTimeSeconds.asStateFlow()
 
     private var usageTrackingJob: Job? = null
+    private var healthCheckJob: Job? = null
+    private var networkRecheckJob: Job? = null
     private var connectionStartTime = 0L
     private var sessionBytesAccumulated = 0L
     private var sessionStartUsageBytes = 0L
+    private var watchdogRecoveryAttempts = 0
     // Monotonic counter to invalidate stale operations
     private var connectionGeneration = 0
+
+    private val tunnelProbeClient = OkHttpClient.Builder()
+        .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808)))
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .callTimeout(7, TimeUnit.SECONDS)
+        .build()
 
     init {
         scope.launch { usageRepository.ensureInitialized() }
@@ -132,11 +149,16 @@ class VpnConnectionManager @Inject constructor(
 
     private suspend fun isPaidUser(): Boolean {
         val session = sessionDao.getSession() ?: return false
-        return session.userPlan == "PAID" && session.authState == "AUTHENTICATED"
+        return (session.userPlan == "PAID" || session.userPlan == "ADMIN") &&
+            session.authState == "AUTHENTICATED"
     }
 
 
     fun startVpn(server: Server) {
+        startVpnInternal(server, resetWatchdogRecovery = true)
+    }
+
+    private fun startVpnInternal(server: Server, resetWatchdogRecovery: Boolean) {
         scope.launch {
             val gen: Int
             mutex.withLock {
@@ -175,16 +197,21 @@ class VpnConnectionManager @Inject constructor(
 
                 connectionGeneration++
                 gen = connectionGeneration
+                if (resetWatchdogRecovery) {
+                    watchdogRecoveryAttempts = 0
+                }
                 _currentServer.value = server
                 _connectionState.value = ConnectionState.Connecting
             }
 
-            // Fire-and-forget: hits the public subscription URL with HWID headers
-            // so the service registers/refreshes the HWID device on every connect.
-            // Bare ping only — the JSON /api/panel/sub/.../info refresh is
-            // throttled by syncSubscription's profile-update-interval window
-            // and shouldn't be coupled to the connect cadence.
-            launch { runCatching { authRepository.pingHwidOnly() } }
+            // Limited/trial access depends on the HWID marker being registered
+            // before the first outbound connection. Paid users don't need to
+            // wait on this best-effort ping, so keep their connect path fast.
+            if (!isPaidUser()) {
+                runCatching { authRepository.pingHwidOnly() }
+            } else {
+                launch { runCatching { authRepository.pingHwidOnly() } }
+            }
 
             val intent = Intent(context, ToBeVpnService::class.java).apply {
                 action = ToBeVpnService.ACTION_START
@@ -219,6 +246,43 @@ class VpnConnectionManager @Inject constructor(
 
     fun stopVpn() {
         scope.launch { performStop() }
+    }
+
+    fun requestTunnelHealthCheck() {
+        scope.launch {
+            networkRecheckJob?.cancel()
+            val gen = connectionGeneration
+            networkRecheckJob = scope.launch {
+                delay(TUNNEL_HEALTH_NETWORK_CHANGE_DELAY_MS)
+                if (gen != connectionGeneration || _connectionState.value !is ConnectionState.Connected) {
+                    return@launch
+                }
+                if (!hasUnderlyingInternet()) return@launch
+
+                val healthy = probeTunnelWithRetries(TUNNEL_HEALTH_NETWORK_CHANGE_ATTEMPTS)
+                if (healthy) {
+                    mutex.withLock {
+                        if (gen == connectionGeneration) watchdogRecoveryAttempts = 0
+                    }
+                    return@launch
+                }
+
+                scope.launch { recoverTunnelAfterHealthFailure(gen) }
+            }
+        }
+    }
+
+    fun showError(message: String) {
+        scope.launch {
+            mutex.withLock {
+                if (_connectionState.value is ConnectionState.Connected ||
+                    _connectionState.value is ConnectionState.Connecting
+                ) {
+                    return@withLock
+                }
+                _connectionState.value = ConnectionState.Error(message)
+            }
+        }
     }
 
     fun handleServiceDestroyed() {
@@ -294,6 +358,7 @@ class VpnConnectionManager @Inject constructor(
                         usageRepository.setLastConnected(connectionStartTime)
                         sessionStartUsageBytes = usageRepository.getUsage().bytesUsed
                         startUsageTracking()
+                        startTunnelHealthCheck()
                     }
                     is ConnectionState.Disconnected -> {
                         // Don't override Error (should persist until user acts) or Disconnected
@@ -398,6 +463,118 @@ class VpnConnectionManager @Inject constructor(
     private fun stopUsageTracking() {
         usageTrackingJob?.cancel()
         usageTrackingJob = null
+        healthCheckJob?.cancel()
+        healthCheckJob = null
+        networkRecheckJob?.cancel()
+        networkRecheckJob = null
+    }
+
+    private fun startTunnelHealthCheck() {
+        healthCheckJob?.cancel()
+        val gen = connectionGeneration
+        healthCheckJob = scope.launch {
+            delay(TUNNEL_HEALTH_INITIAL_DELAY_MS)
+            var failedCycles = 0
+            while (gen == connectionGeneration && _connectionState.value is ConnectionState.Connected) {
+                if (!hasUnderlyingInternet()) {
+                    failedCycles = 0
+                    delay(TUNNEL_HEALTH_INTERVAL_MS)
+                    continue
+                }
+
+                if (probeTunnelWithRetries(TUNNEL_HEALTH_ATTEMPTS)) {
+                    failedCycles = 0
+                    mutex.withLock {
+                        if (gen == connectionGeneration) watchdogRecoveryAttempts = 0
+                    }
+                } else {
+                    failedCycles++
+                }
+
+                if (failedCycles >= TUNNEL_HEALTH_FAILURE_CYCLES) {
+                    scope.launch { recoverTunnelAfterHealthFailure(gen) }
+                    return@launch
+                }
+
+                if (gen != connectionGeneration || _connectionState.value !is ConnectionState.Connected) {
+                    return@launch
+                }
+
+                delay(TUNNEL_HEALTH_INTERVAL_MS)
+            }
+        }
+    }
+
+    private suspend fun recoverTunnelAfterHealthFailure(gen: Int) {
+        var serverToRestart: Server? = null
+        var errorMessage: String? = null
+        var shouldAbort = false
+
+        mutex.withLock {
+            if (gen != connectionGeneration || _connectionState.value !is ConnectionState.Connected) {
+                shouldAbort = true
+                return@withLock
+            }
+
+            val currentServer = _currentServer.value
+            if (currentServer == null) {
+                errorMessage = context.getString(R.string.error_tunnel_unhealthy)
+                return@withLock
+            }
+
+            if (watchdogRecoveryAttempts >= MAX_TUNNEL_RECOVERY_ATTEMPTS) {
+                errorMessage = context.getString(R.string.error_tunnel_unhealthy)
+                return@withLock
+            }
+
+            watchdogRecoveryAttempts++
+            serverToRestart = currentServer
+        }
+
+        if (shouldAbort) return
+
+        if (errorMessage != null) {
+            performStop(errorMessage)
+            return
+        }
+
+        val server = serverToRestart ?: return
+        performStop()
+        delay(TUNNEL_RECOVERY_RESTART_DELAY_MS)
+        if (_connectionState.value is ConnectionState.Disconnected) {
+            startVpnInternal(server, resetWatchdogRecovery = false)
+        }
+    }
+
+    private suspend fun probeTunnelWithRetries(attempts: Int): Boolean {
+        repeat(attempts) { index ->
+            if (probeTunnelOnce()) return true
+            if (index < attempts - 1) delay(TUNNEL_HEALTH_RETRY_MS)
+        }
+        return false
+    }
+
+    private suspend fun probeTunnelOnce(): Boolean = withContext(Dispatchers.IO) {
+        for (url in TUNNEL_PROBE_URLS) {
+            try {
+                val request = Request.Builder().url(url).get().build()
+                tunnelProbeClient.newCall(request).execute().use { response ->
+                    if (response.code in 200..399) return@withContext true
+                }
+            } catch (_: Exception) {
+            }
+        }
+        false
+    }
+
+    @Suppress("DEPRECATION")
+    private fun hasUnderlyingInternet(): Boolean {
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return true
+        return cm.allNetworks.any { network ->
+            val capabilities = cm.getNetworkCapabilities(network) ?: return@any false
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        }
     }
 
     private suspend fun flushPendingUsage() {
@@ -430,5 +607,19 @@ class VpnConnectionManager @Inject constructor(
 
     companion object {
         private const val HEARTBEAT_TICKS = 60
+        private const val TUNNEL_HEALTH_INITIAL_DELAY_MS = 2_500L
+        private const val TUNNEL_HEALTH_INTERVAL_MS = 30_000L
+        private const val TUNNEL_HEALTH_RETRY_MS = 3_000L
+        private const val TUNNEL_HEALTH_ATTEMPTS = 4
+        private const val TUNNEL_HEALTH_FAILURE_CYCLES = 1
+        private const val TUNNEL_HEALTH_NETWORK_CHANGE_DELAY_MS = 2_000L
+        private const val TUNNEL_HEALTH_NETWORK_CHANGE_ATTEMPTS = 2
+        private const val TUNNEL_RECOVERY_RESTART_DELAY_MS = 700L
+        private const val MAX_TUNNEL_RECOVERY_ATTEMPTS = 2
+        private val TUNNEL_PROBE_URLS = listOf(
+            "https://www.gstatic.com/generate_204",
+            "https://www.example.com/",
+            "https://repo1.maven.org/maven2/",
+        )
     }
 }

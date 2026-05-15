@@ -11,10 +11,17 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
 private val Context.dataStore by preferencesDataStore("tobevpn_prefs")
+
+data class PendingPurchaseState(
+    val startedAt: Long,
+    val baselinePlan: String?,
+    val baselineExpiresAt: Long?,
+)
 
 @Singleton
 class PrefsDataStore @Inject constructor(
@@ -43,6 +50,10 @@ class PrefsDataStore @Inject constructor(
         // auto-refresh cadence used by the backend.
         val LAST_SUB_SYNC_AT = longPreferencesKey("last_sub_sync_at")
         val SUB_UPDATE_INTERVAL_MS = longPreferencesKey("sub_update_interval_ms")
+        val PENDING_PURCHASE_STARTED_AT = longPreferencesKey("pending_purchase_started_at")
+        val PENDING_PURCHASE_BASELINE_PLAN = stringPreferencesKey("pending_purchase_baseline_plan")
+        val PENDING_PURCHASE_BASELINE_EXPIRES_AT = longPreferencesKey("pending_purchase_baseline_expires_at")
+        val SERVER_CACHE_OWNER = stringPreferencesKey("server_cache_owner")
         // Per-app VPN filter mode: "OFF", "WHITELIST" or "BLACKLIST".
         // The set of selected packages lives in the Room app_filter table —
         // we keep the mode in Prefs so a destructive DB migration doesn't
@@ -154,6 +165,65 @@ class PrefsDataStore @Inject constructor(
             it[Keys.LAST_SUB_SYNC_AT] = lastSyncAt
             it[Keys.SUB_UPDATE_INTERVAL_MS] = intervalMs
         }
+    }
+
+    suspend fun clearSubscriptionSyncTimestamp() {
+        context.dataStore.edit { it.remove(Keys.LAST_SUB_SYNC_AT) }
+    }
+
+    suspend fun markPendingPurchaseStarted(
+        startedAt: Long = System.currentTimeMillis(),
+        baselinePlan: String? = null,
+        baselineExpiresAt: Long? = null,
+    ) {
+        context.dataStore.edit {
+            it[Keys.PENDING_PURCHASE_STARTED_AT] = startedAt
+            if (baselinePlan != null) {
+                it[Keys.PENDING_PURCHASE_BASELINE_PLAN] = baselinePlan
+            } else {
+                it.remove(Keys.PENDING_PURCHASE_BASELINE_PLAN)
+            }
+            if (baselineExpiresAt != null) {
+                it[Keys.PENDING_PURCHASE_BASELINE_EXPIRES_AT] = baselineExpiresAt
+            } else {
+                it.remove(Keys.PENDING_PURCHASE_BASELINE_EXPIRES_AT)
+            }
+        }
+    }
+
+    suspend fun getPendingPurchaseState(): PendingPurchaseState? {
+        val prefs = context.dataStore.data.first()
+        val startedAt = prefs[Keys.PENDING_PURCHASE_STARTED_AT] ?: return null
+        return PendingPurchaseState(
+            startedAt = startedAt,
+            baselinePlan = prefs[Keys.PENDING_PURCHASE_BASELINE_PLAN],
+            baselineExpiresAt = prefs[Keys.PENDING_PURCHASE_BASELINE_EXPIRES_AT],
+        )
+    }
+
+    suspend fun clearPendingPurchase() {
+        context.dataStore.edit {
+            it.remove(Keys.PENDING_PURCHASE_STARTED_AT)
+            it.remove(Keys.PENDING_PURCHASE_BASELINE_PLAN)
+            it.remove(Keys.PENDING_PURCHASE_BASELINE_EXPIRES_AT)
+        }
+    }
+
+    suspend fun setServerCacheOwner(shortUuid: String) {
+        context.dataStore.edit { it[Keys.SERVER_CACHE_OWNER] = cacheOwnerHash(shortUuid) }
+    }
+
+    suspend fun isServerCacheOwner(shortUuid: String): Boolean {
+        return context.dataStore.data.first()[Keys.SERVER_CACHE_OWNER] == cacheOwnerHash(shortUuid)
+    }
+
+    suspend fun clearServerCacheOwner() {
+        context.dataStore.edit { it.remove(Keys.SERVER_CACHE_OWNER) }
+    }
+
+    private fun cacheOwnerHash(value: String): String {
+        val bytes = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+        return bytes.joinToString(separator = "") { "%02x".format(it.toInt() and 0xff) }
     }
 
     val appFilterMode: Flow<String?> = context.dataStore.data.map { it[Keys.APP_FILTER_MODE] }

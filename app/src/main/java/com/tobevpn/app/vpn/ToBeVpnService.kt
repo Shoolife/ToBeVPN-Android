@@ -39,7 +39,10 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     private var vpnInterface: ParcelFileDescriptor? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    @Volatile
     private var cleanedUp = false
+    @Volatile
+    private var activeConnectionGeneration = -1
     private var latestStartId = 0
 
     override fun onCreate() {
@@ -55,6 +58,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                 val config = intent.getStringExtra(EXTRA_SERVER_CONFIG) ?: return START_NOT_STICKY
                 val generation = intent.getIntExtra(EXTRA_GENERATION, -1)
                 cleanedUp = false
+                activeConnectionGeneration = generation
                 startVpn(config, generation)
             }
             ACTION_STOP -> {
@@ -84,13 +88,19 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                 }
 
                 // If disconnect was requested while TUN was being created, bail out
-                if (cleanedUp) {
+                if (cleanedUp || generation != activeConnectionGeneration) {
                     fd.close()
                     return@launch
                 }
 
                 vpnInterface = fd
-                XRayCore.startLoop(configJson, fd.fd)
+                val loopGeneration = XRayCore.startLoop(configJson, fd.fd)
+                if (cleanedUp || generation != activeConnectionGeneration) {
+                    XRayCore.stopLoop(loopGeneration)
+                    if (vpnInterface === fd) vpnInterface = null
+                    fd.close()
+                    return@launch
+                }
 
                 connectionManager.updateState(ConnectionState.Connected, generation)
                 updateNotification(getString(R.string.state_connected))
@@ -185,7 +195,9 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     private fun cleanupVpn() {
         if (cleanedUp) return
         cleanedUp = true
+        activeConnectionGeneration = -1
         val stopStartId = latestStartId
+        val loopGenerationToStop = XRayCore.currentLoopGeneration
         unregisterNetworkCallback()
         // Close TUN first — immediately cuts all traffic
         vpnInterface?.close()
@@ -198,7 +210,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         // Stop XRay on a detached thread (stopLoop can block 10+ seconds).
         // stopSelf(startId) prevents killing the service if a newer ACTION_START arrived.
         Thread {
-            XRayCore.stopLoop()
+            XRayCore.stopLoop(loopGenerationToStop)
             stopSelf(stopStartId)
         }.start()
     }
@@ -213,6 +225,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 setUnderlyingNetworks(arrayOf(network))
+                connectionManager.requestTunnelHealthCheck()
             }
             override fun onLost(network: Network) {
                 setUnderlyingNetworks(null)
@@ -278,7 +291,9 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     }
 
     override fun onDestroy() {
-        if (!cleanedUp && (vpnInterface != null || XRayCore.isRunning)) {
+        val hadActiveSession = !cleanedUp && (vpnInterface != null || XRayCore.isRunning)
+        if (hadActiveSession) {
+            cleanupVpn()
             connectionManager.handleServiceDestroyed()
         }
         unregisterNetworkCallback()
