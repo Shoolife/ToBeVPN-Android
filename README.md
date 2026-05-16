@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="play_assets/play_icon_512_v4_dark.png" alt="ToBeVPN" width="160" height="160" />
+<img src="play_assets/play_icon_512_transparent.png" alt="ToBeVPN" width="160" height="160" />
 
 # ToBeVPN
 
