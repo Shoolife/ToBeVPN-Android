@@ -138,7 +138,7 @@ keystore.keyPassword=...
 - `SIGNING_KEYSTORE_BASE64` / `SIGNING_KEYSTORE_PASSWORD` / `SIGNING_KEY_ALIAS` / `SIGNING_KEY_PASSWORD`
 - `FALLBACK_BOT_DOMAIN` / `FALLBACK_SUBS_DOMAIN` *(опционально, если включаешь fallback-маршрутизацию)*
 
-Xray-core обновляется только через обычный APK/AAB app release: обновляется `app/libs/libv2ray.aar`, затем выпускается маленький patch release. [check-xray-core](.github/workflows/check-xray-core.yml) ежедневно сравнивает upstream Xray-core с последним релизом приложения и создаёт issue, если нужен релиз с обновлённым core.
+Xray-core обновляется только через обычный APK/AAB app release: обновляется `app/libs/libv2ray.aar`, затем выпускается маленький patch release. [check-xray-core](.github/workflows/check-xray-core.yml) раз в неделю сравнивает upstream Xray-core с последним релизом приложения и создаёт issue, если нужен релиз с обновлённым core.
 
 ## Безопасность
 
