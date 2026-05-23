@@ -14,6 +14,21 @@
     <string name="refresh">Обновить</string>
     <string name="loading_data">Загрузка…</string>
 
+    <!-- Onboarding -->
+    <string name="onboarding_subtitle">Пробный тариф для первого подключения</string>
+    <string name="onboarding_feature_trial">Пробный тариф: %1$s трафика</string>
+    <string name="onboarding_feature_trial_with_days">Пробный тариф: %1$s трафика на %2$s</string>
+    <string name="onboarding_feature_device">Пробный тариф: 1 устройство</string>
+    <string name="onboarding_feature_auth">Авторизуйтесь через Telegram, чтобы не потерять доступ</string>
+    <string name="onboarding_feature_tools">Серверы, статистика и тест скорости встроены</string>
+    <string name="onboarding_start">Продолжить</string>
+    <plurals name="onboarding_trial_days">
+        <item quantity="one">%1$d день</item>
+        <item quantity="few">%1$d дня</item>
+        <item quantity="many">%1$d дней</item>
+        <item quantity="other">%1$d дня</item>
+    </plurals>
+
     <!-- Connection states -->
     <string name="state_disconnected">Отключено</string>
     <string name="state_connecting">Подключение…</string>

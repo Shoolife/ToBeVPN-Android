@@ -42,7 +42,7 @@ class AuthRepository @Inject constructor(
     companion object {
         private const val TAG = "AuthRepository"
         // Fallback defaults if server is unreachable
-        private const val DEFAULT_FREE_TRIAL_TRAFFIC_BYTES = 1_073_741_824L // 1 GB
+        private const val DEFAULT_FREE_TRIAL_TRAFFIC_BYTES = 3_221_225_472L // 3 GB
     }
 
     // Serialises concurrent syncSubscription() callers (MainViewModel.init,

@@ -14,6 +14,19 @@
     <string name="refresh">Refresh</string>
     <string name="loading_data">Loading…</string>
 
+    <!-- Onboarding -->
+    <string name="onboarding_subtitle">Trial plan for your first connection</string>
+    <string name="onboarding_feature_trial">Trial plan: %1$s of traffic</string>
+    <string name="onboarding_feature_trial_with_days">Trial plan: %1$s of traffic for %2$s</string>
+    <string name="onboarding_feature_device">Trial plan: 1 device</string>
+    <string name="onboarding_feature_auth">Sign in via Telegram so you do not lose access</string>
+    <string name="onboarding_feature_tools">Servers, statistics, and speed test are built in</string>
+    <string name="onboarding_start">Continue</string>
+    <plurals name="onboarding_trial_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+
     <!-- Connection states -->
     <string name="state_disconnected">Disconnected</string>
     <string name="state_connecting">Connecting…</string>

@@ -67,7 +67,7 @@ class ServerListViewModel @Inject constructor(
         viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
-            // Anonymous users get a panel user (with 1 GB free trial) on demand.
+            // Anonymous users get a panel user (with 3 GB free trial) on demand.
             // Without this, opening the server list before MainViewModel has
             // finished its init leaves shortUuid null and refreshServers fails
             // with "Нет подписки".

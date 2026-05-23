@@ -1,7 +1,9 @@
 package com.tobevpn.app.presentation.auth
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,7 +14,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,7 +34,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -114,12 +118,7 @@ fun AuthScreen(
 private fun IdleContent(onLogin: () -> Unit) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val brandColor = if (isDark) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color(0xFF3F3F3F)
-    Icon(
-        imageVector = Icons.Default.Shield,
-        contentDescription = null,
-        modifier = Modifier.size(80.dp),
-        tint = brandColor,
-    )
+    CollaborationMark(isDark = isDark)
     Spacer(modifier = Modifier.height(24.dp))
     Text(
         text = stringResource(R.string.auth_telegram_title),
@@ -142,11 +141,37 @@ private fun IdleContent(onLogin: () -> Unit) {
         } else {
             androidx.compose.material3.ButtonDefaults.buttonColors(
                 containerColor = brandColor,
-                contentColor = androidx.compose.ui.graphics.Color.White,
+                contentColor = Color.White,
             )
         },
     ) {
         Text(stringResource(R.string.auth_open_telegram))
+    }
+}
+
+@Composable
+private fun CollaborationMark(isDark: Boolean) {
+    val lineColor = if (isDark) Color.White else Color.Black
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.onboarding_logo),
+            contentDescription = null,
+            modifier = Modifier.size(100.dp),
+        )
+        Text(
+            text = "\u00D7",
+            style = MaterialTheme.typography.headlineMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Image(
+            painter = painterResource(R.drawable.partner_collab_lines),
+            contentDescription = null,
+            modifier = Modifier.size(width = 98.dp, height = 92.dp),
+            colorFilter = ColorFilter.tint(lineColor),
+        )
     }
 }
 

@@ -1,9 +1,11 @@
 package com.tobevpn.app.data.local
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -15,7 +17,10 @@ import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.dataStore by preferencesDataStore("tobevpn_prefs")
+private val Context.dataStore by preferencesDataStore(
+    name = "tobevpn_prefs",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 data class PendingPurchaseState(
     val startedAt: Long,

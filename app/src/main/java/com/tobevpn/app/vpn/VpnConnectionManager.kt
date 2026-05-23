@@ -228,19 +228,68 @@ class VpnConnectionManager @Inject constructor(
      */
     fun switchServer(server: Server) {
         scope.launch {
-            val wasConnected: Boolean
+            if (server.isSentinel) {
+                mutex.withLock {
+                    _connectionState.value = ConnectionState.Error(
+                        context.getString(R.string.error_subscription_expired)
+                    )
+                }
+                return@launch
+            }
+
+            var shouldStartDirectly = false
+            var restartGeneration = -1
             mutex.withLock {
                 val current = _connectionState.value
-                wasConnected = current is ConnectionState.Connected || current is ConnectionState.Connecting
+                val wasActive = current is ConnectionState.Connected || current is ConnectionState.Connecting
+                if (!wasActive) {
+                    shouldStartDirectly = true
+                    return@withLock
+                }
+
+                connectionGeneration++
+                restartGeneration = connectionGeneration
+                watchdogRecoveryAttempts = 0
+                _currentServer.value = server
+                _connectionState.value = ConnectionState.Connecting
+                stopUsageTracking()
+                flushPendingUsage()
+                saveSessionLog()
+                _sessionTimeSeconds.value = 0L
             }
-            if (wasConnected) {
-                performStop()
-                // Small delay so the service has time to process ACTION_STOP
-                delay(300)
+
+            if (shouldStartDirectly) {
+                startVpn(server)
+                return@launch
             }
-            // Now start with the new server — startVpn checks state under mutex
-            // so it will proceed since we're now Disconnected.
-            startVpn(server)
+
+            val stopIntent = Intent(context, ToBeVpnService::class.java).apply {
+                action = ToBeVpnService.ACTION_STOP
+            }
+            context.startService(stopIntent)
+            // Give the service a short window to close the old TUN before
+            // establishing a new one, but keep UI state as Connecting the
+            // whole time so the power button cannot interleave a manual
+            // start/stop into this reconnect sequence.
+            delay(300)
+
+            val stillCurrent = mutex.withLock {
+                restartGeneration == connectionGeneration && _connectionState.value is ConnectionState.Connecting
+            }
+            if (!stillCurrent) return@launch
+
+            if (!isPaidUser()) {
+                runCatching { authRepository.pingHwidOnly() }
+            } else {
+                launch { runCatching { authRepository.pingHwidOnly() } }
+            }
+
+            val startIntent = Intent(context, ToBeVpnService::class.java).apply {
+                action = ToBeVpnService.ACTION_START
+                putExtra(ToBeVpnService.EXTRA_SERVER_CONFIG, VpnConfig.buildConfigJson(server))
+                putExtra(ToBeVpnService.EXTRA_GENERATION, restartGeneration)
+            }
+            context.startForegroundService(startIntent)
         }
     }
 

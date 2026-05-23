@@ -272,9 +272,10 @@ class MainViewModel @Inject constructor(
                     }
                     connectionManager.startVpn(server)
                 }
-                is ConnectionState.Connected, is ConnectionState.Connecting -> {
+                is ConnectionState.Connected -> {
                     connectionManager.stopVpn()
                 }
+                is ConnectionState.Connecting -> return@launch
             }
         }
     }

@@ -1,13 +1,14 @@
 package com.tobevpn.app.presentation.navigation
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import com.tobevpn.app.data.local.PrefsDataStore
+import androidx.navigation.compose.currentBackStackEntryAsState
 import com.tobevpn.app.presentation.appfilter.AppFilterScreen
 import com.tobevpn.app.presentation.auth.AuthScreen
 import com.tobevpn.app.presentation.main.MainScreen
@@ -16,6 +17,7 @@ import com.tobevpn.app.presentation.servers.ServerListScreen
 import com.tobevpn.app.presentation.settings.SettingsScreen
 import com.tobevpn.app.presentation.speedtest.SpeedTestScreen
 import com.tobevpn.app.presentation.stats.StatsScreen
+import kotlinx.coroutines.delay
 
 @Composable
 fun AppNavHost(
@@ -24,16 +26,27 @@ fun AppNavHost(
     modifier: Modifier = Modifier,
 ) {
     val startDestination: Any = if (startFromOnboarding) OnboardingRoute else MainRoute
+    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+
+    LaunchedEffect(currentBackStackEntry, startFromOnboarding) {
+        if (currentBackStackEntry == null) {
+            delay(NAV_RECOVERY_DELAY_MS)
+            if (navController.currentBackStackEntry == null) {
+                navController.navigateSingleTop(startDestination)
+            }
+        }
+    }
 
     NavHost(
         navController = navController,
         startDestination = startDestination,
-        modifier = modifier,
+        modifier = modifier.fillMaxSize(),
     ) {
         composable<OnboardingRoute> {
             OnboardingScreen(
                 onComplete = {
                     navController.navigate(MainRoute) {
+                        launchSingleTop = true
                         popUpTo(OnboardingRoute) { inclusive = true }
                     }
                 },
@@ -41,44 +54,62 @@ fun AppNavHost(
         }
         composable<MainRoute> {
             MainScreen(
-                onNavigateToServers = { navController.navigate(ServerListRoute) },
-                onNavigateToAuth = { navController.navigate(AuthRoute) },
-                onNavigateToSettings = { navController.navigate(SettingsRoute) },
-                onNavigateToStats = { navController.navigate(StatsRoute) },
-                onNavigateToSpeedTest = { navController.navigate(SpeedTestRoute) },
+                onNavigateToServers = { navController.navigateSingleTop(ServerListRoute) },
+                onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
+                onNavigateToSettings = { navController.navigateSingleTop(SettingsRoute) },
+                onNavigateToStats = { navController.navigateSingleTop(StatsRoute) },
+                onNavigateToSpeedTest = { navController.navigateSingleTop(SpeedTestRoute) },
             )
         }
         composable<ServerListRoute> {
             ServerListScreen(
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackStackOrRecover(startDestination) },
             )
         }
         composable<AuthRoute> {
             AuthScreen(
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackStackOrRecover(startDestination) },
             )
         }
         composable<StatsRoute> {
             StatsScreen(
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackStackOrRecover(startDestination) },
             )
         }
         composable<SpeedTestRoute> {
             SpeedTestScreen(
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackStackOrRecover(startDestination) },
             )
         }
         composable<SettingsRoute> {
             SettingsScreen(
-                onBack = { navController.popBackStack() },
-                onNavigateToAuth = { navController.navigate(AuthRoute) },
-                onNavigateToAppFilter = { navController.navigate(AppFilterRoute) },
+                onBack = { navController.popBackStackOrRecover(startDestination) },
+                onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
+                onNavigateToAppFilter = { navController.navigateSingleTop(AppFilterRoute) },
             )
         }
         composable<AppFilterRoute> {
             AppFilterScreen(
-                onBack = { navController.popBackStack() },
+                onBack = { navController.popBackStackOrRecover(startDestination) },
             )
         }
     }
 }
+
+private fun NavHostController.navigateSingleTop(route: Any) {
+    runCatching {
+        navigate(route) {
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+}
+
+private fun NavHostController.popBackStackOrRecover(startDestination: Any) {
+    val popped = runCatching { popBackStack() }.getOrDefault(false)
+    if (!popped || currentBackStackEntry == null) {
+        navigateSingleTop(startDestination)
+    }
+}
+
+private const val NAV_RECOVERY_DELAY_MS = 50L

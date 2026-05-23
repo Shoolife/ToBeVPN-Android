@@ -559,6 +559,7 @@ private fun ConnectButtonLarge(
             .clip(CircleShape)
             .background(backgroundColor)
             .clickable(
+                enabled = !isConnecting,
                 interactionSource = interactionSource,
                 indication = rippleIndication,
                 onClick = onClick,
@@ -567,7 +568,11 @@ private fun ConnectButtonLarge(
     ) {
         Icon(
             imageVector = Icons.Default.PowerSettingsNew,
-            contentDescription = if (isConnected) "Disconnect" else "Connect",
+            contentDescription = when {
+                isConnecting -> "Connecting"
+                isConnected -> "Disconnect"
+                else -> "Connect"
+            },
             tint = iconColor,
             modifier = Modifier.size(64.dp),
         )

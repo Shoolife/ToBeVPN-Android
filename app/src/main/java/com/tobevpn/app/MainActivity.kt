@@ -5,8 +5,6 @@ import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,10 +15,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.unit.dp
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -33,6 +32,7 @@ import com.tobevpn.app.update.UpdateBannerCheck
 import com.tobevpn.app.update.UpdateBannerHost
 import com.tobevpn.app.util.DeepLinkBus
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -52,14 +52,10 @@ class MainActivity : AppCompatActivity() {
         enableEdgeToEdge()
         dispatchDeepLink(intent)
 
-        var splashFinished by mutableStateOf(false)
-
         setContent {
-            val mainAlpha by animateFloatAsState(
-                targetValue = if (splashFinished) 1f else 0f,
-                animationSpec = tween(400),
-                label = "mainAlpha",
-            )
+            var showStartupSplash by rememberSaveable {
+                mutableStateOf(savedInstanceState == null)
+            }
 
             Box(modifier = Modifier.fillMaxSize()) {
                 ToBeVPNTheme {
@@ -71,15 +67,19 @@ class MainActivity : AppCompatActivity() {
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background,
                     ) {
-                        val onboardingSeen by prefsDataStore.onboardingSeen
-                            .collectAsStateWithLifecycle(initialValue = true)
+                        val onboardingSeen by remember {
+                            prefsDataStore.onboardingSeen.map { it as Boolean? }
+                        }.collectAsStateWithLifecycle(initialValue = null)
 
                         val navController = rememberNavController()
-                        Box(modifier = Modifier.alpha(mainAlpha)) {
-                            AppNavHost(
-                                navController = navController,
-                                startFromOnboarding = !onboardingSeen,
-                            )
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            onboardingSeen?.let { seen ->
+                                AppNavHost(
+                                    navController = navController,
+                                    startFromOnboarding = !seen,
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                         }
                     }
                 }
@@ -94,16 +94,15 @@ class MainActivity : AppCompatActivity() {
                     modifier = Modifier
                         .fillMaxSize()
                         .windowInsetsPadding(WindowInsets.statusBars)
-                        .padding(top = 8.dp)
-                        .alpha(mainAlpha),
+                        .padding(top = 8.dp),
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     UpdateBannerCheck()
                     UpdateBannerHost()
                 }
 
-                if (!splashFinished) {
-                    SplashScreen(onFinished = { splashFinished = true })
+                if (showStartupSplash) {
+                    SplashScreen(onFinished = { showStartupSplash = false })
                 }
             }
         }

@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.onboarding
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -8,24 +9,43 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material3.Button
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.tobevpn.app.R
+import java.text.NumberFormat
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.roundToLong
 
 @Composable
 fun OnboardingScreen(
     onComplete: () -> Unit,
     viewModel: OnboardingViewModel = hiltViewModel(),
 ) {
+    val trialTerms = viewModel.trialTerms.collectAsStateWithLifecycle().value
+    val context = LocalContext.current
+    val locale = context.resources.configuration.locales[0] ?: Locale.getDefault()
+    val trialTraffic = formatTrafficLimit(
+        bytes = trialTerms.trafficBytes,
+        unit = stringResource(R.string.unit_gb),
+        locale = locale,
+    )
+    val trialDays = trialTerms.trialDays?.let { days ->
+        pluralStringResource(R.plurals.onboarding_trial_days, days, days)
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -33,24 +53,23 @@ fun OnboardingScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Icon(
-            imageVector = Icons.Default.Shield,
+        Image(
+            painter = painterResource(R.drawable.onboarding_logo),
             contentDescription = null,
-            modifier = Modifier.size(100.dp),
-            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(112.dp),
         )
 
         Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = "ToBeVPN",
+            text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineLarge,
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Fast and secure VPN powered by XRay",
+            text = stringResource(R.string.onboarding_subtitle),
             style = MaterialTheme.typography.titleMedium,
             textAlign = TextAlign.Center,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -58,13 +77,19 @@ fun OnboardingScreen(
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        FeatureItem("1 GB free traffic — no signup needed")
+        FeatureItem(
+            if (trialDays != null) {
+                stringResource(R.string.onboarding_feature_trial_with_days, trialTraffic, trialDays)
+            } else {
+                stringResource(R.string.onboarding_feature_trial, trialTraffic)
+            }
+        )
         Spacer(modifier = Modifier.height(12.dp))
-        FeatureItem("1 hour of VPN — enough to finish setup")
+        FeatureItem(stringResource(R.string.onboarding_feature_device))
         Spacer(modifier = Modifier.height(12.dp))
-        FeatureItem("Authorize to unlock full plan")
+        FeatureItem(stringResource(R.string.onboarding_feature_auth))
         Spacer(modifier = Modifier.height(12.dp))
-        FeatureItem("Manage subscription in the app")
+        FeatureItem(stringResource(R.string.onboarding_feature_tools))
 
         Spacer(modifier = Modifier.height(48.dp))
 
@@ -75,7 +100,7 @@ fun OnboardingScreen(
             },
             modifier = Modifier.fillMaxWidth(),
         ) {
-            Text("Get Started")
+            Text(stringResource(R.string.onboarding_start))
         }
     }
 }
@@ -89,3 +114,15 @@ private fun FeatureItem(text: String) {
         color = MaterialTheme.colorScheme.onSurface,
     )
 }
+
+private fun formatTrafficLimit(bytes: Long, unit: String, locale: Locale): String {
+    val gigabytes = bytes / BYTES_IN_GB
+    val isWhole = abs(gigabytes - gigabytes.roundToLong()) < 0.01
+    val formatted = NumberFormat.getNumberInstance(locale).apply {
+        maximumFractionDigits = if (isWhole) 0 else 1
+        minimumFractionDigits = 0
+    }.format(gigabytes)
+    return "$formatted $unit"
+}
+
+private const val BYTES_IN_GB = 1024.0 * 1024.0 * 1024.0

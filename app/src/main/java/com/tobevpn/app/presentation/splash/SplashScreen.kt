@@ -113,10 +113,13 @@ fun SplashScreen(onFinished: () -> Unit) {
         textOffset.animateTo(0f, tween(500, easing = FastOutSlowInEasing))
     }
     LaunchedEffect(Unit) {
-        // Hold, then fade out, then signal done
-        delay(1600)
-        fadeOut.animateTo(0f, tween(400, easing = FastOutSlowInEasing))
-        onFinished()
+        try {
+            // Hold, then fade out, then signal done.
+            delay(1600)
+            fadeOut.animateTo(0f, tween(400, easing = FastOutSlowInEasing))
+        } finally {
+            onFinished()
+        }
     }
 
     Box(
