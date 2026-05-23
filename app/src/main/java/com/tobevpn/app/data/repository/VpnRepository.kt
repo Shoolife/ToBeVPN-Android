@@ -6,6 +6,7 @@ import com.tobevpn.app.data.local.entity.ServerEntity
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.remote.BotApi
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.vpn.VlessUrlParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -49,7 +50,8 @@ class VpnRepository @Inject constructor(
             // Fetch nodes to map IP → countryCode and status
             val nodes = try {
                 botApi.getNodes().response
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                SafeDiagnostics.warn(TAG, "Node metadata refresh failed: ${SafeDiagnostics.failureCategory(error)}")
                 emptyList()
             }
             val countryByAddress = nodes.associate { it.address to it.countryCode }
@@ -109,6 +111,7 @@ class VpnRepository @Inject constructor(
             prefsDataStore.setServerCacheOwner(shortUuid)
             Result.success(entities.map { it.toDomain() })
         } catch (e: Exception) {
+            SafeDiagnostics.warn(TAG, "Server refresh failed; checking local cache: ${SafeDiagnostics.failureCategory(e)}")
             val cached = if (prefsDataStore.isServerCacheOwner(shortUuid)) {
                 serverDao.getAll().map { it.toDomain() }.filterNot { it.isSentinel }
             } else {
@@ -126,6 +129,10 @@ class VpnRepository @Inject constructor(
     private suspend fun clearServerCache() {
         serverDao.deleteAll()
         prefsDataStore.clearServerCacheOwner()
+    }
+
+    private companion object {
+        const val TAG = "VpnRepository"
     }
 
     suspend fun getServers(): List<Server> {

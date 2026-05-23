@@ -7,6 +7,7 @@ import com.tobevpn.app.data.remote.BotApi
 import com.tobevpn.app.data.remote.CurrencyApi
 import com.tobevpn.app.data.remote.FallbackInterceptor
 import com.tobevpn.app.data.remote.GithubReleasesApi
+import com.tobevpn.app.data.remote.TunnelAwareProxySelector
 import com.tobevpn.app.data.remote.TokenAuthenticator
 import dagger.Module
 import dagger.Provides
@@ -60,6 +61,7 @@ object NetworkModule {
     @Singleton
     fun provideBootstrapApi(): BootstrapApi {
         val client = OkHttpClient.Builder()
+            .proxySelector(TunnelAwareProxySelector())
             // Fallback runs *before* logging so the rewritten URL still gets
             // logged in debug builds, and *before* userAgentInterceptor's
             // header — order doesn't matter for headers, but keeping
@@ -84,6 +86,7 @@ object NetworkModule {
         authenticator: TokenAuthenticator,
     ): BotApi {
         val client = OkHttpClient.Builder()
+            .proxySelector(TunnelAwareProxySelector())
             .addInterceptor(FallbackInterceptor())
             .addInterceptor(userAgentInterceptor)
             .addInterceptor(authInterceptor)

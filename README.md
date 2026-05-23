@@ -101,10 +101,10 @@ sdk.dir=/path/to/Android/Sdk
 # Bot backend (обязательно — production builds иначе не соберутся)
 bot.api.url=https://your.backend/
 
-# Резервный путь к bot API (опционально). Полный URL proxy-function с параметром ?u=.
-fallback.bot.domain=https://<fallback-host>/<function-id>?u=
+# Резервный путь к bot API (обязательно для release).
+fallback.bot.domain=https://<fallback-endpoint>
 
-# Резервный URL подписки (опционально). Полный URL заканчивающийся на ?sub=.
+# Резервный URL подписки (обязательно для release).
 fallback.subs.domain=
 
 # Релизная подпись (опционально для debug)
@@ -136,7 +136,7 @@ keystore.keyPassword=...
 Секреты репозитория, которые нужны:
 - `BOT_API_URL`
 - `SIGNING_KEYSTORE_BASE64` / `SIGNING_KEYSTORE_PASSWORD` / `SIGNING_KEY_ALIAS` / `SIGNING_KEY_PASSWORD`
-- `FALLBACK_BOT_DOMAIN` / `FALLBACK_SUBS_DOMAIN` *(опционально, если включаешь fallback-маршрутизацию)*
+- `FALLBACK_BOT_DOMAIN` / `FALLBACK_SUBS_DOMAIN` *(обязательны для release; сборка отклоняет пустые значения и шаблоны)*
 
 Xray-core обновляется только через обычный APK/AAB app release: обновляется `app/libs/libv2ray.aar`, затем выпускается маленький patch release. [check-xray-core](.github/workflows/check-xray-core.yml) раз в неделю сравнивает upstream Xray-core с последним релизом приложения и создаёт issue, если нужен релиз с обновлённым core.
 

@@ -46,9 +46,9 @@
 # SQLCipher
 -keep class net.zetetic.database.** { *; }
 
-# Strip all log calls from release. Play Vitals captures uncaught exceptions
-# directly from the runtime, not via Log.* calls, so removing Log.w/Log.e is
-# safe and prevents accidental PII / endpoint leaks via logcat on release builds.
+# Strip normal log calls from release to prevent accidental PII / endpoint
+# leaks. SafeDiagnostics deliberately uses Log.println for curated messages
+# that contain only an operation label and exception class.
 -assumenosideeffects class android.util.Log {
     public static *** d(...);
     public static *** v(...);

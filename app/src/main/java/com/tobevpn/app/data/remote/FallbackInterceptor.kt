@@ -1,7 +1,7 @@
 package com.tobevpn.app.data.remote
 
-import android.util.Log
 import com.tobevpn.app.BuildConfig
+import com.tobevpn.app.util.SafeDiagnostics
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
@@ -19,15 +19,9 @@ import javax.net.ssl.SSLHandshakeException
  * (DNS-blocked, TCP refused, TLS handshake failure, socket timeout —
  * exactly the failure modes ISP-level filtering produces).
  *
- * Wire format:
- *   primary:  <method> https://<primary-host><path>?<query>   (body, headers)
- *   fallback: <method> https://<fallback-function>?u=<primary-host><path>?<query>
- *
- * The fallback endpoint is a proxy function. [BuildConfig.FALLBACK_BOT_DOMAIN]
- * stores its full URL, usually ending in `?u=`. The original API target is
- * passed through the `u` query parameter, using the host + path + query form
- * accepted by the proxy (for example, "<primary-host>/api/config"). Headers,
- * body and HTTP method are preserved.
+ * The fallback endpoint is operator-configured in [BuildConfig.FALLBACK_BOT_DOMAIN].
+ * It receives the original API target through the expected query parameter and
+ * preserves method/body semantics.
  *
  * A non-2xx HTTP response from the primary is **not** a fallback trigger —
  * that's the upstream telling us something genuine (auth failed, validation
@@ -52,15 +46,18 @@ class FallbackInterceptor : Interceptor {
             if (!isFallbackEligible(primaryError)) throw primaryError
             val fallbackRequest = buildFallbackRequest(original, fallbackProxyUrl)
                 ?: throw primaryError
-            Log.w(
+            SafeDiagnostics.warn(
                 TAG,
-                "primary ${original.url.encodedPath} failed (${primaryError.javaClass.simpleName})," +
-                    " retrying via fallback",
+                "Primary API request failed; retrying via fallback: " +
+                    SafeDiagnostics.failureCategory(primaryError),
             )
             try {
                 chain.proceed(fallbackRequest)
             } catch (fallbackError: IOException) {
-                Log.w(TAG, "fallback also failed: ${fallbackError.javaClass.simpleName}")
+                SafeDiagnostics.warn(
+                    TAG,
+                    "Fallback API request failed: ${SafeDiagnostics.failureCategory(fallbackError)}",
+                )
                 // Surface the *primary* error so callers get the original
                 // (and more diagnostic-useful) failure cause when both legs
                 // are down.

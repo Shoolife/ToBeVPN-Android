@@ -16,6 +16,7 @@ import com.tobevpn.app.data.remote.dto.EnsureUserRequestDto
 import com.tobevpn.app.data.remote.dto.SaveEmailRequestDto
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.UserPlan
+import com.tobevpn.app.util.SafeDiagnostics
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -39,6 +40,7 @@ class AuthRepository @Inject constructor(
     private val bootstrapManager: BootstrapManager,
 ) {
     companion object {
+        private const val TAG = "AuthRepository"
         // Fallback defaults if server is unreachable
         private const val DEFAULT_FREE_TRIAL_TRAFFIC_BYTES = 1_073_741_824L // 1 GB
     }
@@ -376,7 +378,8 @@ class AuthRepository @Inject constructor(
                             sessionStore.update { it.copy(email = panelUser.email) }
                         }
                     }
-                } catch (_: Exception) {
+                } catch (error: Exception) {
+                    SafeDiagnostics.warn(TAG, "Panel user refresh failed: ${SafeDiagnostics.failureCategory(error)}")
                     // Fall through — use existing shortUuid
                 }
             }
@@ -465,7 +468,8 @@ class AuthRepository @Inject constructor(
             if (session.authState == "AUTHENTICATED") {
                 registerCurrentDevice()
             }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            SafeDiagnostics.warn(TAG, "Subscription sync failed: ${SafeDiagnostics.failureCategory(error)}")
         }
     }
 

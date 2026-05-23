@@ -23,6 +23,7 @@ import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
+import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.vpn.VpnConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -67,6 +68,9 @@ class MainViewModel @Inject constructor(
 
     private val _purchasePlansLoading = MutableStateFlow(false)
     val purchasePlansLoading: StateFlow<Boolean> = _purchasePlansLoading
+
+    private val _purchasePlansLoaded = MutableStateFlow(false)
+    val purchasePlansLoaded: StateFlow<Boolean> = _purchasePlansLoaded
 
     private val _currentLimits = MutableStateFlow<CurrentPlanLimits?>(null)
     val currentLimits: StateFlow<CurrentPlanLimits?> = _currentLimits
@@ -125,6 +129,7 @@ class MainViewModel @Inject constructor(
     private var pendingPurchaseRefreshJob: Job? = null
 
     private companion object {
+        const val TAG = "MainViewModel"
         const val RESUME_SYNC_THROTTLE_MS = 5_000L
         const val PURCHASE_REFRESH_ACTIVE_WINDOW_MS = 2L * 60L * 1000L
         const val PURCHASE_REFRESH_TOTAL_WINDOW_MS = 10L * 60L * 1000L
@@ -311,7 +316,7 @@ class MainViewModel @Inject constructor(
                 clearPurchaseState()
                 return@launch
             }
-            refreshPurchasePlansAndLimits(clearCurrentLimits = true)
+            refreshPurchasePlansAndLimits(clearCurrentLimits = false)
         }
     }
 
@@ -348,12 +353,14 @@ class MainViewModel @Inject constructor(
             _purchasePlans.value = purchaseRepository.getPlans()
             loadCurrentLimitsNow(clearBeforeLoad = clearCurrentLimits)
         } finally {
+            _purchasePlansLoaded.value = true
             _purchasePlansLoading.value = false
         }
     }
 
     private fun clearPurchaseState() {
         _purchasePlans.value = null
+        _purchasePlansLoaded.value = false
         _purchasePlansLoading.value = false
         _currentLimits.value = null
     }
@@ -373,8 +380,12 @@ class MainViewModel @Inject constructor(
                     trafficLimitBytes = user.trafficLimitBytes,
                     deviceLimit = user.hwidDeviceLimit ?: 0,
                 )
+            } else {
+                SafeDiagnostics.warn(TAG, "Current plan limits response did not contain a user")
+                _currentLimits.value = null
             }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            SafeDiagnostics.warn(TAG, "Current plan limits request failed: ${SafeDiagnostics.failureCategory(error)}")
             _currentLimits.value = null
         }
     }

@@ -1,8 +1,8 @@
 package com.tobevpn.app.data.remote
 
-import android.util.Log
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.data.device.DeviceFingerprintProvider
+import com.tobevpn.app.util.SafeDiagnostics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -32,6 +32,7 @@ class SubscriptionPinger @Inject constructor(
     private val fingerprintProvider: DeviceFingerprintProvider,
 ) {
     private val client = OkHttpClient.Builder()
+        .proxySelector(TunnelAwareProxySelector())
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
@@ -71,7 +72,11 @@ class SubscriptionPinger @Inject constructor(
                 logFailure("primary", primaryError)
                 return@withContext null
             }
-            Log.w(TAG, "primary failed (${primaryError.javaClass.simpleName}), retrying via fallback")
+            SafeDiagnostics.warn(
+                TAG,
+                "Primary subscription ping failed; retrying via fallback: " +
+                    SafeDiagnostics.failureCategory(primaryError),
+            )
             try {
                 client.newCall(fallbackRequest).execute().use { return@withContext readIntervalMs(it.header("profile-update-interval")) }
             } catch (fallbackError: IOException) {
@@ -108,11 +113,9 @@ class SubscriptionPinger @Inject constructor(
     }
 
     /**
-     * The fallback URL configured via FALLBACK_SUBS_DOMAIN already ends
-     * with `?sub=`. We extract the trailing path segment of the subscription
-     * subscription URL (the per-user key) and append it. Returns null
-     * when the fallback isn't configured or the URL doesn't contain a
-     * key segment.
+     * Builds the operator fallback request from the cached subscription URL.
+     * Returns null when the fallback isn't configured or the URL doesn't
+     * contain the expected key segment.
      */
     private fun buildFallbackRequest(subscriptionUrl: String, base: Request): Request? {
         val fallbackBase = BuildConfig.FALLBACK_SUBS_DOMAIN
@@ -127,11 +130,11 @@ class SubscriptionPinger @Inject constructor(
     }
 
     private fun logFailure(stage: String, e: IOException) {
-        // Log only the exception class — the exception message can include
+        // Log only a broad failure category — the exception message can include
         // the subscription URL (UnknownHostException prefixes the
         // bare hostname), which we don't want to leak into logcat on
         // release builds.
-        Log.w(TAG, "$stage ping failed: ${e.javaClass.simpleName}")
+        SafeDiagnostics.warn(TAG, "$stage subscription ping failed: ${SafeDiagnostics.failureCategory(e)}")
     }
 
     private companion object {

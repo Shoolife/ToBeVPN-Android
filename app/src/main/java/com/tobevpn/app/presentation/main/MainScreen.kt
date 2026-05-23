@@ -36,6 +36,7 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -97,6 +98,8 @@ fun MainScreen(
     val sessionTime by viewModel.sessionTimeSeconds.collectAsStateWithLifecycle()
     val rubToUsdRate by viewModel.rubToUsdRate.collectAsStateWithLifecycle()
     val purchasePlans by viewModel.purchasePlans.collectAsStateWithLifecycle()
+    val purchasePlansLoading by viewModel.purchasePlansLoading.collectAsStateWithLifecycle()
+    val purchasePlansLoaded by viewModel.purchasePlansLoaded.collectAsStateWithLifecycle()
     val currentLimits by viewModel.currentLimits.collectAsStateWithLifecycle()
     val activity = LocalContext.current as Activity
 
@@ -367,6 +370,8 @@ fun MainScreen(
             authState = authState,
             rubToUsdRate = rubToUsdRate,
             purchasePlans = purchasePlans,
+            purchasePlansLoading = purchasePlansLoading,
+            purchasePlansLoaded = purchasePlansLoaded,
             currentLimits = currentLimits,
             onLoadPurchasePlans = viewModel::loadPurchasePlans,
             onOpenPurchaseUrl = { url -> viewModel.openPurchaseUrl(activity, url) },
@@ -982,6 +987,8 @@ private fun SubscriptionBottomSheet(
     authState: AuthState,
     rubToUsdRate: Double?,
     purchasePlans: com.tobevpn.app.data.remote.dto.PurchasePlansDto?,
+    purchasePlansLoading: Boolean,
+    purchasePlansLoaded: Boolean,
     currentLimits: CurrentPlanLimits?,
     onLoadPurchasePlans: () -> Unit,
     onOpenPurchaseUrl: (String?) -> Unit,
@@ -1031,6 +1038,9 @@ private fun SubscriptionBottomSheet(
             val deviceLimit: Int? = currentLimits?.deviceLimit?.takeIf { it > 0 }
             val showLimits = authState is AuthState.Authenticated &&
                 (authState.plan == UserPlan.PAID || authState.plan == UserPlan.ADMIN)
+            val limitsLoading = showLimits &&
+                currentLimits == null &&
+                (purchasePlansLoading || !purchasePlansLoaded)
             val trafficLimitValue = trafficGb
                 ?.let { "$it ${stringResource(R.string.unit_gb)}" }
                 ?: if (currentLimits != null && currentLimits.trafficLimitBytes <= 0) {
@@ -1139,24 +1149,28 @@ private fun SubscriptionBottomSheet(
                     }
                     if (showLimits) {
                         Spacer(modifier = Modifier.width(16.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            LimitStat(
-                                value = trafficLimitValue,
-                                label = stringResource(R.string.per_month_short),
-                            )
-                            Text(
-                                text = "·",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 22.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            LimitStat(
-                                value = deviceLimitValue,
-                                label = stringResource(R.string.devices_label),
-                            )
+                        if (limitsLoading) {
+                            LoadingInline(text = stringResource(R.string.loading_data))
+                        } else {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                LimitStat(
+                                    value = trafficLimitValue,
+                                    label = stringResource(R.string.per_month_short),
+                                )
+                                Text(
+                                    text = "·",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 22.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                LimitStat(
+                                    value = deviceLimitValue,
+                                    label = stringResource(R.string.devices_label),
+                                )
+                            }
                         }
                     }
                 }
@@ -1264,122 +1278,164 @@ private fun SubscriptionBottomSheet(
                 ?.filter { it.durations.any { d -> d.days > 0 } }
                 ?.maxByOrNull { it.durations.size }
 
-            val plans: List<PlanInfo> = if (sourcePlan != null) {
-                sourcePlan.durations
-                    .filter { it.days > 0 }
-                    .sortedBy { it.orderIndex }
-                    .map { d ->
-                        PlanInfo(
-                            key = planKey(d.days),
-                            title = planTitle(d.days),
-                            priceDisplay = formatDurationPrice(d),
-                            description = planDescription,
-                            botPaymentUrl = d.botPaymentUrl,
-                        )
+            val plansLoading = authState is AuthState.Authenticated &&
+                sourcePlan == null &&
+                (purchasePlansLoading || !purchasePlansLoaded)
+            val plans: List<PlanInfo> = when {
+                sourcePlan != null -> {
+                    sourcePlan.durations
+                        .filter { it.days > 0 }
+                        .sortedBy { it.orderIndex }
+                        .map { d ->
+                            PlanInfo(
+                                key = planKey(d.days),
+                                title = planTitle(d.days),
+                                priceDisplay = formatDurationPrice(d),
+                                description = planDescription,
+                                botPaymentUrl = d.botPaymentUrl,
+                            )
+                        }
+                }
+                plansLoading -> emptyList()
+                else -> {
+                    // Fallback prices after the request has failed or returned no paid plan.
+                    val rubPrices = listOf(15, 65, 200, 500, 1500)
+                    fun fallbackPrice(rubPrice: Int): String {
+                        return if (isRussian) {
+                            val formatted = if (rubPrice >= 1000) "%,d".format(rubPrice).replace(',', ' ') else rubPrice.toString()
+                            "$formatted\u20BD"
+                        } else if (rubToUsdRate != null) {
+                            "$%.2f".format(rubPrice * rubToUsdRate)
+                        } else {
+                            "${kotlin.math.round(rubPrice / 1.3).toInt()} \u2B50"
+                        }
                     }
+                    listOf(
+                        PlanInfo("day", stringResource(R.string.plan_day), fallbackPrice(rubPrices[0]), planDescription),
+                        PlanInfo("week", stringResource(R.string.plan_week), fallbackPrice(rubPrices[1]), planDescription),
+                        PlanInfo("month", stringResource(R.string.plan_month), fallbackPrice(rubPrices[2]), planDescription),
+                        PlanInfo("3month", stringResource(R.string.plan_3month), fallbackPrice(rubPrices[3]), planDescription),
+                        PlanInfo("year", stringResource(R.string.plan_year), fallbackPrice(rubPrices[4]), planDescription),
+                    )
+                }
+            }
+
+            if (plansLoading) {
+                LoadingBlock(text = stringResource(R.string.plans_loading))
             } else {
-                // Fallback prices while data is loading or request failed.
-                val rubPrices = listOf(15, 65, 200, 500, 1500)
-                fun fallbackPrice(rubPrice: Int): String {
-                    return if (isRussian) {
-                        val formatted = if (rubPrice >= 1000) "%,d".format(rubPrice).replace(',', ' ') else rubPrice.toString()
-                        "$formatted\u20BD"
-                    } else if (rubToUsdRate != null) {
-                        "$%.2f".format(rubPrice * rubToUsdRate)
-                    } else {
-                        "${kotlin.math.round(rubPrice / 1.3).toInt()} \u2B50"
-                    }
+                var selectedPlan by remember(plans) {
+                    mutableStateOf(plans.firstOrNull { it.key == "month" }?.key ?: plans.firstOrNull()?.key ?: "month")
                 }
-                listOf(
-                    PlanInfo("day", stringResource(R.string.plan_day), fallbackPrice(rubPrices[0]), planDescription),
-                    PlanInfo("week", stringResource(R.string.plan_week), fallbackPrice(rubPrices[1]), planDescription),
-                    PlanInfo("month", stringResource(R.string.plan_month), fallbackPrice(rubPrices[2]), planDescription),
-                    PlanInfo("3month", stringResource(R.string.plan_3month), fallbackPrice(rubPrices[3]), planDescription),
-                    PlanInfo("year", stringResource(R.string.plan_year), fallbackPrice(rubPrices[4]), planDescription),
-                )
-            }
-            var selectedPlan by remember(plans) {
-                mutableStateOf(plans.firstOrNull { it.key == "month" }?.key ?: plans.firstOrNull()?.key ?: "month")
-            }
 
-            plans.forEach { plan ->
-                PlanOption(
-                    title = plan.title,
-                    priceDisplay = plan.priceDisplay,
-                    description = plan.description,
-                    selected = selectedPlan == plan.key,
-                    onClick = { selectedPlan = plan.key },
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // How to buy hint
-            Text(
-                text = stringResource(R.string.payment_via_telegram),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(bottom = 16.dp),
-            )
-
-            if (authState is AuthState.Anonymous) {
-                Button(
-                    onClick = {
-                        onDismiss()
-                        onNavigateToAuth()
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    // Match the "Купить" / "Сканировать QR" CTA family.
-                    colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
-                        androidx.compose.material3.ButtonDefaults.buttonColors()
-                    } else {
-                        androidx.compose.material3.ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF3F3F3F),
-                            contentColor = Color.White,
-                        )
-                    },
-                ) {
-                    Text(stringResource(R.string.login_via_telegram))
+                plans.forEach { plan ->
+                    PlanOption(
+                        title = plan.title,
+                        priceDisplay = plan.priceDisplay,
+                        description = plan.description,
+                        selected = selectedPlan == plan.key,
+                        onClick = { selectedPlan = plan.key },
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
-                Spacer(modifier = Modifier.height(8.dp))
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // How to buy hint
                 Text(
-                    text = stringResource(R.string.login_required_for_purchase),
+                    text = stringResource(R.string.payment_via_telegram),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.padding(bottom = 16.dp),
                 )
-            } else {
-                val selectedLabel = plans.firstOrNull { it.key == selectedPlan }
-                    ?: plans.firstOrNull()
-                    ?: return@Column
-                Button(
-                    onClick = {
-                        onDismiss()
-                        onOpenPurchaseUrl(selectedLabel.botPaymentUrl)
-                    },
-                    enabled = selectedLabel.botPaymentUrl != null,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
-                    // Light theme: dark-grey CTA so it stands as the
-                    // strongest action on the white sheet. Dark theme: keep
-                    // the default M3 button so it doesn't disappear into
-                    // the dark background.
-                    colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
-                        androidx.compose.material3.ButtonDefaults.buttonColors()
-                    } else {
-                        androidx.compose.material3.ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF3F3F3F),
-                            contentColor = Color.White,
-                        )
-                    },
-                ) {
-                    Text(stringResource(R.string.buy_plan, selectedLabel.title, selectedLabel.priceDisplay))
+
+                if (authState is AuthState.Anonymous) {
+                    Button(
+                        onClick = {
+                            onDismiss()
+                            onNavigateToAuth()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        // Match the "Купить" / "Сканировать QR" CTA family.
+                        colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                            androidx.compose.material3.ButtonDefaults.buttonColors()
+                        } else {
+                            androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF3F3F3F),
+                                contentColor = Color.White,
+                            )
+                        },
+                    ) {
+                        Text(stringResource(R.string.login_via_telegram))
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = stringResource(R.string.login_required_for_purchase),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    val selectedLabel = plans.firstOrNull { it.key == selectedPlan }
+                        ?: plans.firstOrNull()
+                        ?: return@Column
+                    Button(
+                        onClick = {
+                            onDismiss()
+                            onOpenPurchaseUrl(selectedLabel.botPaymentUrl)
+                        },
+                        enabled = selectedLabel.botPaymentUrl != null,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        // Light theme: dark-grey CTA so it stands as the
+                        // strongest action on the white sheet. Dark theme: keep
+                        // the default M3 button so it doesn't disappear into
+                        // the dark background.
+                        colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                            androidx.compose.material3.ButtonDefaults.buttonColors()
+                        } else {
+                            androidx.compose.material3.ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF3F3F3F),
+                                contentColor = Color.White,
+                            )
+                        },
+                    ) {
+                        Text(stringResource(R.string.buy_plan, selectedLabel.title, selectedLabel.priceDisplay))
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun LoadingInline(text: String) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(18.dp),
+            strokeWidth = 2.dp,
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun LoadingBlock(text: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(76.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        LoadingInline(text = text)
     }
 }
 

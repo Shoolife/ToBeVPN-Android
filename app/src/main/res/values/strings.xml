@@ -12,6 +12,7 @@
     <string name="retry">Try again</string>
     <string name="continue_btn">Continue</string>
     <string name="refresh">Refresh</string>
+    <string name="loading_data">Loading…</string>
 
     <!-- Connection states -->
     <string name="state_disconnected">Disconnected</string>
@@ -74,6 +75,7 @@
     <string name="plan_devices_unknown">up to XX devices</string>
     <string name="plan_unlimited_traffic">Unlimited traffic</string>
     <string name="available_plans">Available plans</string>
+    <string name="plans_loading">Loading plans…</string>
     <string name="payment_via_telegram">Payment via Telegram</string>
     <string name="login_via_telegram">Sign in via Telegram</string>
     <string name="login_required_for_purchase">You need to sign in before purchasing a subscription</string>

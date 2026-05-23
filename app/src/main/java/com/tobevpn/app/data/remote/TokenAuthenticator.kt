@@ -20,13 +20,20 @@ class TokenAuthenticator @Inject constructor(
 
     override fun authenticate(route: Route?, response: Response): Request? {
         if (responseCount(response) >= 2) return null
-        val oldHeader = response.request.header("Authorization")
+        val headerName = if (response.request.header(AuthHeaderInterceptor.FALLBACK_AUTH_HEADER) != null) {
+            AuthHeaderInterceptor.FALLBACK_AUTH_HEADER
+        } else {
+            AuthHeaderInterceptor.DIRECT_AUTH_HEADER
+        }
+        val oldHeader = response.request.header(headerName)
         val oldToken = oldHeader?.removePrefix("Bearer ")?.trim()
         val newToken = runBlocking {
             bootstrapManager.refreshOrBootstrapAfter401(oldToken)
         } ?: return null
         return response.request.newBuilder()
-            .header("Authorization", "Bearer $newToken")
+            .removeHeader(AuthHeaderInterceptor.DIRECT_AUTH_HEADER)
+            .removeHeader(AuthHeaderInterceptor.FALLBACK_AUTH_HEADER)
+            .header(headerName, "Bearer $newToken")
             .build()
     }
 
