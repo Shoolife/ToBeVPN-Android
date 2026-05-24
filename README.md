@@ -49,7 +49,7 @@ ToBeVPN — нативный Android-клиент к VPN-сети с защищ�
     <tr>
       <td><img src="docs/screenshots/android/home-connected.jpg" alt="Главный экран ToBeVPN Android" width="170" /></td>
       <td><img src="docs/screenshots/android/subscription.jpg" alt="Экран подписки ToBeVPN Android" width="170" /></td>
-      <td><img src="docs/screenshots/android/servers.jpg" alt="Экран выбора сервера ToBeVPN Android" width="170" /></td>
+      <td><img src="docs/screenshots/android/servers-original.png" alt="Экран выбора сервера ToBeVPN Android" width="170" /></td>
     </tr>
     <tr>
       <td align="center"><b>Статистика</b></td>
