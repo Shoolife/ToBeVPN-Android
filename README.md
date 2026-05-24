@@ -42,26 +42,24 @@ ToBeVPN — нативный Android-клиент к VPN-сети с защищ�
 <div align="center">
   <table>
     <tr>
-      <td align="center">
-        <a href="docs/screenshots/android/home-connected.jpg"><img src="docs/screenshots/android/home-connected.jpg" alt="Главный экран с активным подключением" width="170" /></a><br />
-        <sub><b>Подключение</b></sub>
-      </td>
-      <td align="center">
-        <a href="docs/screenshots/android/subscription.jpg"><img src="docs/screenshots/android/subscription.jpg" alt="Управление подпиской" width="170" /></a><br />
-        <sub><b>Подписка</b></sub>
-      </td>
-      <td align="center">
-        <a href="docs/screenshots/android/speed-test.jpg"><img src="docs/screenshots/android/speed-test.jpg" alt="Тест скорости через VPN" width="170" /></a><br />
-        <sub><b>Тест скорости</b></sub>
-      </td>
-      <td align="center">
-        <a href="docs/screenshots/android/statistics.jpg"><img src="docs/screenshots/android/statistics.jpg" alt="Статистика использования" width="170" /></a><br />
-        <sub><b>Статистика</b></sub>
-      </td>
-      <td align="center">
-        <a href="docs/screenshots/android/app-filter.jpg"><img src="docs/screenshots/android/app-filter.jpg" alt="Фильтрация приложений VPN" width="170" /></a><br />
-        <sub><b>Приложения VPN</b></sub>
-      </td>
+      <td align="center"><b>Главный экран</b></td>
+      <td align="center"><b>Подписка</b></td>
+      <td align="center"><b>Серверы</b></td>
+    </tr>
+    <tr>
+      <td><img src="docs/screenshots/android/home-connected.jpg" alt="Главный экран ToBeVPN Android" width="170" /></td>
+      <td><img src="docs/screenshots/android/subscription.jpg" alt="Экран подписки ToBeVPN Android" width="170" /></td>
+      <td><img src="docs/screenshots/android/servers.jpg" alt="Экран выбора сервера ToBeVPN Android" width="170" /></td>
+    </tr>
+    <tr>
+      <td align="center"><b>Статистика</b></td>
+      <td align="center"><b>Тест скорости</b></td>
+      <td align="center"><b>Приложения VPN</b></td>
+    </tr>
+    <tr>
+      <td><img src="docs/screenshots/android/statistics.jpg" alt="Экран статистики ToBeVPN Android" width="170" /></td>
+      <td><img src="docs/screenshots/android/speed-test.jpg" alt="Экран теста скорости ToBeVPN Android" width="170" /></td>
+      <td><img src="docs/screenshots/android/app-filter.jpg" alt="Экран фильтрации приложений ToBeVPN Android" width="170" /></td>
     </tr>
   </table>
 </div>
