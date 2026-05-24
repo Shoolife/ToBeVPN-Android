@@ -1,6 +1,8 @@
 package com.tobevpn.app.presentation.servers
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -14,7 +16,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,8 +29,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -44,6 +47,7 @@ import com.tobevpn.app.presentation.components.serverDisplayName
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.presentation.theme.VpnRed
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -52,8 +56,11 @@ fun ServerListScreen(
     viewModel: ServerListViewModel = hiltViewModel(),
 ) {
     val servers by viewModel.servers.collectAsStateWithLifecycle()
+    val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
+    val selectedServerKey by viewModel.selectedServerKey.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
 
     Scaffold(
         topBar = {
@@ -113,9 +120,17 @@ fun ServerListScreen(
                         items(servers, key = { it.id }) { server ->
                             ServerItem(
                                 server = server,
+                                selected = isSelectedServer(
+                                    server = server,
+                                    selectedId = selectedServerId,
+                                    selectedKey = selectedServerKey,
+                                ),
                                 onClick = {
-                                    viewModel.selectServer(server)
-                                    onBack()
+                                    scope.launch {
+                                        if (viewModel.selectServer(server)) {
+                                            onBack()
+                                        }
+                                    }
                                 },
                             )
                         }
@@ -129,8 +144,21 @@ fun ServerListScreen(
 @Composable
 private fun ServerItem(
     server: Server,
+    selected: Boolean,
     onClick: () -> Unit,
 ) {
+    val isDark = isSystemInDarkTheme()
+    val selectedContainerColor = if (isDark) {
+        VpnGreen.copy(alpha = 0.14f)
+    } else {
+        Color(0xFFE7F5EA)
+    }
+    val selectedBorderColor = if (isDark) {
+        VpnGreen.copy(alpha = 0.72f)
+    } else {
+        VpnGreen.copy(alpha = 0.58f)
+    }
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -143,8 +171,13 @@ private fun ServerItem(
         // pinned to BrandCardFill (#EEEEEE) by ToBeVPNTheme so server
         // tiles also stay consistent with Home there.
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            containerColor = if (selected) {
+                selectedContainerColor
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh
+            },
         ),
+        border = if (selected) BorderStroke(1.dp, selectedBorderColor) else null,
     ) {
         Row(
             modifier = Modifier

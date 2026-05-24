@@ -42,16 +42,26 @@ ToBeVPN — нативный Android-клиент к VPN-сети с защищ�
 <div align="center">
   <table>
     <tr>
-      <td align="center"><b>Home</b></td>
-      <td align="center"><b>Серверы</b></td>
-      <td align="center"><b>Приложения VPN</b></td>
-      <td align="center"><b>Настройки</b></td>
-    </tr>
-    <tr>
-      <td><sub><i>скриншот скоро</i></sub></td>
-      <td><sub><i>скриншот скоро</i></sub></td>
-      <td><sub><i>скриншот скоро</i></sub></td>
-      <td><sub><i>скриншот скоро</i></sub></td>
+      <td align="center">
+        <a href="docs/screenshots/android/home-connected.jpg"><img src="docs/screenshots/android/home-connected.jpg" alt="Главный экран с активным подключением" width="170" /></a><br />
+        <sub><b>Подключение</b></sub>
+      </td>
+      <td align="center">
+        <a href="docs/screenshots/android/subscription.jpg"><img src="docs/screenshots/android/subscription.jpg" alt="Управление подпиской" width="170" /></a><br />
+        <sub><b>Подписка</b></sub>
+      </td>
+      <td align="center">
+        <a href="docs/screenshots/android/speed-test.jpg"><img src="docs/screenshots/android/speed-test.jpg" alt="Тест скорости через VPN" width="170" /></a><br />
+        <sub><b>Тест скорости</b></sub>
+      </td>
+      <td align="center">
+        <a href="docs/screenshots/android/statistics.jpg"><img src="docs/screenshots/android/statistics.jpg" alt="Статистика использования" width="170" /></a><br />
+        <sub><b>Статистика</b></sub>
+      </td>
+      <td align="center">
+        <a href="docs/screenshots/android/app-filter.jpg"><img src="docs/screenshots/android/app-filter.jpg" alt="Фильтрация приложений VPN" width="170" /></a><br />
+        <sub><b>Приложения VPN</b></sub>
+      </td>
     </tr>
   </table>
 </div>

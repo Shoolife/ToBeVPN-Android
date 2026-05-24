@@ -54,7 +54,7 @@ class AuthViewModel @Inject constructor(
         // so the user returning from Telegram completes auth without waiting for
         // the next polling tick.
         viewModelScope.launch {
-            deepLinkBus.deepLinks.collect { uri -> handleDeepLinkCallback(uri) }
+            deepLinkBus.authCallbacks.collect { uri -> handleDeepLinkCallback(uri) }
         }
     }
 
@@ -98,7 +98,7 @@ class AuthViewModel @Inject constructor(
     }
 
     fun handleDeepLinkCallback(uri: Uri?) {
-        if (uri?.scheme == "tobevpn" && uri.host == "auth_callback") {
+        if (uri?.scheme == DeepLinkBus.SCHEME && uri.host == DeepLinkBus.AUTH_CALLBACK_HOST) {
             val status = uri.getQueryParameter("status")
             if (status == "success") {
                 viewModelScope.launch {

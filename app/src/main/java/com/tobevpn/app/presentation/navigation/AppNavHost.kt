@@ -17,12 +17,15 @@ import com.tobevpn.app.presentation.servers.ServerListScreen
 import com.tobevpn.app.presentation.settings.SettingsScreen
 import com.tobevpn.app.presentation.speedtest.SpeedTestScreen
 import com.tobevpn.app.presentation.stats.StatsScreen
+import com.tobevpn.app.util.DeepLinkBus
+import com.tobevpn.app.util.DeepLinkDestination
 import kotlinx.coroutines.delay
 
 @Composable
 fun AppNavHost(
     navController: NavHostController,
     startFromOnboarding: Boolean = false,
+    deepLinkBus: DeepLinkBus,
     modifier: Modifier = Modifier,
 ) {
     val startDestination: Any = if (startFromOnboarding) OnboardingRoute else MainRoute
@@ -33,6 +36,15 @@ fun AppNavHost(
             delay(NAV_RECOVERY_DELAY_MS)
             if (navController.currentBackStackEntry == null) {
                 navController.navigateSingleTop(startDestination)
+            }
+        }
+    }
+
+    LaunchedEffect(navController) {
+        deepLinkBus.navigationRequests.collect { destination ->
+            when (destination) {
+                DeepLinkDestination.AUTH -> navController.navigateSingleTop(AuthRoute)
+                DeepLinkDestination.MAIN -> navController.navigateSingleTop(MainRoute)
             }
         }
     }

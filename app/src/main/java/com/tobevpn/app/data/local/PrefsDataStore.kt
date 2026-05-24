@@ -36,6 +36,7 @@ class PrefsDataStore @Inject constructor(
         val DEVICE_ID = stringPreferencesKey("device_id")
         val ONBOARDING_SEEN = booleanPreferencesKey("onboarding_seen")
         val SELECTED_SERVER_ID = stringPreferencesKey("selected_server_id")
+        val SELECTED_SERVER_KEY = stringPreferencesKey("selected_server_key")
         val EMAIL_PROMPT_SHOWN = booleanPreferencesKey("email_prompt_shown")
         // USER_EMAIL was removed in v9 — email now lives in the encrypted
         // SessionEntity. We still scrub the legacy plaintext key on first launch
@@ -70,6 +71,7 @@ class PrefsDataStore @Inject constructor(
     val deviceId: Flow<String?> = context.dataStore.data.map { it[Keys.DEVICE_ID] }
     val onboardingSeen: Flow<Boolean> = context.dataStore.data.map { it[Keys.ONBOARDING_SEEN] ?: false }
     val selectedServerId: Flow<String?> = context.dataStore.data.map { it[Keys.SELECTED_SERVER_ID] }
+    val selectedServerKey: Flow<String?> = context.dataStore.data.map { it[Keys.SELECTED_SERVER_KEY] }
     val emailPromptShown: Flow<Boolean> = context.dataStore.data.map { it[Keys.EMAIL_PROMPT_SHOWN] ?: false }
     val language: Flow<String?> = context.dataStore.data.map { it[Keys.LANGUAGE] }
 
@@ -97,6 +99,13 @@ class PrefsDataStore @Inject constructor(
 
     suspend fun setSelectedServerId(id: String) {
         context.dataStore.edit { it[Keys.SELECTED_SERVER_ID] = id }
+    }
+
+    suspend fun setSelectedServer(id: String, key: String) {
+        context.dataStore.edit {
+            it[Keys.SELECTED_SERVER_ID] = id
+            it[Keys.SELECTED_SERVER_KEY] = key
+        }
     }
 
     suspend fun setEmailPromptShown() {

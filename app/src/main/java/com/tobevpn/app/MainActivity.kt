@@ -77,6 +77,7 @@ class MainActivity : AppCompatActivity() {
                                 AppNavHost(
                                     navController = navController,
                                     startFromOnboarding = !seen,
+                                    deepLinkBus = deepLinkBus,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
@@ -120,9 +121,7 @@ class MainActivity : AppCompatActivity() {
     private fun dispatchDeepLink(intent: Intent?) {
         val uri = intent?.data ?: return
         if (intent.action != Intent.ACTION_VIEW) return
-        // Ignore non-app schemes outright — manifest only filters tobevpn://
-        // but defense-in-depth: never forward foreign URIs to the bus.
-        if (uri.scheme != "tobevpn") return
+        if (!deepLinkBus.supports(uri)) return
         deepLinkBus.post(uri)
     }
 }

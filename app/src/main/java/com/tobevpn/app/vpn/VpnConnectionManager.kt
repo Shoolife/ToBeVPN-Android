@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.Build
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.local.dao.SessionDao
@@ -36,6 +37,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.InetSocketAddress
 import java.net.Proxy
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -75,6 +77,11 @@ class VpnConnectionManager @Inject constructor(
     private var watchdogRecoveryAttempts = 0
     // Monotonic counter to invalidate stale operations
     private var connectionGeneration = 0
+    private val latestConnectionGeneration = AtomicInteger(0)
+    // Updated synchronously when the user starts, switches, or stops so a
+    // coroutine delayed by network preparation cannot later revive old intent.
+    private val requestedOperation = AtomicInteger(0)
+    private val permittedServiceStartGeneration = AtomicInteger(-1)
 
     private val tunnelProbeClient = OkHttpClient.Builder()
         .proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808)))
@@ -154,16 +161,33 @@ class VpnConnectionManager @Inject constructor(
     }
 
 
-    fun startVpn(server: Server) {
-        startVpnInternal(server, resetWatchdogRecovery = true)
+    fun startVpn(server: Server, onAttemptHandled: (() -> Unit)? = null) {
+        startVpnInternal(
+            server = server,
+            resetWatchdogRecovery = true,
+            request = requestedOperation.incrementAndGet(),
+            onAttemptHandled = onAttemptHandled,
+        )
     }
 
-    private fun startVpnInternal(server: Server, resetWatchdogRecovery: Boolean) {
+    private fun startVpnInternal(
+        server: Server,
+        resetWatchdogRecovery: Boolean,
+        request: Int,
+        onAttemptHandled: (() -> Unit)? = null,
+    ) {
         scope.launch {
             val gen: Int
             mutex.withLock {
+                if (request != requestedOperation.get()) {
+                    onAttemptHandled?.invoke()
+                    return@launch
+                }
                 val current = _connectionState.value
-                if (current is ConnectionState.Connecting || current is ConnectionState.Connected) return@launch
+                if (current is ConnectionState.Connecting || current is ConnectionState.Connected) {
+                    onAttemptHandled?.invoke()
+                    return@launch
+                }
 
                 // Hard guard against the panel's "subscription expired"
                 // placeholder server. xray's native loop would SIGSEGV on
@@ -174,11 +198,13 @@ class VpnConnectionManager @Inject constructor(
                     _connectionState.value = ConnectionState.Error(
                         context.getString(R.string.error_subscription_expired)
                     )
+                    onAttemptHandled?.invoke()
                     return@launch
                 }
 
                 if (!isPaidUser() && usageRepository.isExhausted()) {
                     _connectionState.value = ConnectionState.Error(context.getString(R.string.error_limit_exhausted))
+                    onAttemptHandled?.invoke()
                     return@launch
                 }
 
@@ -192,16 +218,18 @@ class VpnConnectionManager @Inject constructor(
                     _connectionState.value = ConnectionState.Error(
                         context.getString(R.string.app_filter_empty_warning),
                     )
+                    onAttemptHandled?.invoke()
                     return@launch
                 }
 
-                connectionGeneration++
-                gen = connectionGeneration
+                gen = advanceGeneration()
                 if (resetWatchdogRecovery) {
                     watchdogRecoveryAttempts = 0
                 }
                 _currentServer.value = server
                 _connectionState.value = ConnectionState.Connecting
+                permittedServiceStartGeneration.set(gen)
+                onAttemptHandled?.invoke()
             }
 
             // Limited/trial access depends on the HWID marker being registered
@@ -212,6 +240,8 @@ class VpnConnectionManager @Inject constructor(
             } else {
                 launch { runCatching { authRepository.pingHwidOnly() } }
             }
+
+            if (!mayStartTunnel(request, gen)) return@launch
 
             val intent = Intent(context, ToBeVpnService::class.java).apply {
                 action = ToBeVpnService.ACTION_START
@@ -227,9 +257,12 @@ class VpnConnectionManager @Inject constructor(
      * manually stop and start. If VPN is not currently active, just starts.
      */
     fun switchServer(server: Server) {
+        permittedServiceStartGeneration.set(-1)
+        val request = requestedOperation.incrementAndGet()
         scope.launch {
             if (server.isSentinel) {
                 mutex.withLock {
+                    if (request != requestedOperation.get()) return@launch
                     _connectionState.value = ConnectionState.Error(
                         context.getString(R.string.error_subscription_expired)
                     )
@@ -240,6 +273,7 @@ class VpnConnectionManager @Inject constructor(
             var shouldStartDirectly = false
             var restartGeneration = -1
             mutex.withLock {
+                if (request != requestedOperation.get()) return@launch
                 val current = _connectionState.value
                 val wasActive = current is ConnectionState.Connected || current is ConnectionState.Connecting
                 if (!wasActive) {
@@ -247,11 +281,11 @@ class VpnConnectionManager @Inject constructor(
                     return@withLock
                 }
 
-                connectionGeneration++
-                restartGeneration = connectionGeneration
+                restartGeneration = advanceGeneration()
                 watchdogRecoveryAttempts = 0
                 _currentServer.value = server
                 _connectionState.value = ConnectionState.Connecting
+                permittedServiceStartGeneration.set(restartGeneration)
                 stopUsageTracking()
                 flushPendingUsage()
                 saveSessionLog()
@@ -259,12 +293,13 @@ class VpnConnectionManager @Inject constructor(
             }
 
             if (shouldStartDirectly) {
-                startVpn(server)
+                startVpnInternal(server, resetWatchdogRecovery = true, request = request)
                 return@launch
             }
 
             val stopIntent = Intent(context, ToBeVpnService::class.java).apply {
                 action = ToBeVpnService.ACTION_STOP
+                putExtra(ToBeVpnService.EXTRA_STOP_BEFORE_GENERATION, restartGeneration)
             }
             context.startService(stopIntent)
             // Give the service a short window to close the old TUN before
@@ -273,9 +308,7 @@ class VpnConnectionManager @Inject constructor(
             // start/stop into this reconnect sequence.
             delay(300)
 
-            val stillCurrent = mutex.withLock {
-                restartGeneration == connectionGeneration && _connectionState.value is ConnectionState.Connecting
-            }
+            val stillCurrent = mayStartTunnel(request, restartGeneration)
             if (!stillCurrent) return@launch
 
             if (!isPaidUser()) {
@@ -283,6 +316,8 @@ class VpnConnectionManager @Inject constructor(
             } else {
                 launch { runCatching { authRepository.pingHwidOnly() } }
             }
+
+            if (!mayStartTunnel(request, restartGeneration)) return@launch
 
             val startIntent = Intent(context, ToBeVpnService::class.java).apply {
                 action = ToBeVpnService.ACTION_START
@@ -294,8 +329,41 @@ class VpnConnectionManager @Inject constructor(
     }
 
     fun stopVpn() {
-        scope.launch { performStop() }
+        permittedServiceStartGeneration.set(-1)
+        val request = requestedOperation.incrementAndGet()
+        if (_connectionState.value !is ConnectionState.Disconnected ||
+            XRayCore.isRunning ||
+            isOwnVpnNetworkActive()
+        ) {
+            ToBeVpnService.cleanupActiveInstance()
+            sendStopIntent(force = true)
+        }
+        scope.launch { performStop(request = request) }
     }
+
+    fun isOwnVpnNetworkActive(): Boolean {
+        val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
+            ?: return XRayCore.isRunning
+        return connectivityManager.allNetworks.any { network ->
+            val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return@any false
+            if (!capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) return@any false
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                capabilities.ownerUid == context.applicationInfo.uid
+            } else {
+                true
+            }
+        }
+    }
+
+    fun mayServiceStart(generation: Int): Boolean =
+        permittedServiceStartGeneration.get() == generation
+
+    private suspend fun mayStartTunnel(request: Int, generation: Int): Boolean =
+        mutex.withLock {
+            request == requestedOperation.get() &&
+                generation == connectionGeneration &&
+                _connectionState.value is ConnectionState.Connecting
+        }
 
     fun requestTunnelHealthCheck() {
         scope.launch {
@@ -340,7 +408,8 @@ class VpnConnectionManager @Inject constructor(
                 val hasActiveSession = connectionStartTime > 0L || _connectionState.value is ConnectionState.Connected
                 if (!hasActiveSession) return@withLock
 
-                connectionGeneration++
+                advanceGeneration()
+                permittedServiceStartGeneration.set(-1)
                 stopUsageTracking()
                 flushPendingUsage()
                 saveSessionLog()
@@ -353,18 +422,29 @@ class VpnConnectionManager @Inject constructor(
     /**
      * Stops VPN with optional error message. Acquires mutex internally.
      */
-    private suspend fun performStop(errorMessage: String? = null) {
+    private suspend fun performStop(
+        errorMessage: String? = null,
+        request: Int? = null,
+        expectedGeneration: Int? = null,
+    ) {
+        var stopBeforeGeneration = -1
         mutex.withLock {
+            if (request != null && request != requestedOperation.get()) return
+            if (expectedGeneration != null && expectedGeneration != connectionGeneration) return
             val current = _connectionState.value
             if (current is ConnectionState.Disconnected) return
 
-            connectionGeneration++
+            stopBeforeGeneration = advanceGeneration()
+            permittedServiceStartGeneration.set(-1)
             _connectionState.value = if (errorMessage != null) {
                 ConnectionState.Error(errorMessage)
             } else {
                 ConnectionState.Disconnected
             }
             stopUsageTracking()
+            // Close the TUN and foreground notification before slower accounting
+            // work, so the user-requested disconnect is visible immediately.
+            sendStopIntent(stopBeforeGeneration)
             flushPendingUsage()
             saveSessionLog()
             // Drop the wall-clock session counter — without this the displayed
@@ -373,11 +453,21 @@ class VpnConnectionManager @Inject constructor(
             // by the `prev is Disconnected` early return below.
             _sessionTimeSeconds.value = 0
         }
+    }
 
+    private fun sendStopIntent(stopBeforeGeneration: Int = Int.MAX_VALUE, force: Boolean = false) {
         val intent = Intent(context, ToBeVpnService::class.java).apply {
             action = ToBeVpnService.ACTION_STOP
+            putExtra(ToBeVpnService.EXTRA_STOP_BEFORE_GENERATION, stopBeforeGeneration)
+            putExtra(ToBeVpnService.EXTRA_FORCE_STOP, force)
         }
         context.startService(intent)
+    }
+
+    private fun advanceGeneration(): Int {
+        connectionGeneration += 1
+        latestConnectionGeneration.set(connectionGeneration)
+        return connectionGeneration
     }
 
     /**
@@ -412,7 +502,8 @@ class VpnConnectionManager @Inject constructor(
                     is ConnectionState.Disconnected -> {
                         // Don't override Error (should persist until user acts) or Disconnected
                         if (prev is ConnectionState.Disconnected || prev is ConnectionState.Error) return@launch
-                        connectionGeneration++
+                        advanceGeneration()
+                        permittedServiceStartGeneration.set(-1)
                         _connectionState.value = state
                         stopUsageTracking()
                         flushPendingUsage()
@@ -422,7 +513,8 @@ class VpnConnectionManager @Inject constructor(
                     is ConnectionState.Error -> {
                         // Don't override intentional disconnect with stale errors
                         if (prev is ConnectionState.Disconnected) return@launch
-                        connectionGeneration++
+                        advanceGeneration()
+                        permittedServiceStartGeneration.set(-1)
                         _connectionState.value = state
                         stopUsageTracking()
                         flushPendingUsage()
@@ -443,6 +535,7 @@ class VpnConnectionManager @Inject constructor(
     private fun startUsageTracking() {
         usageTrackingJob?.cancel()
         val gen = connectionGeneration
+        val request = requestedOperation.get()
         usageTrackingJob = scope.launch {
             val paid = isPaidUser()
             // Heartbeat counter — fires registerCurrentDevice every HEARTBEAT_TICKS
@@ -473,7 +566,11 @@ class VpnConnectionManager @Inject constructor(
                 if (!paid) {
                     val updated = usageRepository.getUsage()
                     if (updated.isExhausted) {
-                        performStop(context.getString(R.string.error_limit_exhausted))
+                        performStop(
+                            errorMessage = context.getString(R.string.error_limit_exhausted),
+                            request = request,
+                            expectedGeneration = gen,
+                        )
                         break
                     }
                 }
@@ -558,6 +655,7 @@ class VpnConnectionManager @Inject constructor(
         var serverToRestart: Server? = null
         var errorMessage: String? = null
         var shouldAbort = false
+        var recoveryRequest = -1
 
         mutex.withLock {
             if (gen != connectionGeneration || _connectionState.value !is ConnectionState.Connected) {
@@ -578,20 +676,31 @@ class VpnConnectionManager @Inject constructor(
 
             watchdogRecoveryAttempts++
             serverToRestart = currentServer
+            recoveryRequest = requestedOperation.get()
         }
 
         if (shouldAbort) return
 
         if (errorMessage != null) {
-            performStop(errorMessage)
+            performStop(
+                errorMessage = errorMessage,
+                request = requestedOperation.get(),
+                expectedGeneration = gen,
+            )
             return
         }
 
         val server = serverToRestart ?: return
-        performStop()
+        performStop(request = recoveryRequest, expectedGeneration = gen)
         delay(TUNNEL_RECOVERY_RESTART_DELAY_MS)
-        if (_connectionState.value is ConnectionState.Disconnected) {
-            startVpnInternal(server, resetWatchdogRecovery = false)
+        if (recoveryRequest == requestedOperation.get() &&
+            _connectionState.value is ConnectionState.Disconnected
+        ) {
+            startVpnInternal(
+                server = server,
+                resetWatchdogRecovery = false,
+                request = recoveryRequest,
+            )
         }
     }
 

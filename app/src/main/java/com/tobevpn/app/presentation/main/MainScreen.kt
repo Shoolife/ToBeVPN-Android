@@ -1,6 +1,9 @@
 package com.tobevpn.app.presentation.main
 
+import android.Manifest
 import android.app.Activity
+import android.content.pm.PackageManager
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -8,6 +11,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,12 +32,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -65,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -101,6 +109,8 @@ fun MainScreen(
     val purchasePlansLoading by viewModel.purchasePlansLoading.collectAsStateWithLifecycle()
     val purchasePlansLoaded by viewModel.purchasePlansLoaded.collectAsStateWithLifecycle()
     val currentLimits by viewModel.currentLimits.collectAsStateWithLifecycle()
+    val connectionPreparation by viewModel.connectionPreparation.collectAsStateWithLifecycle()
+    val paymentSuccessVisible by viewModel.paymentSuccessVisible.collectAsStateWithLifecycle()
     val activity = LocalContext.current as Activity
 
     // Re-sync on every resume (e.g. after payment in Telegram)
@@ -111,7 +121,29 @@ fun MainScreen(
 
     var showSubscriptionSheet by remember { mutableStateOf(false) }
     var showTemporaryAccessDialog by remember { mutableStateOf(false) }
+    var deferredPurchaseUrl by remember { mutableStateOf<String?>(null) }
     val showTemporaryAccessBanner = authState is AuthState.Anonymous
+
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) {
+        deferredPurchaseUrl?.let { url -> viewModel.openPurchaseUrl(activity, url) }
+        deferredPurchaseUrl = null
+    }
+
+    val openPurchaseUrl: (String?) -> Unit = { url ->
+        if (!url.isNullOrBlank()) {
+            val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                ContextCompat.checkSelfPermission(activity, Manifest.permission.POST_NOTIFICATIONS) !=
+                PackageManager.PERMISSION_GRANTED
+            if (needsPermission) {
+                deferredPurchaseUrl = url
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                viewModel.openPurchaseUrl(activity, url)
+            }
+        }
+    }
 
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -122,11 +154,18 @@ fun MainScreen(
     }
 
     val onConnectClick: () -> Unit = {
-        val vpnIntent = viewModel.getVpnPermissionIntent(activity)
-        if (vpnIntent != null) {
-            vpnPermissionLauncher.launch(vpnIntent)
-        } else {
+        if (connectionPreparation ||
+            connectionState is ConnectionState.Connecting ||
+            connectionState is ConnectionState.Connected
+        ) {
             viewModel.toggleConnection()
+        } else {
+            val vpnIntent = viewModel.getVpnPermissionIntent(activity)
+            if (vpnIntent != null) {
+                vpnPermissionLauncher.launch(vpnIntent)
+            } else {
+                viewModel.toggleConnection()
+            }
         }
     }
 
@@ -205,6 +244,7 @@ fun MainScreen(
             // Connect button
             ConnectButtonLarge(
                 connectionState = connectionState,
+                isPreparing = connectionPreparation,
                 onClick = onConnectClick,
             )
 
@@ -216,6 +256,7 @@ fun MainScreen(
             val appFilterReminder by viewModel.appFilterReminder.collectAsStateWithLifecycle()
             StatusText(
                 connectionState = connectionState,
+                isPreparing = connectionPreparation,
                 suppressError = isAnonExhausted,
                 reminder = appFilterReminder,
             )
@@ -309,7 +350,9 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 24.dp)
-                            .clickable { showSubscriptionSheet = true },
+                            .clickable {
+                                showSubscriptionSheet = true
+                            },
                     ) {
                         Row(
                             modifier = Modifier
@@ -345,12 +388,25 @@ fun MainScreen(
                 is AuthState.Authenticated -> {
                     PlanCard(
                         auth = authState as AuthState.Authenticated,
-                        onClick = { showSubscriptionSheet = true },
+                        onClick = {
+                            viewModel.loadPurchasePlans()
+                            showSubscriptionSheet = true
+                        },
                     )
                 }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
+        }
+        if (paymentSuccessVisible) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .widthIn(max = 560.dp)
+                    .padding(top = 8.dp),
+            ) {
+                PaymentSuccessBanner(onDismiss = viewModel::dismissPaymentSuccess)
+            }
         }
         }
         }
@@ -374,10 +430,64 @@ fun MainScreen(
             purchasePlansLoaded = purchasePlansLoaded,
             currentLimits = currentLimits,
             onLoadPurchasePlans = viewModel::loadPurchasePlans,
-            onOpenPurchaseUrl = { url -> viewModel.openPurchaseUrl(activity, url) },
+            onOpenPurchaseUrl = openPurchaseUrl,
             onDismiss = { showSubscriptionSheet = false },
             onNavigateToAuth = onNavigateToAuth,
         )
+    }
+}
+
+@Composable
+private fun PaymentSuccessBanner(
+    onDismiss: () -> Unit,
+) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val container = if (isDark) Color(0xFF17271D) else Color(0xFFEAF7EE)
+    val border = if (isDark) Color(0xFF326846) else Color(0xFFB7DFC4)
+    val foreground = if (isDark) Color(0xFFE4E8E5) else Color(0xFF16221A)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = container),
+        border = BorderStroke(1.dp, border),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 14.dp, top = 10.dp, end = 6.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                modifier = Modifier.size(22.dp),
+                tint = VpnGreen,
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.payment_success_title),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = foreground,
+                )
+                Text(
+                    text = stringResource(R.string.payment_success_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = foreground.copy(alpha = 0.78f),
+                )
+            }
+            IconButton(onClick = onDismiss) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = stringResource(R.string.cancel),
+                    tint = foreground.copy(alpha = 0.75f),
+                )
+            }
+        }
     }
 }
 
@@ -433,6 +543,8 @@ private fun TemporaryAccessTopDialog(
     onAuthorize: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -500,11 +612,30 @@ private fun TemporaryAccessTopDialog(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    TextButton(onClick = onDismiss) {
+                    TextButton(
+                        onClick = onDismiss,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = if (isDark) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                Color.Black
+                            },
+                        ),
+                    ) {
                         Text(text = stringResource(R.string.cancel))
                     }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = onAuthorize) {
+                    Button(
+                        onClick = onAuthorize,
+                        colors = if (isDark) {
+                            ButtonDefaults.buttonColors()
+                        } else {
+                            ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF3F3F3F),
+                                contentColor = Color.White,
+                            )
+                        },
+                    ) {
                         Text(
                             text = stringResource(R.string.temporary_access_authorize),
                             fontWeight = FontWeight.SemiBold,
@@ -519,10 +650,11 @@ private fun TemporaryAccessTopDialog(
 @Composable
 private fun ConnectButtonLarge(
     connectionState: ConnectionState,
+    isPreparing: Boolean,
     onClick: () -> Unit,
 ) {
     val isConnected = connectionState is ConnectionState.Connected
-    val isConnecting = connectionState is ConnectionState.Connecting
+    val isConnecting = isPreparing || connectionState is ConnectionState.Connecting
 
     val targetColor = when {
         isConnected -> VpnGreen
@@ -559,7 +691,6 @@ private fun ConnectButtonLarge(
             .clip(CircleShape)
             .background(backgroundColor)
             .clickable(
-                enabled = !isConnecting,
                 interactionSource = interactionSource,
                 indication = rippleIndication,
                 onClick = onClick,
@@ -569,7 +700,7 @@ private fun ConnectButtonLarge(
         Icon(
             imageVector = Icons.Default.PowerSettingsNew,
             contentDescription = when {
-                isConnecting -> "Connecting"
+                isConnecting -> "Cancel connection"
                 isConnected -> "Disconnect"
                 else -> "Connect"
             },
@@ -582,6 +713,7 @@ private fun ConnectButtonLarge(
 @Composable
 private fun StatusText(
     connectionState: ConnectionState,
+    isPreparing: Boolean = false,
     suppressError: Boolean = false,
     reminder: String? = null,
 ) {
@@ -592,19 +724,27 @@ private fun StatusText(
     // reminder instead (rendered with the same red ErrorCard so the
     // visual weight matches). The reminder vanishes the moment its
     // condition flips (mode flipped to Off, or user picked an app).
-    val errorMessage = (connectionState as? ConnectionState.Error)
-        ?.takeUnless { suppressError }
-        ?.message
-        ?: reminder
+    val errorMessage = if (isPreparing) {
+        null
+    } else {
+        (connectionState as? ConnectionState.Error)
+            ?.takeUnless { suppressError }
+            ?.message
+            ?: reminder
+    }
     if (errorMessage != null) {
         ErrorCard(message = errorMessage)
         return
     }
-    val (text, color) = when (connectionState) {
-        is ConnectionState.Disconnected -> disconnected to MaterialTheme.colorScheme.onSurfaceVariant
-        is ConnectionState.Connecting -> stringResource(R.string.state_connecting) to VpnOrange
-        is ConnectionState.Connected -> stringResource(R.string.state_connected) to VpnGreen
-        is ConnectionState.Error -> disconnected to MaterialTheme.colorScheme.onSurfaceVariant
+    val (text, color) = if (isPreparing) {
+        stringResource(R.string.state_connecting) to VpnOrange
+    } else {
+        when (connectionState) {
+            is ConnectionState.Disconnected -> disconnected to MaterialTheme.colorScheme.onSurfaceVariant
+            is ConnectionState.Connecting -> stringResource(R.string.state_connecting) to VpnOrange
+            is ConnectionState.Connected -> stringResource(R.string.state_connected) to VpnGreen
+            is ConnectionState.Error -> disconnected to MaterialTheme.colorScheme.onSurfaceVariant
+        }
     }
     Text(
         text = text,

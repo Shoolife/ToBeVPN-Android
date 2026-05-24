@@ -23,12 +23,17 @@ import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
+import com.tobevpn.app.presentation.servers.resolveSelectedServer
+import com.tobevpn.app.util.DeepLinkBus
+import com.tobevpn.app.util.PaymentNotifications
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.vpn.VpnConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -38,6 +43,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.InetSocketAddress
 import java.net.Socket
 import javax.inject.Inject
@@ -57,6 +63,8 @@ class MainViewModel @Inject constructor(
     private val purchaseRepository: PurchaseRepository,
     private val botApi: BotApi,
     private val appFilterRepository: AppFilterRepository,
+    private val deepLinkBus: DeepLinkBus,
+    private val paymentNotifications: PaymentNotifications,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -74,6 +82,12 @@ class MainViewModel @Inject constructor(
 
     private val _currentLimits = MutableStateFlow<CurrentPlanLimits?>(null)
     val currentLimits: StateFlow<CurrentPlanLimits?> = _currentLimits
+
+    private val _connectionPreparation = MutableStateFlow(false)
+    val connectionPreparation: StateFlow<Boolean> = _connectionPreparation
+
+    private val _paymentSuccessVisible = MutableStateFlow(false)
+    val paymentSuccessVisible: StateFlow<Boolean> = _paymentSuccessVisible
 
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
     val usageInfo: StateFlow<UsageInfo> = connectionManager.usageInfo
@@ -110,14 +124,15 @@ class MainViewModel @Inject constructor(
     // Show the selected server (from prefs), not just the connected one
     val currentServer: StateFlow<Server?> = combine(
         prefsDataStore.selectedServerId,
+        prefsDataStore.selectedServerKey,
         vpnRepository.observeServers(),
         _serverPing,
-    ) { selectedId, servers, ping ->
-        val server = if (selectedId != null) {
-            servers.find { it.id == selectedId }
-        } else {
-            servers.firstOrNull()
-        }
+    ) { selectedId, selectedKey, servers, ping ->
+        val server = resolveSelectedServer(
+            servers = servers,
+            selectedId = selectedId,
+            selectedKey = selectedKey,
+        )
         server?.copy(ping = ping)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -127,6 +142,13 @@ class MainViewModel @Inject constructor(
     private var initialized = false
     private var lastSyncTime = 0L
     private var pendingPurchaseRefreshJob: Job? = null
+    private val pendingPurchaseRefreshSignal = Channel<Unit>(capacity = Channel.CONFLATED)
+    private var paymentFeedbackSent = false
+    private var connectionPreparationJob: Job? = null
+    private var connectionPreparationRequest = 0
+    private var purchaseLoadRequest = 0
+    private var purchaseStateOwner: AuthState? = null
+    private var purchaseStateOwnerInitialized = false
 
     private companion object {
         const val TAG = "MainViewModel"
@@ -158,6 +180,23 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             _rubToUsdRate.value = currencyRepository.getRubToUsdRate()
         }
+        viewModelScope.launch {
+            deepLinkBus.paymentCallbacks.collect {
+                pendingPurchaseRefreshSignal.trySend(Unit)
+                startPendingPurchaseRefreshIfNeeded()
+            }
+        }
+        viewModelScope.launch {
+            connectionState.collect { state ->
+                if (state is ConnectionState.Connecting ||
+                    state is ConnectionState.Connected ||
+                    state is ConnectionState.Error
+                ) {
+                    _connectionPreparation.value = false
+                    connectionPreparationJob = null
+                }
+            }
+        }
         // Measure ping immediately when server appears/changes, then every 5s.
         // If VPN is currently active and the selected server changes,
         // automatically reconnect to the new server.
@@ -177,7 +216,11 @@ class MainViewModel @Inject constructor(
                     // tunnel anyway.
                     if (previousId != null && !server.isSentinel && !isExpired()) {
                         val state = connectionState.value
-                        if (state is ConnectionState.Connected || state is ConnectionState.Connecting) {
+                        if (_connectionPreparation.value) {
+                            cancelConnectionPreparation()
+                            connectionManager.stopVpn()
+                            prepareAndStartConnection()
+                        } else if (state is ConnectionState.Connected || state is ConnectionState.Connecting) {
                             connectionManager.switchServer(server)
                         }
                     }
@@ -192,8 +235,14 @@ class MainViewModel @Inject constructor(
         // expired sentinel through the auto-reconnect path.
         viewModelScope.launch {
             authRepository.observeAuthState().collect { state ->
-                if (state !is AuthState.Authenticated) {
+                if (!purchaseStateOwnerInitialized) {
+                    purchaseStateOwner = state
+                    purchaseStateOwnerInitialized = true
+                } else if (state != purchaseStateOwner) {
                     clearPurchaseState()
+                    purchaseStateOwner = state
+                }
+                if (state !is AuthState.Authenticated) {
                     prefsDataStore.clearPendingPurchase()
                 }
                 val expired = state is AuthState.Authenticated && state.plan == UserPlan.EXPIRED
@@ -254,30 +303,79 @@ class MainViewModel @Inject constructor(
     }
 
     fun toggleConnection() {
-        viewModelScope.launch {
-            when (connectionState.value) {
-                is ConnectionState.Disconnected, is ConnectionState.Error -> {
-                    val server = prepareServerForConnect(currentServer.value ?: return@launch)
-                        ?: run {
-                            connectionManager.showError(context.getString(R.string.error_no_servers))
-                            return@launch
-                        }
-                    // Defence-in-depth: VpnConnectionManager.startVpn already
-                    // refuses the sentinel and shows the "subscription
-                    // expired" error, but bail here too so we don't even
-                    // flash the Connecting state.
-                    if (server.isSentinel || isExpired()) {
-                        connectionManager.startVpn(server) // routes through the manager's guards
-                        return@launch
-                    }
-                    connectionManager.startVpn(server)
-                }
-                is ConnectionState.Connected -> {
-                    connectionManager.stopVpn()
-                }
-                is ConnectionState.Connecting -> return@launch
+        if (_connectionPreparation.value) {
+            cancelConnectionPreparation()
+            connectionManager.stopVpn()
+            return
+        }
+
+        val state = connectionState.value
+        if ((state is ConnectionState.Disconnected || state is ConnectionState.Error) &&
+            connectionManager.isOwnVpnNetworkActive()
+        ) {
+            cancelConnectionPreparation()
+            connectionManager.stopVpn()
+            return
+        }
+
+        when (state) {
+            is ConnectionState.Disconnected, is ConnectionState.Error -> prepareAndStartConnection()
+            is ConnectionState.Connected, is ConnectionState.Connecting -> {
+                cancelConnectionPreparation()
+                connectionManager.stopVpn()
             }
         }
+    }
+
+    private fun prepareAndStartConnection() {
+        connectionPreparationJob?.cancel()
+        val request = ++connectionPreparationRequest
+        _connectionPreparation.value = true
+        connectionPreparationJob = viewModelScope.launch {
+            var submittedToManager = false
+            try {
+                val selectedServer = currentServer.value ?: run {
+                    connectionManager.showError(context.getString(R.string.error_no_servers))
+                    return@launch
+                }
+                val server = prepareServerForConnect(selectedServer) ?: run {
+                    connectionManager.showError(context.getString(R.string.error_no_servers))
+                    return@launch
+                }
+                if (request != connectionPreparationRequest || !_connectionPreparation.value) {
+                    return@launch
+                }
+                // VpnConnectionManager performs the final guard against expired
+                // or placeholder subscriptions and publishes the resulting error.
+                submittedToManager = true
+                connectionManager.startVpn(server) {
+                    viewModelScope.launch {
+                        if (request == connectionPreparationRequest) {
+                            _connectionPreparation.value = false
+                            connectionPreparationJob = null
+                        }
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (request == connectionPreparationRequest) {
+                    connectionManager.showError(context.getString(R.string.error_network))
+                }
+            } finally {
+                if (!submittedToManager && request == connectionPreparationRequest) {
+                    _connectionPreparation.value = false
+                    connectionPreparationJob = null
+                }
+            }
+        }
+    }
+
+    private fun cancelConnectionPreparation() {
+        connectionPreparationRequest++
+        connectionPreparationJob?.cancel()
+        connectionPreparationJob = null
+        _connectionPreparation.value = false
     }
 
     /** Re-sync subscription & servers when app returns to foreground (throttled to 5s). */
@@ -312,12 +410,9 @@ class MainViewModel @Inject constructor(
      */
     fun loadPurchasePlans() {
         if (_purchasePlansLoading.value) return
+        val request = beginPurchaseRefresh()
         viewModelScope.launch {
-            if (authRepository.getAuthStateSnapshot() !is AuthState.Authenticated) {
-                clearPurchaseState()
-                return@launch
-            }
-            refreshPurchasePlansAndLimits(clearCurrentLimits = false)
+            refreshPurchasePlansAndLimits(request)
         }
     }
 
@@ -330,6 +425,8 @@ class MainViewModel @Inject constructor(
                     prefsDataStore.clearPendingPurchase()
                     return@launch
                 }
+            paymentFeedbackSent = false
+            _paymentSuccessVisible.value = false
             prefsDataStore.markPendingPurchaseStarted(
                 baselinePlan = baseline.plan.name,
                 baselineExpiresAt = baseline.planExpiresAt,
@@ -343,51 +440,65 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    private suspend fun refreshPurchasePlansAndLimits(clearCurrentLimits: Boolean) {
-        if (authRepository.getAuthStateSnapshot() !is AuthState.Authenticated) {
-            clearPurchaseState()
+    private suspend fun refreshPurchasePlansAndLimits(request: Int) {
+        val authenticated = authRepository.getAuthStateSnapshot() as? AuthState.Authenticated
+        if (authenticated == null) {
+            if (request == purchaseLoadRequest) clearPurchaseState()
             return
         }
-        if (_purchasePlansLoading.value) return
-        _purchasePlansLoading.value = true
         try {
-            _purchasePlans.value = purchaseRepository.getPlans()
-            loadCurrentLimitsNow(clearBeforeLoad = clearCurrentLimits)
+            val plans = purchaseRepository.getPlans()
+            val limits = loadCurrentLimitsNow(authenticated)
+            if (request != purchaseLoadRequest ||
+                authRepository.getAuthStateSnapshot() != authenticated
+            ) {
+                if (request == purchaseLoadRequest) clearPurchaseState()
+                return
+            }
+            _purchasePlans.value = plans
+            _currentLimits.value = limits
         } finally {
-            _purchasePlansLoaded.value = true
-            _purchasePlansLoading.value = false
+            if (request == purchaseLoadRequest) {
+                _purchasePlansLoaded.value = true
+                _purchasePlansLoading.value = false
+            }
         }
     }
 
+    private fun beginPurchaseRefresh(): Int {
+        val request = ++purchaseLoadRequest
+        _purchasePlans.value = null
+        _purchasePlansLoaded.value = false
+        _currentLimits.value = null
+        _purchasePlansLoading.value = true
+        return request
+    }
+
     private fun clearPurchaseState() {
+        purchaseLoadRequest++
         _purchasePlans.value = null
         _purchasePlansLoaded.value = false
         _purchasePlansLoading.value = false
         _currentLimits.value = null
     }
 
-    private suspend fun loadCurrentLimitsNow(clearBeforeLoad: Boolean) {
-        if (clearBeforeLoad) {
-            _currentLimits.value = null
-        }
-        val authenticated = authRepository.getAuthStateSnapshot() as? AuthState.Authenticated
-            ?: return
-        try {
+    private suspend fun loadCurrentLimitsNow(authenticated: AuthState.Authenticated): CurrentPlanLimits? {
+        return try {
             val user = botApi.getUserByTelegramId(authenticated.telegramId)
                 .response
                 .firstOrNull()
             if (user != null) {
-                _currentLimits.value = CurrentPlanLimits(
+                CurrentPlanLimits(
                     trafficLimitBytes = user.trafficLimitBytes,
                     deviceLimit = user.hwidDeviceLimit ?: 0,
                 )
             } else {
                 SafeDiagnostics.warn(TAG, "Current plan limits response did not contain a user")
-                _currentLimits.value = null
+                null
             }
         } catch (error: Exception) {
             SafeDiagnostics.warn(TAG, "Current plan limits request failed: ${SafeDiagnostics.failureCategory(error)}")
-            _currentLimits.value = null
+            null
         }
     }
 
@@ -406,18 +517,18 @@ class MainViewModel @Inject constructor(
             while (System.currentTimeMillis() <= activeDeadline) {
                 refreshSubscriptionAfterPurchase()
                 if (paymentLooksApplied(pending, authRepository.getAuthStateSnapshot())) {
-                    prefsDataStore.clearPendingPurchase()
+                    completeSuccessfulPayment()
                     return@launch
                 }
-                delay(PURCHASE_REFRESH_INTERVAL_MS)
+                awaitPurchaseRefreshSignal(PURCHASE_REFRESH_INTERVAL_MS)
             }
 
             val totalDeadline = minOf(now + PURCHASE_REFRESH_TOTAL_WINDOW_MS, maxDeadline)
             while (System.currentTimeMillis() <= totalDeadline) {
-                delay(PURCHASE_REFRESH_SLOW_INTERVAL_MS)
+                awaitPurchaseRefreshSignal(PURCHASE_REFRESH_SLOW_INTERVAL_MS)
                 refreshSubscriptionAfterPurchase()
                 if (paymentLooksApplied(pending, authRepository.getAuthStateSnapshot())) {
-                    prefsDataStore.clearPendingPurchase()
+                    completeSuccessfulPayment()
                     return@launch
                 }
             }
@@ -426,6 +537,24 @@ class MainViewModel @Inject constructor(
                 expirePendingPurchase()
             }
         }
+    }
+
+    private suspend fun awaitPurchaseRefreshSignal(timeoutMs: Long) {
+        withTimeoutOrNull(timeoutMs) {
+            pendingPurchaseRefreshSignal.receive()
+        }
+    }
+
+    private suspend fun completeSuccessfulPayment() {
+        prefsDataStore.clearPendingPurchase()
+        if (paymentFeedbackSent) return
+        paymentFeedbackSent = true
+        _paymentSuccessVisible.value = true
+        paymentNotifications.showSuccessfulPayment()
+    }
+
+    fun dismissPaymentSuccess() {
+        _paymentSuccessVisible.value = false
     }
 
     private suspend fun expirePendingPurchase() {
@@ -441,7 +570,6 @@ class MainViewModel @Inject constructor(
             trustPanelPlan = false,
         )
         vpnRepository.refreshServers()
-        refreshPurchasePlansAndLimits(clearCurrentLimits = false)
         lastSyncTime = System.currentTimeMillis()
     }
 

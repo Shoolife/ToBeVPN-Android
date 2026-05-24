@@ -18,15 +18,14 @@ fun serverCountryCodeForUi(countryCode: String, serverName: String): String {
     return countryCodeFromFlag(parseLeadingPrefix(serverName).flag).orEmpty()
 }
 
+@Suppress("UNUSED_PARAMETER")
 fun serverDisplayName(name: String, countryCode: String): String {
     val trimmedName = name.trim()
     if (trimmedName.isEmpty()) return name
 
     val prefix = parseLeadingPrefix(trimmedName)
-    val countryFlag = countryFlagOrNull(countryCode)
-    if (countryFlag != null && prefix.flag != null && prefix.flag != countryFlag) return trimmedName
 
-    val cleanedName = trimmedName.substring(prefix.endIndex).trimStart()
+    val cleanedName = trimDecorativeEdges(removeFlagEmojis(trimmedName.substring(prefix.endIndex)))
     return cleanedName.ifEmpty { trimmedName }
 }
 
@@ -94,6 +93,33 @@ private fun countryCodeFromFlag(flag: String?): String? {
     val secondChar = (second - REGIONAL_INDICATOR_START + 'A'.code).toChar()
     return "$firstChar$secondChar"
 }
+
+private fun removeFlagEmojis(text: String): String {
+    val output = StringBuilder(text.length)
+    var index = 0
+
+    while (index < text.length) {
+        val codePoint = text.codePointAt(index)
+        val nextIndex = index + Character.charCount(codePoint)
+        if (isRegionalIndicator(codePoint) && nextIndex < text.length) {
+            val nextCodePoint = text.codePointAt(nextIndex)
+            if (isRegionalIndicator(nextCodePoint)) {
+                index = nextIndex + Character.charCount(nextCodePoint)
+                continue
+            }
+        }
+
+        output.appendCodePoint(codePoint)
+        index = nextIndex
+    }
+
+    return output.toString()
+}
+
+private fun trimDecorativeEdges(text: String): String =
+    text.trim()
+        .trim { it == '-' || it == '|' || it == '/' || it == '\\' || it == ':' }
+        .trim()
 
 private fun isRegionalIndicator(codePoint: Int): Boolean =
     codePoint in REGIONAL_INDICATOR_START..REGIONAL_INDICATOR_END

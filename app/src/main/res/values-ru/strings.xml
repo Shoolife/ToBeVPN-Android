@@ -92,6 +92,9 @@
     <string name="available_plans">Доступные тарифы</string>
     <string name="plans_loading">Загружаем тарифы…</string>
     <string name="payment_via_telegram">Оплата через Telegram</string>
+    <string name="payment_success_title">Подписка активирована</string>
+    <string name="payment_success_description">Оплата прошла успешно. Ваш тариф обновлён.</string>
+    <string name="payment_notification_channel">Оплата подписки</string>
     <string name="login_via_telegram">Войти через Telegram</string>
     <string name="login_required_for_purchase">Для покупки подписки нужно сначала авторизоваться</string>
     <string name="buy_plan">Купить «%1$s» за %2$s</string>

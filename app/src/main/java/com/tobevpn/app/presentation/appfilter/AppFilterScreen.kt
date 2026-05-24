@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,9 +34,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -43,11 +44,19 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -164,6 +173,7 @@ private fun ModeSelector(
         AppFilterMode.WHITELIST to R.string.app_filter_mode_whitelist,
         AppFilterMode.BLACKLIST to R.string.app_filter_mode_blacklist,
     )
+    val labels = options.map { (_, labelRes) -> stringResource(labelRes) }
     val isDark = isSystemInDarkTheme()
     // M3 default selectedContainerColor on light theme is secondaryContainer
     // — that's the lavender pill shown in the screenshot. Override to a
@@ -181,27 +191,70 @@ private fun ModeSelector(
             inactiveBorderColor = Color(0xFFBDBDBD),
         )
     }
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        options.forEachIndexed { index, (value, labelRes) ->
-            val selected = mode == value
-            SegmentedButton(
-                selected = selected,
-                onClick = { onModeChanged(value) },
-                shape = SegmentedButtonDefaults.itemShape(index, options.size),
-                colors = colors,
-                // Drop the M3 default check-mark icon — visually felt
-                // out of place against the flat brand styling. The
-                // active fill + bold label below already carry the
-                // selection signal.
-                icon = {},
-                label = {
-                    Text(
-                        stringResource(labelRes),
-                        fontSize = 12.sp,
-                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                },
-            )
+    val horizontalLabelPadding = 6.dp
+    val density = LocalDensity.current
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = MaterialTheme.typography.labelLarge
+
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+        val labelWidthPx = with(density) {
+            (maxWidth / options.size - horizontalLabelPadding * 2).roundToPx()
+        }
+        val labelFontSize = remember(labels, labelWidthPx, labelStyle, density.fontScale) {
+            var candidate = 12f
+            while (candidate > 8f) {
+                val widestLabelPx = labels.maxOf { label ->
+                    textMeasurer.measure(
+                        text = AnnotatedString(label),
+                        style = labelStyle.copy(
+                            fontSize = candidate.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        ),
+                        maxLines = 1,
+                        softWrap = false,
+                    ).size.width
+                }
+                if (widestLabelPx <= labelWidthPx) break
+                candidate -= 0.25f
+            }
+            candidate.sp
+        }
+
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            options.forEachIndexed { index, (value, _) ->
+                val selected = mode == value
+                Surface(
+                    selected = selected,
+                    onClick = { onModeChanged(value) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(40.dp)
+                        .semantics { role = Role.RadioButton },
+                    shape = SegmentedButtonDefaults.itemShape(index, options.size),
+                    color = if (selected) colors.activeContainerColor else colors.inactiveContainerColor,
+                    contentColor = if (selected) colors.activeContentColor else colors.inactiveContentColor,
+                    border = SegmentedButtonDefaults.borderStroke(
+                        if (selected) colors.activeBorderColor else colors.inactiveBorderColor,
+                    ),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = horizontalLabelPadding),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            text = labels[index],
+                            style = labelStyle,
+                            fontSize = labelFontSize,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Clip,
+                        )
+                    }
+                }
+            }
         }
     }
 }

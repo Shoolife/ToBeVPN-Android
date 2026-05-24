@@ -40,6 +40,12 @@ class ServerListViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val selectedServerId: StateFlow<String?> = prefsDataStore.selectedServerId
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val selectedServerKey: StateFlow<String?> = prefsDataStore.selectedServerKey
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
@@ -105,15 +111,17 @@ class ServerListViewModel @Inject constructor(
         }
     }
 
-    fun selectServer(server: Server) {
+    suspend fun selectServer(server: Server): Boolean {
         // Refuse to persist the panel's "subscription expired" placeholder.
         // VpnRepository already filters it out of refreshed lists, but a
         // stale cached entry from before the upgrade could still surface
         // it — never let it become the selected server, the auto-reconnect
         // path would feed it to xray and SIGSEGV the native loop.
-        if (server.isSentinel) return
-        viewModelScope.launch {
-            prefsDataStore.setSelectedServerId(server.id)
-        }
+        if (server.isSentinel) return false
+        prefsDataStore.setSelectedServer(
+            id = stableServerId(server),
+            key = serverSelectionKey(server),
+        )
+        return true
     }
 }
