@@ -47,9 +47,9 @@ ToBeVPN — нативный Android-клиент к VPN-сети с защищ�
       <td align="center"><b>Серверы</b></td>
     </tr>
     <tr>
-      <td><img src="docs/screenshots/android/home-connected.jpg" alt="Главный экран ToBeVPN Android" width="170" /></td>
-      <td><img src="docs/screenshots/android/subscription.jpg" alt="Экран подписки ToBeVPN Android" width="170" /></td>
-      <td><img src="docs/screenshots/android/servers-original.png" alt="Экран выбора сервера ToBeVPN Android" width="170" /></td>
+      <td><img src="docs/screenshots/android/home-connected.jpg" alt="Главный экран ToBeVPN Android" width="240" /></td>
+      <td><img src="docs/screenshots/android/subscription.jpg" alt="Экран подписки ToBeVPN Android" width="240" /></td>
+      <td><img src="docs/screenshots/android/servers-original.png" alt="Экран выбора сервера ToBeVPN Android" width="240" /></td>
     </tr>
     <tr>
       <td align="center"><b>Статистика</b></td>
@@ -57,9 +57,9 @@ ToBeVPN — нативный Android-клиент к VPN-сети с защищ�
       <td align="center"><b>Приложения VPN</b></td>
     </tr>
     <tr>
-      <td><img src="docs/screenshots/android/statistics.jpg" alt="Экран статистики ToBeVPN Android" width="170" /></td>
-      <td><img src="docs/screenshots/android/speed-test.jpg" alt="Экран теста скорости ToBeVPN Android" width="170" /></td>
-      <td><img src="docs/screenshots/android/app-filter.jpg" alt="Экран фильтрации приложений ToBeVPN Android" width="170" /></td>
+      <td><img src="docs/screenshots/android/statistics.jpg" alt="Экран статистики ToBeVPN Android" width="240" /></td>
+      <td><img src="docs/screenshots/android/speed-test.jpg" alt="Экран теста скорости ToBeVPN Android" width="240" /></td>
+      <td><img src="docs/screenshots/android/app-filter.jpg" alt="Экран фильтрации приложений ToBeVPN Android" width="240" /></td>
     </tr>
   </table>
 </div>
