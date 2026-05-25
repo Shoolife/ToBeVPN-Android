@@ -8,6 +8,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -15,6 +16,11 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import javax.net.ssl.SSLException
+
+data class SubscriptionPingResult(
+    val intervalMs: Long?,
+    val isUsageBlocked: Boolean,
+)
 
 // Direct GET on the public subscription URL with HWID headers.
 // This request creates/refreshes the HWID device record; regular API
@@ -39,15 +45,13 @@ class SubscriptionPinger @Inject constructor(
 
     /**
      * Sends an HWID-tagged GET to [subscriptionUrl] and returns the service's
-     * recommended auto-refresh cadence in milliseconds, parsed from the
-     * `profile-update-interval` response header (an integer number of hours,
-     * the V2Ray subscription convention also honoured by Happ/V2RayN).
+     * recommended refresh cadence together with its access status.
      *
-     * Returns `null` when the URL is blank, both legs fail, or the service
-     * didn't include a usable header — callers fall back to the cached /
-     * default interval rather than hammering the panel.
+     * Returns `null` when the URL is blank or both legs fail. A missing
+     * cadence header is represented inside the result so access status can
+     * still be processed.
      */
-    suspend fun ping(subscriptionUrl: String?): Long? = withContext(Dispatchers.IO) {
+    suspend fun ping(subscriptionUrl: String?): SubscriptionPingResult? = withContext(Dispatchers.IO) {
         if (subscriptionUrl.isNullOrBlank()) return@withContext null
         val fp = fingerprintProvider.get()
         val baseRequest = Request.Builder()
@@ -61,7 +65,7 @@ class SubscriptionPinger @Inject constructor(
             .build()
 
         try {
-            client.newCall(baseRequest).execute().use { return@withContext readIntervalMs(it.header("profile-update-interval")) }
+            client.newCall(baseRequest).execute().use { return@withContext readResult(it) }
         } catch (primaryError: IOException) {
             if (!isFallbackEligible(primaryError)) {
                 logFailure("primary", primaryError)
@@ -78,13 +82,18 @@ class SubscriptionPinger @Inject constructor(
                     SafeDiagnostics.failureCategory(primaryError),
             )
             try {
-                client.newCall(fallbackRequest).execute().use { return@withContext readIntervalMs(it.header("profile-update-interval")) }
+                client.newCall(fallbackRequest).execute().use { return@withContext readResult(it) }
             } catch (fallbackError: IOException) {
                 logFailure("fallback", fallbackError)
                 return@withContext null
             }
         }
     }
+
+    private fun readResult(response: Response) = SubscriptionPingResult(
+        intervalMs = readIntervalMs(response.header("profile-update-interval")),
+        isUsageBlocked = response.header(BLOCK_HEADER)?.trim() == BLOCK_VALUE,
+    )
 
     /**
      * Parses the V2Ray-style `profile-update-interval` header. The value is
@@ -139,6 +148,8 @@ class SubscriptionPinger @Inject constructor(
 
     private companion object {
         const val TAG = "SubscriptionPinger"
+        const val BLOCK_HEADER = "is_hack"
+        const val BLOCK_VALUE = "yes"
         // Floor at 1h so a misconfigured service can't cause the client to
         // hammer it; ceiling at 7d so a typo'd value doesn't disable
         // subscription refreshes for the foreseeable future.

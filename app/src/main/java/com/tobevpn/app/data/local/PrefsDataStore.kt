@@ -60,6 +60,7 @@ class PrefsDataStore @Inject constructor(
         val PENDING_PURCHASE_BASELINE_PLAN = stringPreferencesKey("pending_purchase_baseline_plan")
         val PENDING_PURCHASE_BASELINE_EXPIRES_AT = longPreferencesKey("pending_purchase_baseline_expires_at")
         val SERVER_CACHE_OWNER = stringPreferencesKey("server_cache_owner")
+        val BLOCKED_SUBSCRIPTION_OWNER = stringPreferencesKey("blocked_subscription_owner")
         // Per-app VPN filter mode: "OFF", "WHITELIST" or "BLACKLIST".
         // The set of selected packages lives in the Room app_filter table —
         // we keep the mode in Prefs so a destructive DB migration doesn't
@@ -233,6 +234,21 @@ class PrefsDataStore @Inject constructor(
 
     suspend fun clearServerCacheOwner() {
         context.dataStore.edit { it.remove(Keys.SERVER_CACHE_OWNER) }
+    }
+
+    suspend fun setSubscriptionUsageBlocked(shortUuid: String, blocked: Boolean) {
+        val owner = cacheOwnerHash(shortUuid)
+        context.dataStore.edit {
+            if (blocked) {
+                it[Keys.BLOCKED_SUBSCRIPTION_OWNER] = owner
+            } else if (it[Keys.BLOCKED_SUBSCRIPTION_OWNER] == owner) {
+                it.remove(Keys.BLOCKED_SUBSCRIPTION_OWNER)
+            }
+        }
+    }
+
+    suspend fun isSubscriptionUsageBlocked(shortUuid: String): Boolean {
+        return context.dataStore.data.first()[Keys.BLOCKED_SUBSCRIPTION_OWNER] == cacheOwnerHash(shortUuid)
     }
 
     private fun cacheOwnerHash(value: String): String {

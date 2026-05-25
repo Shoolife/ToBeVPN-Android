@@ -2,6 +2,7 @@ package com.tobevpn.app.data.repository
 
 import android.os.Build
 import com.tobevpn.app.data.device.DeviceIdProvider
+import com.tobevpn.app.data.device.DeviceFingerprintProvider
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.local.SessionStore
 import com.tobevpn.app.data.local.dao.SessionDao
@@ -34,6 +35,7 @@ class AuthRepository @Inject constructor(
     private val sessionStore: SessionStore,
     private val prefsDataStore: PrefsDataStore,
     private val deviceIdProvider: DeviceIdProvider,
+    private val fingerprintProvider: DeviceFingerprintProvider,
     private val botApi: BotApi,
     private val usageRepository: UsageRepository,
     private val subscriptionPinger: SubscriptionPinger,
@@ -192,7 +194,16 @@ class AuthRepository @Inject constructor(
         return try {
             val deviceId = getOrCreateDeviceId()
 
-            val response = botApi.ensureUser()
+            val fingerprint = fingerprintProvider.get()
+            val response = botApi.ensureUser(
+                EnsureUserRequestDto(
+                    hwid = fingerprint.hwid,
+                    deviceOs = fingerprint.platform,
+                    osVersion = fingerprint.osVersion,
+                    deviceModel = fingerprint.model,
+                    userAgent = fingerprint.userAgent,
+                )
+            )
             if (!response.success || response.data == null) {
                 return Result.failure(IllegalStateException(response.message ?: "Failed to ensure user"))
             }
@@ -287,24 +298,25 @@ class AuthRepository @Inject constructor(
                     )
                 }
 
-                // Switching identity — clear local usage counters so the
-                // anonymous user's accumulated bytes/time don't bleed into
-                // the newly-authenticated user's stats. The subsequent panel
-                // sync will repopulate bytes from the server.
-                prefsDataStore.clearAnonymousUsageState()
-                usageRepository.resetSession()
-
                 // Sync panel user info via proxy
                 try {
                     val panelUsers = botApi.getUserByTelegramId(status.telegramId).response
                     val panelUser = panelUsers.firstOrNull()
                     if (panelUser != null) {
+                        val resolvedPlan = planForPanelUser(panelUser)
                         sessionStore.update { current ->
                             current.copy(
                                 panelUserUuid = panelUser.uuid,
                                 shortUuid = panelUser.shortUuid,
-                                userPlan = planForPanelUser(panelUser),
+                                userPlan = resolvedPlan,
                             )
+                        }
+                        // Paid/Admin subscriptions have their own server-side
+                        // counters. Trial remains device-scoped, so keep the
+                        // anonymous usage accumulated before Telegram auth.
+                        if (resolvedPlan != "FREE_TRIAL") {
+                            prefsDataStore.clearAnonymousUsageState()
+                            usageRepository.resetSession()
                         }
                     }
                 } catch (_: Exception) {
@@ -394,8 +406,11 @@ class AuthRepository @Inject constructor(
             // cadence we use to throttle subsequent calls.
             val effectiveUrl = panelUser?.subscriptionUrl ?: subInfo.subscriptionUrl
             sessionStore.update { it.copy(subscriptionUrl = effectiveUrl) }
-            val intervalMs = subscriptionPinger.ping(effectiveUrl)
-            persistSyncState(intervalMs)
+            val pingResult = subscriptionPinger.ping(effectiveUrl)
+            if (pingResult != null) {
+                prefsDataStore.setSubscriptionUsageBlocked(shortUuid, pingResult.isUsageBlocked)
+            }
+            persistSyncState(pingResult?.intervalMs)
 
             val sub = subInfo.user
             val isActive = sub.isActive && sub.userStatus == "ACTIVE"
@@ -446,22 +461,24 @@ class AuthRepository @Inject constructor(
             usageRepository.updateLimits(trafficLimitBytes, 0)
 
             if (overwriteUsage) {
-                val isAnonymous = session.authState != "AUTHENTICATED"
-                val trafficUsedBytes = if (isAnonymous) {
-                    // Anonymous: device-level traffic survives panel user re-creation
-                    // across login/logout cycles, so use it as source of truth.
+                val keepDeviceScopedUsage = session.authState != "AUTHENTICATED" || plan == "FREE_TRIAL"
+                val subscriptionTrafficUsedBytes = sub.trafficUsedBytes.toLongOrNull() ?: 0
+                val trafficUsedBytes = if (keepDeviceScopedUsage) {
+                    // Trial traffic is device-scoped: anonymous bytes must
+                    // survive auth/logout cycles, otherwise the same device
+                    // can make a fresh-looking trial by changing identity.
                     try {
                         val resp = botApi.getDeviceTraffic()
-                        resp.data?.anonTrafficBytes ?: (sub.trafficUsedBytes.toLongOrNull() ?: 0)
+                        maxOf(resp.data?.anonTrafficBytes ?: 0, subscriptionTrafficUsedBytes)
                     } catch (_: Exception) {
-                        sub.trafficUsedBytes.toLongOrNull() ?: 0
+                        subscriptionTrafficUsedBytes
                     }
                 } else {
-                    sub.trafficUsedBytes.toLongOrNull() ?: 0
+                    subscriptionTrafficUsedBytes
                 }
                 syncUsageFromServer(
                     serverBytesUsed = trafficUsedBytes,
-                    isAnonymous = isAnonymous,
+                    isAnonymous = keepDeviceScopedUsage,
                 )
             }
 
@@ -494,11 +511,23 @@ class AuthRepository @Inject constructor(
      * install before any sync has completed) we silently no-op — the
      * next ambient sync will populate it.
      */
-    suspend fun pingHwidOnly() {
-        try {
-            val url = sessionDao.getSession()?.subscriptionUrl ?: return
-            subscriptionPinger.ping(url)
+    suspend fun pingHwidOnly(): Boolean {
+        val session = try {
+            sessionDao.getSession()
         } catch (_: Exception) {
+            null
+        } ?: return false
+        val shortUuid = session.shortUuid ?: return false
+        val wasBlocked = runCatching {
+            prefsDataStore.isSubscriptionUsageBlocked(shortUuid)
+        }.getOrDefault(false)
+        return try {
+            val url = session.subscriptionUrl ?: return wasBlocked
+            val result = subscriptionPinger.ping(url) ?: return wasBlocked
+            prefsDataStore.setSubscriptionUsageBlocked(shortUuid, result.isUsageBlocked)
+            result.isUsageBlocked
+        } catch (_: Exception) {
+            wasBlocked
         }
     }
 
@@ -559,11 +588,15 @@ class AuthRepository @Inject constructor(
                 email = null,
             )
         }
-        // Switching identity — drop the previous user's local usage counters
-        // (bytes will be re-populated from panel by syncSubscription below).
-        prefsDataStore.clearAnonymousUsageState()
+        val wasUnlimited = session.userPlan == "PAID" || session.userPlan == "ADMIN"
+        // Paid/Admin counters belong to the linked account. Trial counters are
+        // device-scoped and must survive logout, otherwise logout/login can
+        // make the same trial look unused locally.
+        if (wasUnlimited) {
+            prefsDataStore.clearAnonymousUsageState()
+            usageRepository.resetSession()
+        }
         prefsDataStore.clearPendingPurchase()
-        usageRepository.resetSession()
         bootstrapManager.clear()
         // Restore an anonymous device-session immediately so the UI can fetch
         // anon traffic/limits and server list without requiring an app restart.

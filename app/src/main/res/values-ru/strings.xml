@@ -35,6 +35,7 @@
     <string name="state_connected">Подключено</string>
     <string name="error_limit_exhausted">Лимит исчерпан. Авторизуйтесь через Telegram.</string>
     <string name="error_subscription_expired">Подписка истекла. Продлите, чтобы подключиться.</string>
+    <string name="error_usage_blocked">Доступ заблокирован из-за нарушения правил использования.</string>
     <string name="error_vpn_interface">Не удалось создать VPN-интерфейс</string>
     <string name="error_tunnel_unhealthy">VPN подключился, но трафик через сервер не проходит. Попробуйте другой сервер.</string>
     <string name="error_unknown">Неизвестная ошибка</string>

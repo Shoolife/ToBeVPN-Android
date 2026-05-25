@@ -21,7 +21,9 @@ class DeviceFingerprintProvider @Inject constructor(
     @ApplicationContext private val context: Context,
 ) {
     fun get(): DeviceFingerprint = DeviceFingerprint(
-        hwid = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID),
+        hwid = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
+            ?.trim()
+            .orEmpty(),
         platform = "Android",
         osVersion = Build.VERSION.RELEASE.orEmpty(),
         model = composeModel(),

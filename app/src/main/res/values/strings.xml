@@ -33,6 +33,7 @@
     <string name="state_connected">Connected</string>
     <string name="error_limit_exhausted">Limit exhausted. Sign in via Telegram.</string>
     <string name="error_subscription_expired">Subscription expired. Renew it to connect.</string>
+    <string name="error_usage_blocked">Access blocked due to a violation of the usage rules.</string>
     <string name="error_vpn_interface">Failed to create VPN interface</string>
     <string name="error_tunnel_unhealthy">VPN connected, but traffic is not passing through the server. Try another server.</string>
     <string name="error_unknown">Unknown error</string>

@@ -232,14 +232,9 @@ class VpnConnectionManager @Inject constructor(
                 onAttemptHandled?.invoke()
             }
 
-            // Limited/trial access depends on the HWID marker being registered
-            // before the first outbound connection. Paid users don't need to
-            // wait on this best-effort ping, so keep their connect path fast.
-            if (!isPaidUser()) {
-                runCatching { authRepository.pingHwidOnly() }
-            } else {
-                launch { runCatching { authRepository.pingHwidOnly() } }
-            }
+            // The subscription response can carry a server-side access block.
+            // Always await this check before starting a new tunnel.
+            if (rejectBlockedConnection(request, gen)) return@launch
 
             if (!mayStartTunnel(request, gen)) return@launch
 
@@ -311,11 +306,7 @@ class VpnConnectionManager @Inject constructor(
             val stillCurrent = mayStartTunnel(request, restartGeneration)
             if (!stillCurrent) return@launch
 
-            if (!isPaidUser()) {
-                runCatching { authRepository.pingHwidOnly() }
-            } else {
-                launch { runCatching { authRepository.pingHwidOnly() } }
-            }
+            if (rejectBlockedConnection(request, restartGeneration)) return@launch
 
             if (!mayStartTunnel(request, restartGeneration)) return@launch
 
@@ -364,6 +355,24 @@ class VpnConnectionManager @Inject constructor(
                 generation == connectionGeneration &&
                 _connectionState.value is ConnectionState.Connecting
         }
+
+    private suspend fun rejectBlockedConnection(request: Int, generation: Int): Boolean {
+        val blocked = runCatching { authRepository.pingHwidOnly() }.getOrDefault(false)
+        if (!blocked) return false
+        mutex.withLock {
+            if (request == requestedOperation.get() &&
+                generation == connectionGeneration &&
+                _connectionState.value is ConnectionState.Connecting
+            ) {
+                advanceGeneration()
+                permittedServiceStartGeneration.set(-1)
+                _connectionState.value = ConnectionState.Error(
+                    context.getString(R.string.error_usage_blocked)
+                )
+            }
+        }
+        return true
+    }
 
     fun requestTunnelHealthCheck() {
         scope.launch {
@@ -558,6 +567,14 @@ class VpnConnectionManager @Inject constructor(
                 heartbeatCounter++
                 if (heartbeatCounter >= HEARTBEAT_TICKS) {
                     heartbeatCounter = 0
+                    if (runCatching { authRepository.pingHwidOnly() }.getOrDefault(false)) {
+                        performStop(
+                            errorMessage = context.getString(R.string.error_usage_blocked),
+                            request = request,
+                            expectedGeneration = gen,
+                        )
+                        break
+                    }
                     if (sessionDao.getSession()?.telegramId != null) {
                         runCatching { authRepository.registerCurrentDevice() }
                     }
@@ -750,8 +767,10 @@ class VpnConnectionManager @Inject constructor(
                 sessionBytesAccumulated += delta
 
                 // Keep local usage monotonic while VPN is active; server sync merges later.
-                val isAnonymous = sessionDao.getSession()?.authState != "AUTHENTICATED"
-                if (isAnonymous) {
+                val session = sessionDao.getSession()
+                val keepDeviceScopedUsage = session?.authState != "AUTHENTICATED" ||
+                    session.userPlan == "FREE_TRIAL"
+                if (keepDeviceScopedUsage) {
                     prefsDataStore.addAnonymousPendingBytes(delta)
                 }
                 val usage = usageRepository.getUsage()
