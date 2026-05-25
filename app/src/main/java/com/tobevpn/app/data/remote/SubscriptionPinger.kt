@@ -148,7 +148,7 @@ class SubscriptionPinger @Inject constructor(
 
     private companion object {
         const val TAG = "SubscriptionPinger"
-        const val BLOCK_HEADER = "is_hack"
+        const val BLOCK_HEADER = "is-hack"
         const val BLOCK_VALUE = "yes"
         // Floor at 1h so a misconfigured service can't cause the client to
         // hammer it; ceiling at 7d so a typo'd value doesn't disable
