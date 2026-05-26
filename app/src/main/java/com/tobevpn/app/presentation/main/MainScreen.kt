@@ -2,7 +2,9 @@ package com.tobevpn.app.presentation.main
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -54,6 +56,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -125,6 +128,8 @@ fun MainScreen(
 
     var showSubscriptionSheet by remember { mutableStateOf(false) }
     var showTemporaryAccessDialog by remember { mutableStateOf(false) }
+    var showBlockedDialog by remember { mutableStateOf(false) }
+    var blockDialogShownOnce by remember { mutableStateOf(false) }
     var deferredPurchaseUrl by remember { mutableStateOf<String?>(null) }
     val showTemporaryAccessBanner = authState is AuthState.Anonymous
 
@@ -132,6 +137,10 @@ fun MainScreen(
         if (subscriptionUsageBlocked) {
             showSubscriptionSheet = false
             deferredPurchaseUrl = null
+            if (!blockDialogShownOnce) {
+                blockDialogShownOnce = true
+                showBlockedDialog = true
+            }
         }
     }
 
@@ -257,7 +266,7 @@ fun MainScreen(
                 connectionState = connectionState,
                 isPreparing = connectionPreparation,
                 blocked = subscriptionUsageBlocked,
-                onClick = onConnectClick,
+                onClick = if (subscriptionUsageBlocked) {{ showBlockedDialog = true }} else onConnectClick,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -357,7 +366,7 @@ fun MainScreen(
 
             // Auth / Plan section
             if (subscriptionUsageBlocked) {
-                BlockedSubscriptionCard()
+                BlockedSubscriptionCard(onClick = { showBlockedDialog = true })
             } else when (authState) {
                 is AuthState.Anonymous -> {
                     Card(
@@ -436,6 +445,10 @@ fun MainScreen(
                 onDismiss = { showTemporaryAccessDialog = false },
             )
         }
+    }
+
+    if (showBlockedDialog) {
+        BlockedDialog(onDismiss = { showBlockedDialog = false })
     }
 
     if (showSubscriptionSheet) {
@@ -706,12 +719,10 @@ private fun ConnectButtonLarge(
             .scale(scale)
             .clip(CircleShape)
             .background(backgroundColor)
-            .then(
-                if (blocked) Modifier else Modifier.clickable(
-                    interactionSource = interactionSource,
-                    indication = rippleIndication,
-                    onClick = onClick,
-                )
+            .clickable(
+                interactionSource = interactionSource,
+                indication = rippleIndication,
+                onClick = onClick,
             ),
         contentAlignment = Alignment.Center,
     ) {
@@ -1154,11 +1165,12 @@ private fun PlanCard(auth: AuthState.Authenticated, onClick: () -> Unit) {
 }
 
 @Composable
-private fun BlockedSubscriptionCard() {
+private fun BlockedSubscriptionCard(onClick: () -> Unit) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp),
+            .padding(horizontal = 24.dp)
+            .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.errorContainer,
@@ -1190,8 +1202,56 @@ private fun BlockedSubscriptionCard() {
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
             }
+            Icon(
+                Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+            )
         }
     }
+}
+
+@Composable
+private fun BlockedDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val link = stringResource(R.string.block_appeal_link)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Outlined.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(36.dp),
+            )
+        },
+        title = {
+            Text(
+                text = stringResource(R.string.error_usage_blocked),
+                textAlign = TextAlign.Center,
+            )
+        },
+        text = {
+            Text(
+                text = stringResource(R.string.block_appeal_message),
+                textAlign = TextAlign.Center,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link))
+                context.startActivity(intent)
+            }) {
+                Text(stringResource(R.string.block_appeal_button))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("OK")
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
