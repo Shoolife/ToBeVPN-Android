@@ -1215,6 +1215,8 @@ private fun BlockedSubscriptionCard(onClick: () -> Unit) {
 private fun BlockedDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val link = stringResource(R.string.block_appeal_link)
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val buttonTextColor = if (isDark) MaterialTheme.colorScheme.onSurface else Color.Black
     AlertDialog(
         onDismissRequest = onDismiss,
         icon = {
@@ -1229,12 +1231,14 @@ private fun BlockedDialog(onDismiss: () -> Unit) {
             Text(
                 text = stringResource(R.string.error_usage_blocked),
                 textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         },
         text = {
             Text(
                 text = stringResource(R.string.block_appeal_message),
                 textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         },
         confirmButton = {
@@ -1243,12 +1247,15 @@ private fun BlockedDialog(onDismiss: () -> Unit) {
                 val intent = Intent(Intent.ACTION_VIEW, Uri.parse(link))
                 context.startActivity(intent)
             }) {
-                Text(stringResource(R.string.block_appeal_button))
+                Text(
+                    stringResource(R.string.block_appeal_button),
+                    color = buttonTextColor,
+                )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("OK")
+                Text("OK", color = buttonTextColor)
             }
         },
     )
