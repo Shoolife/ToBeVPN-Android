@@ -33,10 +33,14 @@
     <string name="state_connected">Connected</string>
     <string name="error_limit_exhausted">Limit exhausted. Sign in via Telegram.</string>
     <string name="error_subscription_expired">Subscription expired. Renew it to connect.</string>
-    <string name="error_usage_blocked">Access blocked due to a violation of the usage rules.</string>
+    <string name="error_usage_blocked">Access blocked due to a violation of the usage rules</string>
     <string name="block_appeal_message">If you haven\'t violated anything, contact us</string>
     <string name="block_appeal_link">https://t.me/meow_meow_vpn?direct</string>
     <string name="block_appeal_button">Contact support</string>
+    <string name="update_required_title">Update required</string>
+    <string name="update_required_message">Please update the app to continue</string>
+    <string name="update_required_button">Update</string>
+    <string name="update_required_quit">Quit</string>
     <string name="error_vpn_interface">Failed to create VPN interface</string>
     <string name="error_tunnel_unhealthy">VPN connected, but traffic is not passing through the server. Try another server.</string>
     <string name="error_unknown">Unknown error</string>

@@ -142,6 +142,9 @@ class MainViewModel @Inject constructor(
     val subscriptionUsageBlocked: StateFlow<Boolean> = authRepository.observeSubscriptionUsageBlocked()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    val updateRequired: StateFlow<Boolean> = prefsDataStore.observeUpdateRequired()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     private var initialized = false
     private var lastSyncTime = 0L
     private var pendingPurchaseRefreshJob: Job? = null

@@ -62,6 +62,7 @@ class PrefsDataStore @Inject constructor(
         val PENDING_PURCHASE_BASELINE_EXPIRES_AT = longPreferencesKey("pending_purchase_baseline_expires_at")
         val SERVER_CACHE_OWNER = stringPreferencesKey("server_cache_owner")
         val BLOCKED_SUBSCRIPTION_OWNER = stringPreferencesKey("blocked_subscription_owner")
+        val UPDATE_REQUIRED = booleanPreferencesKey("update_required")
         // Per-app VPN filter mode: "OFF", "WHITELIST" or "BLACKLIST".
         // The set of selected packages lives in the Room app_filter table —
         // we keep the mode in Prefs so a destructive DB migration doesn't
@@ -256,6 +257,19 @@ class PrefsDataStore @Inject constructor(
         val owner = cacheOwnerHash(shortUuid)
         return context.dataStore.data
             .map { it[Keys.BLOCKED_SUBSCRIPTION_OWNER] == owner }
+            .distinctUntilChanged()
+    }
+
+    suspend fun setUpdateRequired(required: Boolean) {
+        context.dataStore.edit {
+            if (required) it[Keys.UPDATE_REQUIRED] = true
+            else it.remove(Keys.UPDATE_REQUIRED)
+        }
+    }
+
+    fun observeUpdateRequired(): Flow<Boolean> {
+        return context.dataStore.data
+            .map { it[Keys.UPDATE_REQUIRED] == true }
             .distinctUntilChanged()
     }
 

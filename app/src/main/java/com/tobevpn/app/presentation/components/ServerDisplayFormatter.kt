@@ -13,9 +13,66 @@ fun countryFlagForUi(countryCode: String, serverName: String): String {
 }
 
 fun serverCountryCodeForUi(countryCode: String, serverName: String): String {
+    // Server names like "Нидерланды 5" or "Швеция 1" are explicit user-facing
+    // labels. They take priority over the panel's `country_code`, which can
+    // point at the *entry* node of a cascade (e.g. RU→NL keeps country_code=RU
+    // while the user sees and expects "Нидерланды").
+    val codeFromName = countryCodeFromServerName(serverName)
+    if (codeFromName != null) return codeFromName
+
     val normalizedCode = countryCode.trim().uppercase()
     if (countryFlagOrNull(normalizedCode) != null) return normalizedCode
     return countryCodeFromFlag(parseLeadingPrefix(serverName).flag).orEmpty()
+}
+
+private val COUNTRY_NAME_TO_CODE = mapOf(
+    "нидерланды" to "NL",
+    "netherlands" to "NL",
+    "швеция" to "SE",
+    "sweden" to "SE",
+    "финляндия" to "FI",
+    "finland" to "FI",
+    "германия" to "DE",
+    "germany" to "DE",
+    "франция" to "FR",
+    "france" to "FR",
+    "великобритания" to "GB",
+    "англия" to "GB",
+    "uk" to "GB",
+    "сша" to "US",
+    "usa" to "US",
+    "польша" to "PL",
+    "poland" to "PL",
+    "литва" to "LT",
+    "lithuania" to "LT",
+    "латвия" to "LV",
+    "latvia" to "LV",
+    "эстония" to "EE",
+    "estonia" to "EE",
+    "испания" to "ES",
+    "spain" to "ES",
+    "италия" to "IT",
+    "italy" to "IT",
+    "турция" to "TR",
+    "turkey" to "TR",
+    "япония" to "JP",
+    "japan" to "JP",
+    "сингапур" to "SG",
+    "singapore" to "SG",
+    "украина" to "UA",
+    "ukraine" to "UA",
+    "казахстан" to "KZ",
+    "kazakhstan" to "KZ",
+    "беларусь" to "BY",
+    "belarus" to "BY",
+)
+
+private fun countryCodeFromServerName(serverName: String): String? {
+    val lower = serverName.lowercase()
+    for ((keyword, code) in COUNTRY_NAME_TO_CODE) {
+        if (lower.contains(keyword)) return code
+    }
+    return null
 }
 
 @Suppress("UNUSED_PARAMETER")

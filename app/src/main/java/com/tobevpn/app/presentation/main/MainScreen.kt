@@ -8,7 +8,12 @@ import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -34,6 +39,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.SystemUpdateAlt
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -118,6 +125,7 @@ fun MainScreen(
     val connectionPreparation by viewModel.connectionPreparation.collectAsStateWithLifecycle()
     val paymentSuccessVisible by viewModel.paymentSuccessVisible.collectAsStateWithLifecycle()
     val subscriptionUsageBlocked by viewModel.subscriptionUsageBlocked.collectAsStateWithLifecycle()
+    val updateRequired by viewModel.updateRequired.collectAsStateWithLifecycle()
     val activity = LocalContext.current as Activity
 
     // Re-sync on every resume (e.g. after payment in Telegram)
@@ -129,7 +137,7 @@ fun MainScreen(
     var showSubscriptionSheet by remember { mutableStateOf(false) }
     var showTemporaryAccessDialog by remember { mutableStateOf(false) }
     var showBlockedDialog by remember { mutableStateOf(false) }
-    var blockDialogShownOnce by remember { mutableStateOf(false) }
+    val prevBlocked = remember { mutableStateOf(subscriptionUsageBlocked) }
     var deferredPurchaseUrl by remember { mutableStateOf<String?>(null) }
     val showTemporaryAccessBanner = authState is AuthState.Anonymous
 
@@ -137,11 +145,14 @@ fun MainScreen(
         if (subscriptionUsageBlocked) {
             showSubscriptionSheet = false
             deferredPurchaseUrl = null
-            if (!blockDialogShownOnce) {
-                blockDialogShownOnce = true
+            if (!prevBlocked.value) {
+                kotlinx.coroutines.delay(1000)
                 showBlockedDialog = true
             }
+        } else {
+            showBlockedDialog = false
         }
+        prevBlocked.value = subscriptionUsageBlocked
     }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -296,9 +307,8 @@ fun MainScreen(
             // on a "new version available" notification from wherever they
             // happen to be in the app.
 
-            // Server selector card
             ServerSelectorCard(
-                server = currentServer,
+                server = if (subscriptionUsageBlocked) null else currentServer,
                 onClick = if (subscriptionUsageBlocked) {{ }} else onNavigateToServers,
                 isAuthenticated = authState is AuthState.Authenticated,
             )
@@ -447,8 +457,25 @@ fun MainScreen(
         }
     }
 
-    if (showBlockedDialog) {
+    AnimatedVisibility(
+        visible = showBlockedDialog,
+        enter = fadeIn(tween(250)) + scaleIn(tween(250), initialScale = 0.95f),
+        exit = fadeOut(tween(0)),
+    ) {
         BlockedDialog(onDismiss = { showBlockedDialog = false })
+    }
+
+    if (updateRequired) {
+        UpdateRequiredDialog(
+            onUpdate = {
+                val intent = Intent(
+                    Intent.ACTION_VIEW,
+                    Uri.parse("https://github.com/Shoolife/ToBeVPN/releases/latest"),
+                )
+                activity.startActivity(intent)
+            },
+            onQuit = { activity.finishAffinity() },
+        )
     }
 
     if (showSubscriptionSheet) {
@@ -1253,11 +1280,48 @@ private fun BlockedDialog(onDismiss: () -> Unit) {
                 )
             }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("OK", color = buttonTextColor)
+    )
+}
+
+@Composable
+private fun UpdateRequiredDialog(onUpdate: () -> Unit, onQuit: () -> Unit) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val buttonTextColor = if (isDark) MaterialTheme.colorScheme.onSurface else Color.Black
+    AlertDialog(
+        onDismissRequest = {},
+        icon = {
+            Icon(
+                imageVector = Icons.Outlined.SystemUpdateAlt,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(36.dp),
+            )
+        },
+        title = {
+            Text(
+                text = stringResource(R.string.update_required_title),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        text = {
+            Text(
+                text = stringResource(R.string.update_required_message),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onUpdate) {
+                Text(stringResource(R.string.update_required_button), color = buttonTextColor)
             }
         },
+        dismissButton = {
+            TextButton(onClick = onQuit) {
+                Text(stringResource(R.string.update_required_quit), color = buttonTextColor)
+            }
+        },
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
     )
 }
 

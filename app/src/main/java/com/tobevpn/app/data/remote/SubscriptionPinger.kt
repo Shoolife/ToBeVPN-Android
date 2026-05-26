@@ -21,6 +21,7 @@ import javax.net.ssl.SSLException
 data class SubscriptionPingResult(
     val intervalMs: Long?,
     val isUsageBlocked: Boolean,
+    val isUpdateRequired: Boolean,
 )
 
 // Direct GET on the public subscription URL with HWID headers.
@@ -93,6 +94,7 @@ class SubscriptionPinger @Inject constructor(
     private fun readResult(response: Response) = SubscriptionPingResult(
         intervalMs = readIntervalMs(response.header("profile-update-interval")),
         isUsageBlocked = response.header(BLOCK_HEADER)?.trim() == BLOCK_VALUE,
+        isUpdateRequired = response.header(UPDATE_REQUIRED_HEADER)?.trim()?.lowercase() == BLOCK_VALUE,
     )
 
     /**
@@ -149,6 +151,7 @@ class SubscriptionPinger @Inject constructor(
     private companion object {
         const val TAG = "SubscriptionPinger"
         const val BLOCK_HEADER = "is-hack"
+        const val UPDATE_REQUIRED_HEADER = "update-required"
         const val BLOCK_VALUE = "yes"
         // Floor at 1h so a misconfigured service can't cause the client to
         // hammer it; ceiling at 7d so a typo'd value doesn't disable

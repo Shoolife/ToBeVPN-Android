@@ -427,6 +427,7 @@ class AuthRepository @Inject constructor(
             val pingResult = subscriptionPinger.ping(effectiveUrl)
             if (pingResult != null) {
                 prefsDataStore.setSubscriptionUsageBlocked(shortUuid, pingResult.isUsageBlocked)
+                prefsDataStore.setUpdateRequired(pingResult.isUpdateRequired)
             }
             persistSyncState(pingResult?.intervalMs)
 
@@ -543,6 +544,7 @@ class AuthRepository @Inject constructor(
             val url = session.subscriptionUrl ?: return wasBlocked
             val result = subscriptionPinger.ping(url) ?: return wasBlocked
             prefsDataStore.setSubscriptionUsageBlocked(shortUuid, result.isUsageBlocked)
+            prefsDataStore.setUpdateRequired(result.isUpdateRequired)
             result.isUsageBlocked
         } catch (_: Exception) {
             wasBlocked

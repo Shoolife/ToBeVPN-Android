@@ -35,10 +35,14 @@
     <string name="state_connected">Подключено</string>
     <string name="error_limit_exhausted">Лимит исчерпан. Авторизуйтесь через Telegram.</string>
     <string name="error_subscription_expired">Подписка истекла. Продлите, чтобы подключиться.</string>
-    <string name="error_usage_blocked">Доступ заблокирован из-за нарушения правил использования.</string>
+    <string name="error_usage_blocked">Доступ заблокирован из-за нарушения правил использования</string>
     <string name="block_appeal_message">Если вы ничего не нарушали, напишите нам</string>
     <string name="block_appeal_link">https://t.me/meow_meow_vpn?direct</string>
     <string name="block_appeal_button">Написать в поддержку</string>
+    <string name="update_required_title">Требуется обновление</string>
+    <string name="update_required_message">Для продолжения работы необходимо обновить приложение</string>
+    <string name="update_required_button">Обновить</string>
+    <string name="update_required_quit">Выйти</string>
     <string name="error_vpn_interface">Не удалось создать VPN-интерфейс</string>
     <string name="error_tunnel_unhealthy">VPN подключился, но трафик через сервер не проходит. Попробуйте другой сервер.</string>
     <string name="error_unknown">Неизвестная ошибка</string>
