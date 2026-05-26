@@ -139,6 +139,9 @@ class MainViewModel @Inject constructor(
     val authState: StateFlow<AuthState> = authRepository.observeAuthState()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AuthState.Anonymous)
 
+    val subscriptionUsageBlocked: StateFlow<Boolean> = authRepository.observeSubscriptionUsageBlocked()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
     private var initialized = false
     private var lastSyncTime = 0L
     private var pendingPurchaseRefreshJob: Job? = null
@@ -251,6 +254,14 @@ class MainViewModel @Inject constructor(
                     if (curr is ConnectionState.Connected || curr is ConnectionState.Connecting) {
                         connectionManager.stopVpn()
                     }
+                }
+            }
+        }
+        viewModelScope.launch {
+            subscriptionUsageBlocked.collect { blocked ->
+                if (blocked) {
+                    clearPurchaseState()
+                    prefsDataStore.clearPendingPurchase()
                 }
             }
         }
@@ -409,16 +420,35 @@ class MainViewModel @Inject constructor(
      * Safe to call multiple times — refreshes in background.
      */
     fun loadPurchasePlans() {
-        if (_purchasePlansLoading.value) return
+        if (subscriptionUsageBlocked.value || _purchasePlansLoading.value) return
         val request = beginPurchaseRefresh()
         viewModelScope.launch {
             refreshPurchasePlansAndLimits(request)
         }
     }
 
-    fun openPurchaseUrl(context: Context, paymentUrl: String?) {
-        if (paymentUrl.isNullOrBlank()) return
+    fun requestSubscriptionSheet(onAllowed: () -> Unit) {
+        if (subscriptionUsageBlocked.value) return
+        if (authState.value is AuthState.Authenticated) {
+            loadPurchasePlans()
+            onAllowed()
+            return
+        }
         viewModelScope.launch {
+            if (!authRepository.pingHwidOnly()) {
+                onAllowed()
+            }
+        }
+    }
+
+    fun openPurchaseUrl(context: Context, paymentUrl: String?) {
+        if (subscriptionUsageBlocked.value || paymentUrl.isNullOrBlank()) return
+        viewModelScope.launch {
+            if (authRepository.pingHwidOnly()) {
+                clearPurchaseState()
+                prefsDataStore.clearPendingPurchase()
+                return@launch
+            }
             val baseline = authRepository.getAuthStateSnapshot() as? AuthState.Authenticated
                 ?: run {
                     clearPurchaseState()
@@ -441,6 +471,10 @@ class MainViewModel @Inject constructor(
     }
 
     private suspend fun refreshPurchasePlansAndLimits(request: Int) {
+        if (authRepository.pingHwidOnly()) {
+            if (request == purchaseLoadRequest) clearPurchaseState()
+            return
+        }
         val authenticated = authRepository.getAuthStateSnapshot() as? AuthState.Authenticated
         if (authenticated == null) {
             if (request == purchaseLoadRequest) clearPurchaseState()

@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.security.MessageDigest
@@ -249,6 +250,13 @@ class PrefsDataStore @Inject constructor(
 
     suspend fun isSubscriptionUsageBlocked(shortUuid: String): Boolean {
         return context.dataStore.data.first()[Keys.BLOCKED_SUBSCRIPTION_OWNER] == cacheOwnerHash(shortUuid)
+    }
+
+    fun observeSubscriptionUsageBlocked(shortUuid: String): Flow<Boolean> {
+        val owner = cacheOwnerHash(shortUuid)
+        return context.dataStore.data
+            .map { it[Keys.BLOCKED_SUBSCRIPTION_OWNER] == owner }
+            .distinctUntilChanged()
     }
 
     private fun cacheOwnerHash(value: String): String {

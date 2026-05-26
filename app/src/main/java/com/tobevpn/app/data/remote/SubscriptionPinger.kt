@@ -17,6 +17,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import javax.net.ssl.SSLException
 
+
 data class SubscriptionPingResult(
     val intervalMs: Long?,
     val isUsageBlocked: Boolean,
@@ -38,7 +39,6 @@ class SubscriptionPinger @Inject constructor(
     private val fingerprintProvider: DeviceFingerprintProvider,
 ) {
     private val client = OkHttpClient.Builder()
-        .proxySelector(TunnelAwareProxySelector())
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()

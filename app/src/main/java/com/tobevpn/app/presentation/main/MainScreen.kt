@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowRight
@@ -58,6 +59,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +72,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -111,6 +114,7 @@ fun MainScreen(
     val currentLimits by viewModel.currentLimits.collectAsStateWithLifecycle()
     val connectionPreparation by viewModel.connectionPreparation.collectAsStateWithLifecycle()
     val paymentSuccessVisible by viewModel.paymentSuccessVisible.collectAsStateWithLifecycle()
+    val subscriptionUsageBlocked by viewModel.subscriptionUsageBlocked.collectAsStateWithLifecycle()
     val activity = LocalContext.current as Activity
 
     // Re-sync on every resume (e.g. after payment in Telegram)
@@ -123,6 +127,13 @@ fun MainScreen(
     var showTemporaryAccessDialog by remember { mutableStateOf(false) }
     var deferredPurchaseUrl by remember { mutableStateOf<String?>(null) }
     val showTemporaryAccessBanner = authState is AuthState.Anonymous
+
+    LaunchedEffect(subscriptionUsageBlocked) {
+        if (subscriptionUsageBlocked) {
+            showSubscriptionSheet = false
+            deferredPurchaseUrl = null
+        }
+    }
 
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
@@ -245,6 +256,7 @@ fun MainScreen(
             ConnectButtonLarge(
                 connectionState = connectionState,
                 isPreparing = connectionPreparation,
+                blocked = subscriptionUsageBlocked,
                 onClick = onConnectClick,
             )
 
@@ -257,7 +269,7 @@ fun MainScreen(
             StatusText(
                 connectionState = connectionState,
                 isPreparing = connectionPreparation,
-                suppressError = isAnonExhausted,
+                suppressError = isAnonExhausted || subscriptionUsageBlocked,
                 reminder = appFilterReminder,
             )
 
@@ -278,7 +290,7 @@ fun MainScreen(
             // Server selector card
             ServerSelectorCard(
                 server = currentServer,
-                onClick = onNavigateToServers,
+                onClick = if (subscriptionUsageBlocked) {{ }} else onNavigateToServers,
                 isAuthenticated = authState is AuthState.Authenticated,
             )
 
@@ -344,14 +356,18 @@ fun MainScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Auth / Plan section
-            when (authState) {
+            if (subscriptionUsageBlocked) {
+                BlockedSubscriptionCard()
+            } else when (authState) {
                 is AuthState.Anonymous -> {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 24.dp)
                             .clickable {
-                                showSubscriptionSheet = true
+                                viewModel.requestSubscriptionSheet {
+                                    showSubscriptionSheet = true
+                                }
                             },
                     ) {
                         Row(
@@ -389,8 +405,9 @@ fun MainScreen(
                     PlanCard(
                         auth = authState as AuthState.Authenticated,
                         onClick = {
-                            viewModel.loadPurchasePlans()
-                            showSubscriptionSheet = true
+                            viewModel.requestSubscriptionSheet {
+                                showSubscriptionSheet = true
+                            }
                         },
                     )
                 }
@@ -651,12 +668,14 @@ private fun TemporaryAccessTopDialog(
 private fun ConnectButtonLarge(
     connectionState: ConnectionState,
     isPreparing: Boolean,
+    blocked: Boolean = false,
     onClick: () -> Unit,
 ) {
     val isConnected = connectionState is ConnectionState.Connected
     val isConnecting = isPreparing || connectionState is ConnectionState.Connecting
 
     val targetColor = when {
+        blocked -> VpnRed
         isConnected -> VpnGreen
         isConnecting -> VpnOrange
         else -> MaterialTheme.colorScheme.surfaceVariant
@@ -667,6 +686,7 @@ private fun ConnectButtonLarge(
         label = "bg",
     )
     val iconColor = when {
+        blocked -> MaterialTheme.colorScheme.surface
         isConnected || isConnecting -> MaterialTheme.colorScheme.surface
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -677,10 +697,6 @@ private fun ConnectButtonLarge(
     )
 
     val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-    // Ripple defaults to colorScheme.primary tinted with alpha, which on
-    // some devices renders as a noticeable pink/violet pulse on the
-    // disconnected button. Pin it to onSurface so it reads as a plain
-    // grey overlay regardless of dynamic theme tweaks.
     val rippleIndication = androidx.compose.material3.ripple(
         color = MaterialTheme.colorScheme.onSurface,
     )
@@ -690,16 +706,19 @@ private fun ConnectButtonLarge(
             .scale(scale)
             .clip(CircleShape)
             .background(backgroundColor)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = rippleIndication,
-                onClick = onClick,
+            .then(
+                if (blocked) Modifier else Modifier.clickable(
+                    interactionSource = interactionSource,
+                    indication = rippleIndication,
+                    onClick = onClick,
+                )
             ),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = Icons.Default.PowerSettingsNew,
             contentDescription = when {
+                blocked -> "Blocked"
                 isConnecting -> "Cancel connection"
                 isConnected -> "Disconnect"
                 else -> "Connect"
@@ -895,7 +914,15 @@ private fun ServerSelectorCard(
                     text = server?.let { serverDisplayName(it.name, it.country) }
                         ?: stringResource(R.string.server_choose),
                     style = MaterialTheme.typography.titleMedium,
+                    autoSize = TextAutoSize.StepBased(
+                        minFontSize = 10.sp,
+                        maxFontSize = MaterialTheme.typography.titleMedium.fontSize,
+                        stepSize = 0.5.sp,
+                    ),
                     fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                     color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
                         MaterialTheme.colorScheme.onSurface
                     } else {
@@ -1122,6 +1149,47 @@ private fun PlanCard(auth: AuthState.Authenticated, onClick: () -> Unit) {
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun BlockedSubscriptionCard() {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.errorContainer,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(22.dp),
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.subscription),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                Text(
+                    text = stringResource(R.string.error_usage_blocked),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+            }
         }
     }
 }

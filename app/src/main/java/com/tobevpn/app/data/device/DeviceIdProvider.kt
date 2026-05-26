@@ -12,11 +12,13 @@ import javax.inject.Singleton
 /**
  * Provides the device ID used by the app auth backend.
  *
- * Existing linked installs keep their current persisted session/device ID to
- * avoid forcing a re-link during migration. Fresh installs derive the ID from
- * Android HWID instead of a random install UUID, so clearing app data or
- * reinstalling the APK cannot mint another free-trial device on the same
- * physical phone.
+ * HWID-derived ID is always preferred when available — this ensures the same
+ * physical device always produces the same device_id regardless of app-data
+ * resets, reinstalls, or upgrades from older versions that used random UUIDs.
+ *
+ * The only exception is an already-linked (authenticated) session: changing
+ * its device_id would break the Telegram link and force a re-pair. In that
+ * case we keep the session's existing ID.
  */
 @Singleton
 class DeviceIdProvider @Inject constructor(
@@ -25,19 +27,21 @@ class DeviceIdProvider @Inject constructor(
     private val fingerprintProvider: DeviceFingerprintProvider,
 ) {
     suspend fun getOrCreate(): String {
-        val sessionDeviceId = sessionDao.getSession()?.deviceId?.takeIf { it.isNotBlank() }
-        if (sessionDeviceId != null) {
-            val stored = prefsDataStore.deviceId.firstOrNull()
-            if (stored != sessionDeviceId) {
+        val session = sessionDao.getSession()
+        val sessionDeviceId = session?.deviceId?.takeIf { it.isNotBlank() }
+        val hwidDeviceId = stableDeviceIdFromHwid()
+
+        val isLinked = session?.authState == "AUTHENTICATED" && session.telegramId != null
+
+        if (sessionDeviceId != null && (isLinked || hwidDeviceId == null || sessionDeviceId == hwidDeviceId)) {
+            if (prefsDataStore.deviceId.firstOrNull() != sessionDeviceId) {
                 prefsDataStore.setDeviceId(sessionDeviceId)
             }
             return sessionDeviceId
         }
 
-        val hwidDeviceId = stableDeviceIdFromHwid()
         if (hwidDeviceId != null) {
-            val stored = prefsDataStore.deviceId.firstOrNull()
-            if (stored != hwidDeviceId) {
+            if (prefsDataStore.deviceId.firstOrNull() != hwidDeviceId) {
                 prefsDataStore.setDeviceId(hwidDeviceId)
             }
             return hwidDeviceId
