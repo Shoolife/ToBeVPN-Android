@@ -91,6 +91,8 @@ class MainActivity : AppCompatActivity() {
                 // UpdateViewModel, so the Settings "Check for updates" button
                 // and this overlay stay in sync. The banner persists until
                 // the user dismisses it via the in-card "Later" button.
+                val updateRequired by prefsDataStore.observeUpdateRequired()
+                    .collectAsStateWithLifecycle(initialValue = false)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -99,7 +101,11 @@ class MainActivity : AppCompatActivity() {
                     contentAlignment = Alignment.TopCenter,
                 ) {
                     UpdateBannerCheck()
-                    UpdateBannerHost()
+                    // Hide the top banner when the block-update dialog is up —
+                    // the dialog already shows download progress in-place.
+                    if (!updateRequired) {
+                        UpdateBannerHost()
+                    }
                 }
 
                 if (showStartupSplash) {

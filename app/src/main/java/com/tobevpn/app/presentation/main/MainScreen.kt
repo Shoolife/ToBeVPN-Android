@@ -467,13 +467,6 @@ fun MainScreen(
 
     if (updateRequired) {
         UpdateRequiredDialog(
-            onUpdate = {
-                val intent = Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse("https://github.com/Shoolife/ToBeVPN/releases/latest"),
-                )
-                activity.startActivity(intent)
-            },
             onQuit = { activity.finishAffinity() },
         )
     }
@@ -1284,9 +1277,63 @@ private fun BlockedDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun UpdateRequiredDialog(onUpdate: () -> Unit, onQuit: () -> Unit) {
+private fun UpdateRequiredDialog(onQuit: () -> Unit) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val buttonTextColor = if (isDark) MaterialTheme.colorScheme.onSurface else Color.Black
+    val updateViewModel = com.tobevpn.app.update.rememberAppUpdateViewModel()
+    val updateState by updateViewModel.state.collectAsStateWithLifecycle()
+    val manualCheckInFlight by updateViewModel.manualCheckInFlight.collectAsStateWithLifecycle()
+
+    val title: String
+    val message: String
+    val confirmText: String
+    val confirmAction: () -> Unit
+
+    when (val s = updateState) {
+        is com.tobevpn.app.update.UpdateUiState.Downloading -> {
+            title = stringResource(R.string.update_banner_downloading_title, s.info.versionName)
+            val downloadedMb = String.format("%.1f", s.downloadedBytes / (1024.0 * 1024.0))
+            val totalMb = if (s.totalBytes > 0)
+                String.format("%.1f", s.totalBytes / (1024.0 * 1024.0))
+            else null
+            message = if (totalMb != null) "$downloadedMb МБ / $totalMb МБ" else "$downloadedMb МБ"
+            confirmText = ""
+            confirmAction = {}
+        }
+        is com.tobevpn.app.update.UpdateUiState.ReadyToInstall -> {
+            title = stringResource(R.string.update_banner_ready_title, s.info.versionName)
+            message = stringResource(R.string.update_banner_install)
+            confirmText = stringResource(R.string.update_banner_install)
+            confirmAction = {
+                try {
+                    val contentUri = updateViewModel.installer.resolveContentUri(s.localUri)
+                    updateViewModel.installer.install(contentUri)
+                } catch (_: android.content.ActivityNotFoundException) {
+                }
+            }
+        }
+        is com.tobevpn.app.update.UpdateUiState.Failed -> {
+            title = stringResource(R.string.update_banner_failed_title)
+            message = s.reason.take(200)
+            confirmText = stringResource(R.string.update_banner_retry)
+            confirmAction = { updateViewModel.retry() }
+        }
+        is com.tobevpn.app.update.UpdateUiState.Available -> {
+            title = stringResource(R.string.update_required_title)
+            message = stringResource(R.string.update_required_message)
+            confirmText = stringResource(R.string.update_required_button)
+            confirmAction = { updateViewModel.startDownload() }
+        }
+        com.tobevpn.app.update.UpdateUiState.Idle -> {
+            title = stringResource(R.string.update_required_title)
+            message = stringResource(R.string.update_required_message)
+            confirmText = stringResource(R.string.update_required_button)
+            confirmAction = { updateViewModel.forceCheck() }
+        }
+    }
+
+    val showProgress = updateState is com.tobevpn.app.update.UpdateUiState.Downloading
+
     AlertDialog(
         onDismissRequest = {},
         icon = {
@@ -1299,21 +1346,60 @@ private fun UpdateRequiredDialog(onUpdate: () -> Unit, onQuit: () -> Unit) {
         },
         title = {
             Text(
-                text = stringResource(R.string.update_required_title),
+                text = title,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
         },
         text = {
-            Text(
-                text = stringResource(R.string.update_required_message),
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            Column(modifier = Modifier.fillMaxWidth()) {
+                if (showProgress) {
+                    val downloading = updateState as com.tobevpn.app.update.UpdateUiState.Downloading
+                    val trackColour = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
+                    if (downloading.totalBytes > 0L) {
+                        val target = (downloading.downloadedBytes.toDouble() / downloading.totalBytes.toDouble())
+                            .coerceIn(0.0, 1.0)
+                            .toFloat()
+                        val animated by animateFloatAsState(
+                            targetValue = target,
+                            animationSpec = tween(durationMillis = 400, easing = androidx.compose.animation.core.LinearEasing),
+                            label = "blockedUpdateProgress",
+                        )
+                        androidx.compose.material3.LinearProgressIndicator(
+                            progress = { animated },
+                            color = com.tobevpn.app.presentation.theme.VpnGreen,
+                            trackColor = trackColour,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                                .height(4.dp),
+                        )
+                    } else {
+                        androidx.compose.material3.LinearProgressIndicator(
+                            color = com.tobevpn.app.presentation.theme.VpnGreen,
+                            trackColor = trackColour,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                                .height(4.dp),
+                        )
+                    }
+                }
+                Text(
+                    text = message,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         },
         confirmButton = {
-            TextButton(onClick = onUpdate) {
-                Text(stringResource(R.string.update_required_button), color = buttonTextColor)
+            if (confirmText.isNotEmpty()) {
+                TextButton(
+                    onClick = confirmAction,
+                    enabled = !manualCheckInFlight,
+                ) {
+                    Text(confirmText, color = buttonTextColor)
+                }
             }
         },
         dismissButton = {
