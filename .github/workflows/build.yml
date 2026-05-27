@@ -123,6 +123,11 @@ jobs:
           name: ToBeVPN-apk
           path: artifacts/*.apk
           if-no-files-found: error
+          # Keep CI artifacts short-lived. The release is the source of truth
+          # for distribution; long-retained artifacts in a public repo can be
+          # downloaded by any logged-in GitHub user and revive removed
+          # versions outside the release flow.
+          retention-days: 7
 
       - name: Upload AAB
         uses: actions/upload-artifact@v5
@@ -130,6 +135,7 @@ jobs:
           name: ToBeVPN-aab
           path: artifacts/*.aab
           if-no-files-found: error
+          retention-days: 7
 
       - name: Wipe sensitive files
         if: always()
