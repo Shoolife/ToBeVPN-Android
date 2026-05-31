@@ -10,7 +10,6 @@ import androidx.lifecycle.viewModelScope
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.PendingPurchaseState
 import com.tobevpn.app.data.local.PrefsDataStore
-import com.tobevpn.app.data.remote.BotApi
 import com.tobevpn.app.data.remote.dto.PurchasePlansDto
 import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.data.repository.AuthRepository
@@ -61,7 +60,6 @@ class MainViewModel @Inject constructor(
     private val prefsDataStore: PrefsDataStore,
     private val currencyRepository: CurrencyRepository,
     private val purchaseRepository: PurchaseRepository,
-    private val botApi: BotApi,
     private val appFilterRepository: AppFilterRepository,
     private val deepLinkBus: DeepLinkBus,
     private val paymentNotifications: PaymentNotifications,
@@ -308,7 +306,6 @@ class MainViewModel @Inject constructor(
         authRepository.syncSubscription(
             overwriteUsage = true,
             force = true,
-            trustPanelPlan = false,
         )
 
         val refreshedServers = vpnRepository.refreshServers().getOrNull().orEmpty()
@@ -474,10 +471,6 @@ class MainViewModel @Inject constructor(
     }
 
     private suspend fun refreshPurchasePlansAndLimits(request: Int) {
-        if (authRepository.pingHwidOnly()) {
-            if (request == purchaseLoadRequest) clearPurchaseState()
-            return
-        }
         val authenticated = authRepository.getAuthStateSnapshot() as? AuthState.Authenticated
         if (authenticated == null) {
             if (request == purchaseLoadRequest) clearPurchaseState()
@@ -485,7 +478,6 @@ class MainViewModel @Inject constructor(
         }
         try {
             val plans = purchaseRepository.getPlans()
-            val limits = loadCurrentLimitsNow(authenticated)
             if (request != purchaseLoadRequest ||
                 authRepository.getAuthStateSnapshot() != authenticated
             ) {
@@ -493,6 +485,17 @@ class MainViewModel @Inject constructor(
                 return
             }
             _purchasePlans.value = plans
+            if (authRepository.pingHwidOnly()) {
+                if (request == purchaseLoadRequest) clearPurchaseState()
+                return
+            }
+            val limits = loadCurrentLimitsNow(authenticated)
+            if (request != purchaseLoadRequest ||
+                authRepository.getAuthStateSnapshot() != authenticated
+            ) {
+                if (request == purchaseLoadRequest) clearPurchaseState()
+                return
+            }
             _currentLimits.value = limits
         } finally {
             if (request == purchaseLoadRequest) {
@@ -521,9 +524,7 @@ class MainViewModel @Inject constructor(
 
     private suspend fun loadCurrentLimitsNow(authenticated: AuthState.Authenticated): CurrentPlanLimits? {
         return try {
-            val user = botApi.getUserByTelegramId(authenticated.telegramId)
-                .response
-                .firstOrNull()
+            val user = authRepository.getPanelUserByTelegramId(authenticated.telegramId)
             if (user != null) {
                 CurrentPlanLimits(
                     trafficLimitBytes = user.trafficLimitBytes,
@@ -604,7 +605,6 @@ class MainViewModel @Inject constructor(
         authRepository.syncSubscription(
             overwriteUsage = !isConnected,
             force = true,
-            trustPanelPlan = false,
         )
         vpnRepository.refreshServers()
         lastSyncTime = System.currentTimeMillis()

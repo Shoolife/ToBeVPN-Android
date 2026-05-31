@@ -37,14 +37,12 @@ fun OnboardingScreen(
     val trialTerms = viewModel.trialTerms.collectAsStateWithLifecycle().value
     val context = LocalContext.current
     val locale = context.resources.configuration.locales[0] ?: Locale.getDefault()
-    val trialTraffic = formatTrafficLimit(
-        bytes = trialTerms.trafficBytes,
-        unit = stringResource(R.string.unit_gb),
-        locale = locale,
+    val unitGb = stringResource(R.string.unit_gb)
+    val anonTraffic = formatTrafficLimit(bytes = trialTerms.anonBytes, unit = unitGb, locale = locale)
+    val bonusTraffic = formatTrafficLimit(bytes = trialTerms.bonusBytes, unit = unitGb, locale = locale)
+    val trialDays = pluralStringResource(
+        R.plurals.onboarding_trial_days, trialTerms.trialDays, trialTerms.trialDays,
     )
-    val trialDays = trialTerms.trialDays?.let { days ->
-        pluralStringResource(R.plurals.onboarding_trial_days, days, days)
-    }
 
     Column(
         modifier = Modifier
@@ -77,15 +75,9 @@ fun OnboardingScreen(
 
         Spacer(modifier = Modifier.height(48.dp))
 
-        FeatureItem(
-            if (trialDays != null) {
-                stringResource(R.string.onboarding_feature_trial_with_days, trialTraffic, trialDays)
-            } else {
-                stringResource(R.string.onboarding_feature_trial, trialTraffic)
-            }
-        )
+        FeatureItem(stringResource(R.string.onboarding_feature_trial, anonTraffic))
         Spacer(modifier = Modifier.height(12.dp))
-        FeatureItem(stringResource(R.string.onboarding_feature_device))
+        FeatureItem(stringResource(R.string.onboarding_feature_device, bonusTraffic, trialDays))
         Spacer(modifier = Modifier.height(12.dp))
         FeatureItem(stringResource(R.string.onboarding_feature_auth))
         Spacer(modifier = Modifier.height(12.dp))

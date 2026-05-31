@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -79,6 +80,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -101,6 +103,7 @@ import com.tobevpn.app.presentation.components.serverDisplayName
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.presentation.theme.VpnRed
+import kotlin.math.ceil
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -300,6 +303,16 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             } else {
                 Spacer(modifier = Modifier.height(8.dp))
+            }
+
+            (authState as? AuthState.Authenticated)?.let { reminderAuth ->
+                SubscriptionReminderBanner(
+                    auth = reminderAuth,
+                    onRenew = {
+                        viewModel.requestSubscriptionSheet { showSubscriptionSheet = true }
+                    },
+                )
+                Spacer(modifier = Modifier.height(16.dp))
             }
 
             // The in-app updater banner now lives at MainActivity level — it
@@ -850,6 +863,84 @@ private fun ErrorCard(message: String) {
                 color = onSurfaceStrong,
                 modifier = Modifier.weight(1f),
             )
+        }
+    }
+}
+
+@Composable
+private fun SubscriptionReminderBanner(
+    auth: AuthState.Authenticated,
+    onRenew: () -> Unit,
+) {
+    val dayMs = 86_400_000L
+    val expiresAt = auth.planExpiresAt
+
+    val expired: Boolean
+    val title: String?
+    when {
+        auth.plan == UserPlan.EXPIRED -> {
+            title = stringResource(R.string.subscription_expired_title)
+            expired = true
+        }
+        auth.plan == UserPlan.PAID && expiresAt != null -> {
+            val msLeft = expiresAt - System.currentTimeMillis()
+            expired = false
+            title = if (msLeft in 0..(3 * dayMs)) {
+                val daysLeft = ceil(msLeft.toDouble() / dayMs).toInt()
+                if (daysLeft <= 0) stringResource(R.string.subscription_expiry_today)
+                else pluralStringResource(
+                    R.plurals.subscription_expiring_title, daysLeft, daysLeft,
+                )
+            } else null
+        }
+        else -> { title = null; expired = false }
+    }
+
+    if (title == null) return
+
+    // Dismiss for the current run; the banner returns on the next launch and
+    // whenever the plan/expiry changes (keyed remember).
+    var dismissed by remember(auth.plan, expiresAt) { mutableStateOf(false) }
+    if (dismissed) return
+
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    val accent = if (expired) VpnRed else VpnOrange
+    val cardColor = if (dark) {
+        if (expired) Color(0xFF2A1A1A) else Color(0xFF2A2415)
+    } else {
+        if (expired) Color(0xFFFFEBEE) else Color(0xFFFFF8E1)
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = accent,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.subscription_renew_reminder_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(onClick = onRenew, modifier = Modifier.weight(1f)) {
+                    Text(stringResource(R.string.subscription_renew_action))
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                TextButton(onClick = { dismissed = true }) {
+                    Text(stringResource(R.string.update_banner_later))
+                }
+            }
         }
     }
 }
@@ -1449,6 +1540,8 @@ private fun SubscriptionBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
                 .padding(horizontal = 24.dp)
                 .padding(bottom = 32.dp),
         ) {
@@ -1476,9 +1569,9 @@ private fun SubscriptionBottomSheet(
                 ?: if (currentLimits != null && currentLimits.trafficLimitBytes <= 0) {
                     "\u221E"
                 } else {
-                    "XXX ${stringResource(R.string.unit_gb)}"
+                    "\u2014"
                 }
-            val deviceLimitValue = deviceLimit?.toString() ?: "XX"
+            val deviceLimitValue = deviceLimit?.toString() ?: "\u2014"
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -1500,77 +1593,66 @@ private fun SubscriptionBottomSheet(
                         Text(
                             text = stringResource(R.string.current_plan),
                             style = MaterialTheme.typography.labelMedium,
+                            autoSize = TextAutoSize.StepBased(
+                                minFontSize = 9.sp,
+                                maxFontSize = MaterialTheme.typography.labelMedium.fontSize,
+                                stepSize = 0.5.sp,
+                            ),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         when (authState) {
                             is AuthState.Anonymous -> {
-                                Text(
+                                CurrentPlanName(
                                     text = stringResource(R.string.plan_free),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    fontWeight = FontWeight.Bold,
                                     color = VpnOrange,
                                 )
-                                Text(
+                                CurrentPlanDescription(
                                     text = stringResource(R.string.plan_limited_traffic),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                             is AuthState.Authenticated -> {
                                 when (authState.plan) {
                                     UserPlan.ADMIN -> {
-                                        Text(
+                                        CurrentPlanName(
                                             text = stringResource(R.string.plan_admin),
-                                            style = MaterialTheme.typography.titleLarge,
-                                            fontWeight = FontWeight.Bold,
                                             color = VpnGreen,
                                         )
-                                        Text(
+                                        CurrentPlanDescription(
                                             text = stringResource(R.string.plan_unlimited_access),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 2,
                                         )
                                     }
                                     UserPlan.PAID -> {
-                                        Text(
+                                        CurrentPlanName(
                                             text = stringResource(R.string.plan_standard),
-                                            style = MaterialTheme.typography.titleLarge,
-                                            fontWeight = FontWeight.Bold,
                                             color = VpnGreen,
                                         )
                                         authState.planExpiresAt?.let {
-                                            Text(
+                                            CurrentPlanDescription(
                                                 text = stringResource(R.string.plan_active_until, formatDate(it)),
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             )
                                         }
                                     }
                                     UserPlan.EXPIRED -> {
-                                        Text(
+                                        CurrentPlanName(
                                             text = stringResource(R.string.plan_expired),
-                                            style = MaterialTheme.typography.titleLarge,
-                                            fontWeight = FontWeight.Bold,
                                             color = VpnRed,
                                         )
-                                        Text(
+                                        CurrentPlanDescription(
                                             text = stringResource(R.string.plan_renew_full),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                     UserPlan.FREE_TRIAL -> {
-                                        Text(
+                                        CurrentPlanName(
                                             text = stringResource(R.string.plan_free),
-                                            style = MaterialTheme.typography.titleLarge,
-                                            fontWeight = FontWeight.Bold,
                                             color = VpnOrange,
                                         )
-                                        Text(
+                                        CurrentPlanDescription(
                                             text = stringResource(R.string.plan_limited_traffic),
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         )
                                     }
                                 }
@@ -1796,7 +1878,7 @@ private fun SubscriptionBottomSheet(
                             )
                         },
                     ) {
-                        Text(stringResource(R.string.login_via_telegram))
+                        SubscriptionActionText(stringResource(R.string.login_via_telegram))
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -1831,12 +1913,71 @@ private fun SubscriptionBottomSheet(
                             )
                         },
                     ) {
-                        Text(stringResource(R.string.buy_plan, selectedLabel.title, selectedLabel.priceDisplay))
+                        SubscriptionActionText(
+                            stringResource(
+                                R.string.buy_plan,
+                                selectedLabel.title,
+                                selectedLabel.priceDisplay,
+                            )
+                        )
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun CurrentPlanName(text: String, color: Color) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.titleLarge,
+        autoSize = TextAutoSize.StepBased(
+            minFontSize = 12.sp,
+            maxFontSize = MaterialTheme.typography.titleLarge.fontSize,
+            stepSize = 0.5.sp,
+        ),
+        fontWeight = FontWeight.Bold,
+        color = color,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun CurrentPlanDescription(text: String, maxLines: Int = 1) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        autoSize = TextAutoSize.StepBased(
+            minFontSize = 9.sp,
+            maxFontSize = MaterialTheme.typography.bodyMedium.fontSize,
+            stepSize = 0.5.sp,
+        ),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        maxLines = maxLines,
+        softWrap = maxLines > 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+private fun SubscriptionActionText(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.fillMaxWidth(),
+        style = MaterialTheme.typography.labelLarge,
+        autoSize = TextAutoSize.StepBased(
+            minFontSize = 10.sp,
+            maxFontSize = MaterialTheme.typography.labelLarge.fontSize,
+            stepSize = 0.5.sp,
+        ),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+    )
 }
 
 @Composable
@@ -1948,20 +2089,43 @@ private fun PlanOption(
                 Text(
                     text = title,
                     style = MaterialTheme.typography.titleSmall,
+                    autoSize = TextAutoSize.StepBased(
+                        minFontSize = 10.sp,
+                        maxFontSize = MaterialTheme.typography.titleSmall.fontSize,
+                        stepSize = 0.5.sp,
+                    ),
                     fontWeight = FontWeight.SemiBold,
                     color = contentColor,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
+                    autoSize = TextAutoSize.StepBased(
+                        minFontSize = 9.sp,
+                        maxFontSize = MaterialTheme.typography.bodySmall.fontSize,
+                        stepSize = 0.5.sp,
+                    ),
                     color = contentColor.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Text(
                 text = priceDisplay,
                 style = MaterialTheme.typography.titleMedium,
+                autoSize = TextAutoSize.StepBased(
+                    minFontSize = 11.sp,
+                    maxFontSize = MaterialTheme.typography.titleMedium.fontSize,
+                    stepSize = 0.5.sp,
+                ),
                 fontWeight = FontWeight.Bold,
                 color = contentColor,
+                maxLines = 1,
+                softWrap = false,
             )
         }
     }
@@ -2004,14 +2168,30 @@ private fun LimitStat(value: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
+            autoSize = TextAutoSize.StepBased(
+                minFontSize = 11.sp,
+                maxFontSize = 18.sp,
+                stepSize = 0.5.sp,
+            ),
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
             color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
+            autoSize = TextAutoSize.StepBased(
+                minFontSize = 8.sp,
+                maxFontSize = MaterialTheme.typography.labelSmall.fontSize,
+                stepSize = 0.5.sp,
+            ),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

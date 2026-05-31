@@ -16,10 +16,9 @@
 
     <!-- Onboarding -->
     <string name="onboarding_subtitle">Пробный тариф для первого подключения</string>
-    <string name="onboarding_feature_trial">Пробный тариф: %1$s трафика</string>
-    <string name="onboarding_feature_trial_with_days">Пробный тариф: %1$s трафика на %2$s</string>
-    <string name="onboarding_feature_device">Пробный тариф: 1 устройство</string>
-    <string name="onboarding_feature_auth">Авторизуйтесь через Telegram, чтобы не потерять доступ</string>
+    <string name="onboarding_feature_trial">%1$s трафика до входа</string>
+    <string name="onboarding_feature_device">Войдите через Telegram — ещё %1$s на %2$s</string>
+    <string name="onboarding_feature_auth">Вход без логина и пароля — только через Telegram</string>
     <string name="onboarding_feature_tools">Серверы, статистика и тест скорости встроены</string>
     <string name="onboarding_start">Продолжить</string>
     <plurals name="onboarding_trial_days">
@@ -85,8 +84,19 @@
     <string name="plan_until">до %1$s</string>
     <string name="plan_renew">Продлите подписку</string>
     <string name="plan_active_until">Активна до %1$s</string>
-    <string name="plan_quota_month">XXX ГБ / месяц</string>
-    <string name="plan_renew_full">Продлите подписку (XXX ГБ / месяц · до XX устройств)</string>
+    <!-- Баннер напоминания о продлении подписки -->
+    <string name="subscription_expired_title">Подписка истекла</string>
+    <string name="subscription_expiry_today">Подписка истекает сегодня</string>
+    <plurals name="subscription_expiring_title">
+        <item quantity="one">Подписка истекает через %1$d день</item>
+        <item quantity="few">Подписка истекает через %1$d дня</item>
+        <item quantity="many">Подписка истекает через %1$d дней</item>
+        <item quantity="other">Подписка истекает через %1$d дня</item>
+    </plurals>
+    <string name="subscription_renew_reminder_desc">Продлите, чтобы не потерять доступ к серверам</string>
+    <string name="subscription_renew_action">Продлить</string>
+    <string name="plan_quota_month">—</string>
+    <string name="plan_renew_full">Продлите подписку</string>
     <string name="plan_unlimited_access">Безлимитный доступ</string>
     <string name="plan_limited_traffic">Ограниченный трафик</string>
     <string name="current_plan">Текущий тариф</string>

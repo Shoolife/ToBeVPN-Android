@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -58,6 +59,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -618,14 +621,14 @@ private fun LinkedDevicesBottomSheet(
                         )
                     },
                 ) {
-                    Text(stringResource(R.string.devices_scan_qr))
+                    DeviceActionText(stringResource(R.string.devices_scan_qr))
                 }
                 OutlinedButton(
                     onClick = onRefresh,
                     enabled = !state.isLoading,
                     modifier = Modifier.weight(1f),
                 ) {
-                    Text(stringResource(R.string.devices_refresh))
+                    DeviceActionText(stringResource(R.string.devices_refresh))
                 }
             }
 
@@ -705,6 +708,24 @@ private fun LinkedDevicesBottomSheet(
 }
 
 @Composable
+private fun DeviceActionText(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.fillMaxWidth(),
+        style = MaterialTheme.typography.labelLarge,
+        autoSize = TextAutoSize.StepBased(
+            minFontSize = 9.sp,
+            maxFontSize = MaterialTheme.typography.labelLarge.fontSize,
+            stepSize = 0.5.sp,
+        ),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+    )
+}
+
+@Composable
 private fun LinkedDeviceCard(
     device: LinkedDeviceDto,
     isCurrent: Boolean,
@@ -751,7 +772,15 @@ private fun LinkedDeviceCard(
                 Text(
                     text = stringResource(R.string.devices_last_active, formatDeviceDate(timestamp)),
                     style = MaterialTheme.typography.bodySmall,
+                    autoSize = TextAutoSize.StepBased(
+                        minFontSize = 8.sp,
+                        maxFontSize = MaterialTheme.typography.bodySmall.fontSize,
+                        stepSize = 0.5.sp,
+                    ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 

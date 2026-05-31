@@ -36,7 +36,7 @@ class SessionStore @Inject constructor(
         return mutex.withLock {
             val current = sessionDao.getSession() ?: return@withLock null
             val updated = transform(current)
-            sessionDao.upsert(updated)
+            sessionDao.upsertSingle(updated)
             updated
         }
     }
@@ -53,13 +53,13 @@ class SessionStore @Inject constructor(
         return mutex.withLock {
             val current = sessionDao.getSession() ?: SessionEntity(deviceId = defaultDeviceId)
             val updated = transform(current)
-            sessionDao.upsert(updated)
+            sessionDao.upsertSingle(updated)
             updated
         }
     }
 
     /** Full replace — used when the caller already holds the entity. */
     suspend fun upsert(session: SessionEntity) {
-        mutex.withLock { sessionDao.upsert(session) }
+        mutex.withLock { sessionDao.upsertSingle(session) }
     }
 }

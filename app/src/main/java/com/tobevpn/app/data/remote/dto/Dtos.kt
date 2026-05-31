@@ -94,6 +94,9 @@ data class RemoteConfigDto(
     @SerializedName("free_squad_uuid") val freeSquadUuid: String,
     @SerializedName("free_trial_traffic_bytes") val freeTrialTrafficBytes: Long,
     @SerializedName("free_trial_days") val freeTrialDays: Int,
+    // Anonymous (pre-sign-in) allowance. Optional — falls back client-side
+    // when the config endpoint doesn't report it.
+    @SerializedName("anon_traffic_bytes") val anonTrafficBytes: Long = 0,
 )
 
 // Plan

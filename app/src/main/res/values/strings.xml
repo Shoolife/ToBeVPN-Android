@@ -16,10 +16,9 @@
 
     <!-- Onboarding -->
     <string name="onboarding_subtitle">Trial plan for your first connection</string>
-    <string name="onboarding_feature_trial">Trial plan: %1$s of traffic</string>
-    <string name="onboarding_feature_trial_with_days">Trial plan: %1$s of traffic for %2$s</string>
-    <string name="onboarding_feature_device">Trial plan: 1 device</string>
-    <string name="onboarding_feature_auth">Sign in via Telegram so you do not lose access</string>
+    <string name="onboarding_feature_trial">%1$s of free traffic before signing in</string>
+    <string name="onboarding_feature_device">Sign in via Telegram — %1$s more for %2$s</string>
+    <string name="onboarding_feature_auth">No login or password — just Telegram</string>
     <string name="onboarding_feature_tools">Servers, statistics, and speed test are built in</string>
     <string name="onboarding_start">Continue</string>
     <plurals name="onboarding_trial_days">
@@ -67,6 +66,15 @@
     <string name="temporary_access_banner">SIGN IN SO YOU DO NOT LOSE ACCESS</string>
     <string name="temporary_access_title">Temporary access</string>
     <string name="temporary_access_description">You are using temporary trial access. It is issued once, ends quickly, and can be lost after reinstalling the app or changing devices. Sign in to attach access to your account.</string>
+    <!-- Subscription renewal reminder banner -->
+    <string name="subscription_expired_title">Subscription expired</string>
+    <string name="subscription_expiry_today">Subscription expires today</string>
+    <plurals name="subscription_expiring_title">
+        <item quantity="one">Subscription expires in %1$d day</item>
+        <item quantity="other">Subscription expires in %1$d days</item>
+    </plurals>
+    <string name="subscription_renew_reminder_desc">Renew to keep your server access</string>
+    <string name="subscription_renew_action">Renew</string>
     <string name="temporary_access_authorize">Sign in</string>
     <string name="current_session">Current session</string>
     <string name="detailed_stats">Detailed statistics</string>
@@ -83,8 +91,8 @@
     <string name="plan_until">until %1$s</string>
     <string name="plan_renew">Renew subscription</string>
     <string name="plan_active_until">Active until %1$s</string>
-    <string name="plan_quota_month">XXX GB / month</string>
-    <string name="plan_renew_full">Renew subscription (XXX GB / month · up to XX devices)</string>
+    <string name="plan_quota_month">—</string>
+    <string name="plan_renew_full">Renew subscription</string>
     <string name="plan_unlimited_access">Unlimited access</string>
     <string name="plan_limited_traffic">Limited traffic</string>
     <string name="current_plan">Current plan</string>

@@ -17,6 +17,7 @@ import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
+import java.util.concurrent.TimeUnit
 import javax.inject.Singleton
 
 @Module
@@ -26,8 +27,14 @@ object NetworkModule {
     private val userAgent = "ToBeVPN/${BuildConfig.VERSION_NAME}/android/${BuildConfig.VERSION_CODE}"
 
     private val loggingInterceptor
-        get() = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.NONE
+        get() = HttpLoggingInterceptor { msg ->
+            if (BuildConfig.DEBUG) println("TOBEVPN_HTTP $msg")
+        }.apply {
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BASIC
+            } else {
+                HttpLoggingInterceptor.Level.NONE
+            }
         }
 
     private val userAgentInterceptor = Interceptor { chain ->
@@ -56,6 +63,9 @@ object NetworkModule {
     @Singleton
     fun provideBootstrapApi(): BootstrapApi {
         val client = OkHttpClient.Builder()
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .callTimeout(15, TimeUnit.SECONDS)
             // Fallback runs *before* logging so the rewritten URL still gets
             // logged in debug builds, and *before* userAgentInterceptor's
             // header — order doesn't matter for headers, but keeping
@@ -80,6 +90,9 @@ object NetworkModule {
         authenticator: TokenAuthenticator,
     ): BotApi {
         val client = OkHttpClient.Builder()
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
+            .callTimeout(15, TimeUnit.SECONDS)
             .addInterceptor(FallbackInterceptor())
             .addInterceptor(userAgentInterceptor)
             .addInterceptor(authInterceptor)

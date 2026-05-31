@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import retrofit2.HttpException
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -169,13 +170,14 @@ class AuthRepository @Inject constructor(
 
     suspend fun registerCurrentDevice(): Result<Unit> {
         return try {
-            val response = botApi.registerDevice(
-                DeviceRegisterRequestDto(
-                    deviceName = currentDeviceName(),
-                    deviceType = "phone",
-                    platform = "Android",
-                )
+            val request = DeviceRegisterRequestDto(
+                deviceName = currentDeviceName(),
+                deviceType = "phone",
+                platform = "Android",
             )
+            val response = withFreshDeviceSessionRetry {
+                botApi.registerDevice(request)
+            }
             if (response.success) {
                 Result.success(Unit)
             } else {
@@ -184,6 +186,34 @@ class AuthRepository @Inject constructor(
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    suspend fun getPanelUserByTelegramId(
+        telegramId: Long,
+    ): com.tobevpn.app.data.remote.dto.PanelUserDto? {
+        return withFreshDeviceSessionRetry {
+            val users = botApi.getUserByTelegramId(telegramId).response
+            val session = sessionDao.getSession()
+            selectBestPanelUser(
+                users = users,
+                preferredPanelUserUuid = session?.panelUserUuid,
+                preferredShortUuid = session?.shortUuid,
+            )
+        }
+    }
+
+    private suspend fun <T> withFreshDeviceSessionRetry(block: suspend () -> T): T {
+        return try {
+            block()
+        } catch (error: Exception) {
+            if (!error.isDeviceSessionAuthFailure()) throw error
+            runCatching { bootstrapManager.bootstrap() }.getOrElse { throw error }
+            block()
+        }
+    }
+
+    private fun Throwable.isDeviceSessionAuthFailure(): Boolean {
+        return this is HttpException && (code() == 401 || code() == 403)
     }
 
     suspend fun unlinkDevice(deviceId: String): Result<Unit> {
@@ -287,12 +317,51 @@ class AuthRepository @Inject constructor(
     }
 
     private fun planForPanelUser(panelUser: com.tobevpn.app.data.remote.dto.PanelUserDto): String {
-        val squads = panelUser.activeInternalSquads.map { it.name }
+        val squads = panelUser.activeInternalSquads.map { it.name.uppercase(Locale.ROOT) }
         return when {
             "ADMINS" in squads -> "ADMIN"
             "STANDART" in squads -> "PAID"
             else -> "FREE_TRIAL"
         }
+    }
+
+    private fun selectBestPanelUser(
+        users: List<com.tobevpn.app.data.remote.dto.PanelUserDto>,
+        preferredPanelUserUuid: String?,
+        preferredShortUuid: String?,
+    ): com.tobevpn.app.data.remote.dto.PanelUserDto? {
+        fun planRank(user: com.tobevpn.app.data.remote.dto.PanelUserDto): Int = when (planForPanelUser(user)) {
+            "ADMIN" -> 3
+            "PAID" -> 2
+            else -> 1
+        }
+
+        return users.maxWithOrNull(
+            compareBy<com.tobevpn.app.data.remote.dto.PanelUserDto>(
+                { if (it.status.uppercase(Locale.ROOT) == "ACTIVE") 1 else 0 },
+                { planRank(it) },
+                { if (it.trafficLimitStrategy.uppercase(Locale.ROOT) == "MONTH") 1 else 0 },
+                {
+                    if (it.uuid == preferredPanelUserUuid || it.shortUuid == preferredShortUuid) {
+                        1
+                    } else {
+                        0
+                    }
+                },
+                { parsePanelExpireAtMillis(it.expireAt) },
+            )
+        )
+    }
+
+    private fun parsePanelExpireAtMillis(value: String?): Long {
+        if (value.isNullOrBlank()) return Long.MIN_VALUE
+        return runCatching {
+            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
+                timeZone = TimeZone.getTimeZone("UTC")
+            }
+            val clean = value.replace(Regex("[.+Z].*"), "")
+            sdf.parse(clean)?.time ?: Long.MIN_VALUE
+        }.getOrDefault(Long.MIN_VALUE)
     }
 
     /**
@@ -315,11 +384,15 @@ class AuthRepository @Inject constructor(
                         pendingAuthToken = null,
                     )
                 }
+                // Auth completion binds the backend device session to Telegram,
+                // but the locally cached access token may still be the anonymous
+                // one minted before the link. Re-open the device session before
+                // account-scoped calls so the token claims match local auth state.
+                runCatching { bootstrapManager.bootstrap() }
 
                 // Sync panel user info via proxy
                 try {
-                    val panelUsers = botApi.getUserByTelegramId(status.telegramId).response
-                    val panelUser = panelUsers.firstOrNull()
+                    val panelUser = getPanelUserByTelegramId(status.telegramId)
                     if (panelUser != null) {
                         val resolvedPlan = planForPanelUser(panelUser)
                         sessionStore.update { current ->
@@ -363,16 +436,10 @@ class AuthRepository @Inject constructor(
      *                       false for ambient triggers like onResume / screen
      *                       open so we don't hammer the panel every time the
      *                       user tabs away and back.
-     * @param trustPanelPlan when false, a transient ambiguous panel response
-     *                       cannot downgrade a cached PAID / ADMIN plan. This
-     *                       is important during post-payment polling, where
-     *                       freshness matters but stale payment propagation
-     *                       should not briefly flip the UI backwards.
      */
     suspend fun syncSubscription(
         overwriteUsage: Boolean = true,
         force: Boolean = false,
-        trustPanelPlan: Boolean = force,
     ) {
         syncMutex.withLock {
             if (!force) {
@@ -381,11 +448,11 @@ class AuthRepository @Inject constructor(
                     return@withLock
                 }
             }
-            runSyncSubscription(overwriteUsage, trustPanelPlan = trustPanelPlan)
+            runSyncSubscription(overwriteUsage)
         }
     }
 
-    private suspend fun runSyncSubscription(overwriteUsage: Boolean, trustPanelPlan: Boolean) {
+    private suspend fun runSyncSubscription(overwriteUsage: Boolean) {
         try {
             var session = sessionDao.getSession() ?: return
             var panelUser: com.tobevpn.app.data.remote.dto.PanelUserDto? = null
@@ -393,8 +460,7 @@ class AuthRepository @Inject constructor(
             // For authenticated users, refresh panel user info by telegramId
             if (session.authState == "AUTHENTICATED" && session.telegramId != null) {
                 try {
-                    val panelUsers = botApi.getUserByTelegramId(session.telegramId).response
-                    panelUser = panelUsers.firstOrNull()
+                    panelUser = getPanelUserByTelegramId(session.telegramId)
                     if (panelUser != null) {
                         val updated = sessionStore.update { current ->
                             current.copy(
@@ -434,6 +500,8 @@ class AuthRepository @Inject constructor(
             val sub = subInfo.user
             val isActive = sub.isActive && sub.userStatus == "ACTIVE"
             val cachedPlan = session.userPlan
+            val trafficLimitBytes = sub.trafficLimitBytes.toLongOrNull() ?: 0
+            val hasPaidTrafficLimit = trafficLimitBytes > DEFAULT_FREE_TRIAL_TRAFFIC_BYTES
 
             // Plan derivation order:
             //   1. Inactive subscription => EXPIRED, regardless of cache.
@@ -441,24 +509,27 @@ class AuthRepository @Inject constructor(
             //   3. MONTH-strategy traffic limit is the canonical "paid"
             //      signal in the subscription payload — trust it even if
             //      the panel response arrived without a squad list.
-            //   4. Ambient (non-forced) syncs never silently downgrade an
-            //      already-PAID/ADMIN cached plan to FREE_TRIAL on a
-            //      transient/ambiguous response — a panel hiccup with
-            //      empty squads otherwise flips the badge to "Пробный"
-            //      and shows the wrong limits until the next sync.
-            //   5. Forced syncs (the user explicitly hit Refresh) skip
-            //      that protection: they're how the user diagnoses or
-            //      recovers from a stuck plan. If panel really says
-            //      FREE_TRIAL, we surface FREE_TRIAL.
+            //   4. A complete panel-user response is authoritative even
+            //      when it says FREE_TRIAL.
+            //   5. Without a panel-user response, never silently downgrade
+            //      an already-PAID/ADMIN cached plan to FREE_TRIAL. A
+            //      transient account endpoint failure otherwise flips the
+            //      badge to "Бесплатный" after an app restart or language
+            //      change while the paid traffic limits remain visible.
+            //   6. Recover clients that an older build already downgraded:
+            //      an authenticated active subscription with a limit above
+            //      the anonymous trial allowance is paid even when the
+            //      account endpoint is temporarily unavailable.
+            val panelPlan = panelUser?.let(::planForPanelUser)
             val plan = when {
                 !isActive -> "EXPIRED"
-                panelUser != null && planForPanelUser(panelUser) != "FREE_TRIAL" ->
-                    planForPanelUser(panelUser)
+                panelPlan != null && panelPlan != "FREE_TRIAL" -> panelPlan
                 sub.trafficLimitStrategy == "MONTH" -> "PAID"
-                !trustPanelPlan && (cachedPlan == "PAID" || cachedPlan == "ADMIN") -> cachedPlan
+                panelPlan != null -> panelPlan
+                cachedPlan == "PAID" || cachedPlan == "ADMIN" -> cachedPlan
+                session.authState == "AUTHENTICATED" && hasPaidTrafficLimit -> "PAID"
                 else -> "FREE_TRIAL"
             }
-
             // Parse expiry date
             val expiresAtMillis = try {
                 val expiresStr = sub.expiresAt
@@ -476,7 +547,6 @@ class AuthRepository @Inject constructor(
             sessionStore.update { it.copy(userPlan = plan, planExpiresAt = expiresAtMillis) }
 
             // Sync traffic limits from panel (0 = unlimited)
-            val trafficLimitBytes = sub.trafficLimitBytes.toLongOrNull() ?: 0
             usageRepository.updateLimits(trafficLimitBytes, 0)
 
             if (overwriteUsage) {

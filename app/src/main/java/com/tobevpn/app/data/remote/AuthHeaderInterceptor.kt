@@ -1,6 +1,7 @@
 package com.tobevpn.app.data.remote
 
 import com.tobevpn.app.BuildConfig
+import kotlinx.coroutines.runBlocking
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
@@ -13,13 +14,10 @@ import javax.inject.Singleton
  * Direct backend calls use the standard bearer transport; fallback calls use
  * the operator proxy's dedicated bearer transport.
  *
- * Bootstrap is kicked off asynchronously in [com.tobevpn.app.ToBeVpnApplication.onCreate] —
- * by the time the first authenticated request fires, the token is normally already there.
- * In the rare race where it isn't, the request goes out without the header, the backend
- * returns 401, and [TokenAuthenticator] performs the refresh/bootstrap and retries.
- *
- * Doing it this way keeps the interceptor non-blocking — no `runBlocking` parking the
- * OkHttp dispatcher thread while a network call completes.
+ * The app also bootstraps on startup, but API calls cannot rely on that race
+ * having finished: some endpoints/proxies answer a missing bearer with 403,
+ * which would bypass [TokenAuthenticator]. Resolve a token here before the
+ * protected request leaves OkHttp.
  */
 @Singleton
 class AuthHeaderInterceptor @Inject constructor(
@@ -27,7 +25,7 @@ class AuthHeaderInterceptor @Inject constructor(
 ) : Interceptor {
 
     override fun intercept(chain: Interceptor.Chain): Response {
-        val token = bootstrapManager.currentAccessToken()
+        val token = resolveAccessToken()
         val original = chain.request()
         val request = if (token != null) {
             val headerName = if (isFallbackRequest(original.url)) {
@@ -44,6 +42,14 @@ class AuthHeaderInterceptor @Inject constructor(
             original
         }
         return chain.proceed(request)
+    }
+
+    private fun resolveAccessToken(): String? {
+        bootstrapManager.currentAccessToken()?.let { return it }
+        return runBlocking {
+            runCatching { bootstrapManager.ensureBootstrapped() }
+            bootstrapManager.currentAccessToken()
+        }
     }
 
     private fun isFallbackRequest(url: HttpUrl): Boolean {

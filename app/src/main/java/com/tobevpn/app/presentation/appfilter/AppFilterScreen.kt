@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
@@ -56,6 +58,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -395,15 +398,34 @@ private fun AppListSection(
                         state.selected.size,
                         state.visibleApps.size,
                     ),
+                    modifier = Modifier.weight(1f),
                     style = MaterialTheme.typography.bodySmall,
+                    autoSize = TextAutoSize.StepBased(
+                        minFontSize = 8.sp,
+                        maxFontSize = MaterialTheme.typography.bodySmall.fontSize,
+                        stepSize = 0.5.sp,
+                    ),
                     color = mutedText,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                Row {
-                    TextButton(onClick = onSelectAll, colors = textBtnColors) {
-                        Text(stringResource(R.string.app_filter_select_all))
+                Row(modifier = Modifier.weight(1.3f)) {
+                    TextButton(
+                        onClick = onSelectAll,
+                        modifier = Modifier.weight(1f),
+                        colors = textBtnColors,
+                        contentPadding = PaddingValues(horizontal = 2.dp),
+                    ) {
+                        AppFilterActionText(stringResource(R.string.app_filter_select_all))
                     }
-                    TextButton(onClick = onClearAll, colors = textBtnColors) {
-                        Text(stringResource(R.string.app_filter_clear_all))
+                    TextButton(
+                        onClick = onClearAll,
+                        modifier = Modifier.weight(1f),
+                        colors = textBtnColors,
+                        contentPadding = PaddingValues(horizontal = 2.dp),
+                    ) {
+                        AppFilterActionText(stringResource(R.string.app_filter_clear_all))
                     }
                 }
             }
@@ -442,6 +464,24 @@ private fun AppListSection(
             }
         }
     }
+}
+
+@Composable
+private fun AppFilterActionText(text: String) {
+    Text(
+        text = text,
+        modifier = Modifier.fillMaxWidth(),
+        style = MaterialTheme.typography.labelLarge,
+        autoSize = TextAutoSize.StepBased(
+            minFontSize = 8.sp,
+            maxFontSize = MaterialTheme.typography.labelLarge.fontSize,
+            stepSize = 0.5.sp,
+        ),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = TextAlign.Center,
+    )
 }
 
 @Composable

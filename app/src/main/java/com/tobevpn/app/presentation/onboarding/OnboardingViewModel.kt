@@ -11,7 +11,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-private const val DEFAULT_FREE_TRIAL_TRAFFIC_BYTES = 3_221_225_472L // 3 GB
+// Fallback defaults used only when /api/config is unreachable or omits a field.
+private const val DEFAULT_ANON_TRAFFIC_BYTES = 1_073_741_824L  // 1 GB — pre-sign-in
+private const val DEFAULT_BONUS_TRAFFIC_BYTES = 3_221_225_472L // 3 GB — after Telegram sign-in
 private const val DEFAULT_FREE_TRIAL_DAYS = 3
 
 @HiltViewModel
@@ -40,20 +42,23 @@ class OnboardingViewModel @Inject constructor(
                 ?.data
                 ?.let { config ->
                     _trialTerms.value = TrialTermsUiState(
-                        trafficBytes = config.freeTrialTrafficBytes.takeIf { it > 0 }
-                            ?: DEFAULT_FREE_TRIAL_TRAFFIC_BYTES,
-                        trialDays = config.freeTrialDays
-                            .takeIf { it > 0 }
-                            ?.coerceAtLeast(DEFAULT_FREE_TRIAL_DAYS)
+                        anonBytes = config.anonTrafficBytes.takeIf { it > 0 }
+                            ?: DEFAULT_ANON_TRAFFIC_BYTES,
+                        bonusBytes = config.freeTrialTrafficBytes.takeIf { it > 0 }
+                            ?: DEFAULT_BONUS_TRAFFIC_BYTES,
+                        trialDays = config.freeTrialDays.takeIf { it > 0 }
                             ?: DEFAULT_FREE_TRIAL_DAYS,
                     )
                 }
         }
     }
-
 }
 
 data class TrialTermsUiState(
-    val trafficBytes: Long = DEFAULT_FREE_TRIAL_TRAFFIC_BYTES,
-    val trialDays: Int? = DEFAULT_FREE_TRIAL_DAYS,
+    /** Traffic available before signing in (anonymous). */
+    val anonBytes: Long = DEFAULT_ANON_TRAFFIC_BYTES,
+    /** Extra traffic granted after Telegram sign-in. */
+    val bonusBytes: Long = DEFAULT_BONUS_TRAFFIC_BYTES,
+    /** Days the post-sign-in bonus lasts. */
+    val trialDays: Int = DEFAULT_FREE_TRIAL_DAYS,
 )
