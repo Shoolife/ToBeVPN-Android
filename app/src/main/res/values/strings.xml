@@ -245,6 +245,7 @@
     <string name="devices_last_active">Last active: %1$s</string>
     <string name="devices_type_phone">Phone</string>
     <string name="devices_type_tv">TV</string>
+    <string name="devices_type_desktop">Desktop</string>
     <string name="devices_type_generic">Device</string>
 
     <!-- Errors -->

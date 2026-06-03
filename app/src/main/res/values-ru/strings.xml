@@ -249,6 +249,7 @@
     <string name="devices_last_active">Последняя активность: %1$s</string>
     <string name="devices_type_phone">Телефон</string>
     <string name="devices_type_tv">TV</string>
+    <string name="devices_type_desktop">ПК</string>
     <string name="devices_type_generic">Устройство</string>
 
     <!-- Errors -->

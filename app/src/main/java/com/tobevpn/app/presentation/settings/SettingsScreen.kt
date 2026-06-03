@@ -1280,10 +1280,20 @@ private fun InfoRow(
 
 @Composable
 private fun deviceTitle(device: LinkedDeviceDto): String {
-    val fallback = when (device.deviceType) {
-        "tv" -> stringResource(R.string.devices_type_tv)
-        "phone" -> stringResource(R.string.devices_type_phone)
-        else -> stringResource(R.string.devices_type_generic)
+    val kind = device.inferredKind()
+    val fallback = when (kind) {
+        DeviceKind.Tv -> stringResource(R.string.devices_type_tv)
+        DeviceKind.Desktop -> stringResource(R.string.devices_type_desktop)
+        DeviceKind.Phone -> stringResource(R.string.devices_type_phone)
+        DeviceKind.Generic -> stringResource(R.string.devices_type_generic)
+    }
+    if (kind == DeviceKind.Desktop) {
+        val name = device.deviceName?.trim().orEmpty()
+        if (name.isNotBlank() && !isTechnicalDesktopName(name)) return name
+        val model = cleanDesktopModel(device.deviceModel, device.platform)
+        if (model.isNotBlank()) return model
+        val platform = device.platform?.trim()?.takeIf { it.isNotBlank() }
+        return if (platform != null) "$fallback $platform" else fallback
     }
     return device.deviceName?.takeIf { it.isNotBlank() }
         ?: device.deviceModel?.takeIf { it.isNotBlank() }
@@ -1292,13 +1302,60 @@ private fun deviceTitle(device: LinkedDeviceDto): String {
 
 @Composable
 private fun deviceSubtitle(device: LinkedDeviceDto): String {
-    val type = when (device.deviceType) {
-        "tv" -> stringResource(R.string.devices_type_tv)
-        "phone" -> stringResource(R.string.devices_type_phone)
-        else -> stringResource(R.string.devices_type_generic)
+    val type = when (device.inferredKind()) {
+        DeviceKind.Tv -> stringResource(R.string.devices_type_tv)
+        DeviceKind.Desktop -> stringResource(R.string.devices_type_desktop)
+        DeviceKind.Phone -> stringResource(R.string.devices_type_phone)
+        DeviceKind.Generic -> stringResource(R.string.devices_type_generic)
     }
     val platform = device.platform?.takeIf { it.isNotBlank() }
     return if (platform != null) "$type • $platform" else type
+}
+
+private enum class DeviceKind {
+    Phone,
+    Desktop,
+    Tv,
+    Generic,
+}
+
+private val technicalDesktopNameRegex = Regex("^[a-z0-9][a-z0-9._-]{1,31}$")
+
+private fun LinkedDeviceDto.inferredKind(): DeviceKind {
+    val type = deviceType?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
+    val platform = platform?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
+    val userAgent = userAgent?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
+    if (type == "tv" || platform == "android tv" || userAgent.contains("/androidtv/")) {
+        return DeviceKind.Tv
+    }
+    if (
+        type == "desktop" ||
+        platform == "linux" ||
+        platform == "windows" ||
+        platform == "macos" ||
+        userAgent.contains("/linux/") ||
+        userAgent.contains("/windows/") ||
+        userAgent.contains("/macos/")
+    ) {
+        return DeviceKind.Desktop
+    }
+    return when (type) {
+        "phone" -> DeviceKind.Phone
+        "" -> if (platform == "android") DeviceKind.Phone else DeviceKind.Generic
+        else -> DeviceKind.Generic
+    }
+}
+
+private fun isTechnicalDesktopName(value: String): Boolean =
+    technicalDesktopNameRegex.matches(value) && value == value.lowercase(java.util.Locale.ROOT)
+
+private fun cleanDesktopModel(model: String?, platform: String?): String {
+    val trimmed = model?.trim().orEmpty()
+    if (trimmed.isBlank()) return ""
+    val normalized = trimmed.lowercase(java.util.Locale.ROOT)
+    val normalizedPlatform = platform?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
+    if (normalized == "desktop" || normalized == "pc" || normalized == normalizedPlatform) return ""
+    return trimmed
 }
 
 private fun LinkedDeviceDto.matchesDeviceAliases(aliases: Set<String>): Boolean {
