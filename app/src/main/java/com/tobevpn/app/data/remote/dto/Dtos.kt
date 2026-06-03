@@ -116,14 +116,18 @@ data class DeviceUnlinkRequestDto(
 
 data class LinkedDeviceDto(
     @SerializedName("device_id") val deviceId: String,
+    val hwid: String? = null,
     @SerializedName("device_name") val deviceName: String? = null,
     @SerializedName("device_type") val deviceType: String? = null,
     val platform: String? = null,
+    @SerializedName("device_model") val deviceModel: String? = null,
+    @SerializedName("user_agent") val userAgent: String? = null,
     @SerializedName("linked_at") val linkedAt: Long? = null,
     @SerializedName("last_seen_at") val lastSeenAt: Long? = null,
 )
 
 data class LinkedDevicesDto(
+    @SerializedName("current_count") val currentCount: Int? = null,
     @SerializedName("max_devices") val maxDevices: Int,
     val devices: List<LinkedDeviceDto>,
 )
@@ -151,9 +155,9 @@ data class TvPairConfirmRequestDto(
 
 // Remote config
 data class RemoteConfigDto(
-    @SerializedName("free_squad_uuid") val freeSquadUuid: String,
-    @SerializedName("free_trial_traffic_bytes") val freeTrialTrafficBytes: Long,
-    @SerializedName("free_trial_days") val freeTrialDays: Int,
+    @SerializedName("free_squad_uuid") val freeSquadUuid: String? = null,
+    @SerializedName("free_trial_traffic_bytes") val freeTrialTrafficBytes: Long = 0,
+    @SerializedName("free_trial_days") val freeTrialDays: Int = 0,
     // Anonymous (pre-sign-in) allowance. Optional — falls back client-side
     // when the config endpoint doesn't report it.
     @SerializedName("anon_traffic_bytes") val anonTrafficBytes: Long = 0,

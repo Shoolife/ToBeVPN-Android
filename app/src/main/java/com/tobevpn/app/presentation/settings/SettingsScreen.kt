@@ -101,8 +101,9 @@ fun SettingsScreen(
     var showDevicesSheet by remember { mutableStateOf(false) }
     var showPairingCodeInput by remember { mutableStateOf(false) }
 
+    val linkedDevicesCount = linkedDevicesState.currentCount ?: linkedDevicesState.devices.size
     val canLinkMoreDevices = linkedDevicesState.maxDevices == 0 ||
-        linkedDevicesState.devices.size < linkedDevicesState.maxDevices
+        linkedDevicesCount < linkedDevicesState.maxDevices
 
     val startDeviceQrScan: () -> Unit = startPairing@{
         if (!canLinkMoreDevices) {
@@ -726,9 +727,14 @@ private fun LinkedDevicesBottomSheet(
     onClearError: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val currentDevice = state.devices.firstOrNull { it.deviceId == state.currentDeviceId }
-    val otherDevices = state.devices.filter { it.deviceId != state.currentDeviceId }
-    val canLinkMoreDevices = state.maxDevices == 0 || state.devices.size < state.maxDevices
+    val devicesCount = state.currentCount ?: state.devices.size
+    val currentDevice = state.devices.firstOrNull {
+        it.matchesDeviceAliases(state.currentDeviceAliases)
+    }
+    val otherDevices = state.devices.filterNot {
+        it.matchesDeviceAliases(state.currentDeviceAliases)
+    }
+    val canLinkMoreDevices = state.maxDevices == 0 || devicesCount < state.maxDevices
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val lightOutlinedButtonColors = ButtonDefaults.outlinedButtonColors(
         contentColor = Color.Black,
@@ -764,11 +770,11 @@ private fun LinkedDevicesBottomSheet(
             Spacer(modifier = Modifier.height(6.dp))
             Text(
                 text = if (state.maxDevices == 0) {
-                    stringResource(R.string.devices_count_unlimited, state.devices.size)
+                    stringResource(R.string.devices_count_unlimited, devicesCount)
                 } else {
                     stringResource(
                         R.string.devices_count,
-                        state.devices.size,
+                        devicesCount,
                         state.maxDevices,
                     )
                 },
@@ -1279,7 +1285,9 @@ private fun deviceTitle(device: LinkedDeviceDto): String {
         "phone" -> stringResource(R.string.devices_type_phone)
         else -> stringResource(R.string.devices_type_generic)
     }
-    return device.deviceName?.takeIf { it.isNotBlank() } ?: fallback
+    return device.deviceName?.takeIf { it.isNotBlank() }
+        ?: device.deviceModel?.takeIf { it.isNotBlank() }
+        ?: fallback
 }
 
 @Composable
@@ -1291,6 +1299,16 @@ private fun deviceSubtitle(device: LinkedDeviceDto): String {
     }
     val platform = device.platform?.takeIf { it.isNotBlank() }
     return if (platform != null) "$type • $platform" else type
+}
+
+private fun LinkedDeviceDto.matchesDeviceAliases(aliases: Set<String>): Boolean {
+    if (aliases.isEmpty()) return false
+    val normalizedAliases = aliases.mapTo(mutableSetOf()) {
+        it.trim().lowercase(java.util.Locale.ROOT)
+    }
+    return listOf(deviceId, hwid).any { value ->
+        value?.trim()?.lowercase(java.util.Locale.ROOT) in normalizedAliases
+    }
 }
 
 private fun formatDate(epochMillis: Long): String {

@@ -136,6 +136,16 @@ class AuthRepository @Inject constructor(
         return deviceId
     }
 
+    suspend fun getCurrentDeviceAliases(): Set<String> {
+        val aliases = linkedSetOf<String>()
+        getOrCreateDeviceId().trim().takeIf { it.isNotBlank() }?.let { aliases += it }
+        fingerprintProvider.get().hwid.trim().takeIf { it.isNotBlank() }?.let { hwid ->
+            aliases += hwid
+            aliases += hwid.lowercase(Locale.ROOT)
+        }
+        return aliases
+    }
+
     /**
      * Returns the pending auth token persisted from a previous `requestTelegramAuth`,
      * or `null` if none. Used by the deep-link callback path on cold start to recover
@@ -809,10 +819,12 @@ class AuthRepository @Inject constructor(
         // access/refresh session. If we only call logout, the next bootstrap for
         // the same device_id comes back already linked and the app logs in again.
         // Unlink this device first, then terminate the current session.
-        try {
-            botApi.unlinkDevice(DeviceUnlinkRequestDto(deviceId = session.deviceId))
-        } catch (_: Exception) {
-            // Best effort — still attempt to terminate the session below.
+        for (deviceId in getCurrentDeviceAliases()) {
+            try {
+                botApi.unlinkDevice(DeviceUnlinkRequestDto(deviceId = deviceId))
+            } catch (_: Exception) {
+                // Best effort — still attempt to terminate the session below.
+            }
         }
         try {
             botApi.logoutDevice()
