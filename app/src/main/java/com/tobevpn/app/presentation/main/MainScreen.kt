@@ -434,11 +434,11 @@ fun MainScreen(
                     }
                 }
                 is AuthState.Authenticated -> {
-                    PlanCard(
-                        auth = authState as AuthState.Authenticated,
-                        onClick = {
-                            viewModel.requestSubscriptionSheet {
-                                showSubscriptionSheet = true
+                                    PlanCard(
+                                        auth = authState as AuthState.Authenticated,
+                                        onClick = {
+                                            viewModel.requestSubscriptionSheet {
+                                                showSubscriptionSheet = true
                             }
                         },
                     )
@@ -882,7 +882,7 @@ private fun SubscriptionReminderBanner(
             title = stringResource(R.string.subscription_expired_title)
             expired = true
         }
-        auth.plan == UserPlan.PAID && expiresAt != null -> {
+        (auth.plan == UserPlan.PAID || auth.plan == UserPlan.ADMIN) && expiresAt != null -> {
             val msLeft = expiresAt - System.currentTimeMillis()
             expired = false
             title = if (msLeft in 0..(3 * dayMs)) {
@@ -1219,14 +1219,20 @@ private fun StatItem(
 
 @Composable
 private fun PlanCard(auth: AuthState.Authenticated, onClick: () -> Unit) {
+    val serverPlanName = auth.planDisplayName?.takeIf {
+        it.isNotBlank() && auth.plan != UserPlan.EXPIRED
+    }
     val (planLabel, planColor, expiresText) = when (auth.plan) {
-        UserPlan.ADMIN -> Triple(stringResource(R.string.plan_admin), VpnGreen, stringResource(R.string.plan_unlimited))
+        UserPlan.ADMIN -> {
+            val dateStr = auth.planExpiresAt?.let { formatDate(it) } ?: ""
+            Triple(serverPlanName ?: stringResource(R.string.plan_unknown_name), VpnGreen, if (dateStr.isNotEmpty()) stringResource(R.string.plan_until, dateStr) else "")
+        }
         UserPlan.PAID -> {
             val dateStr = auth.planExpiresAt?.let { formatDate(it) } ?: ""
-            Triple(stringResource(R.string.plan_standard), VpnGreen, if (dateStr.isNotEmpty()) stringResource(R.string.plan_until, dateStr) else "")
+            Triple(serverPlanName ?: stringResource(R.string.plan_unknown_name), VpnGreen, if (dateStr.isNotEmpty()) stringResource(R.string.plan_until, dateStr) else "")
         }
         UserPlan.EXPIRED -> Triple(stringResource(R.string.plan_expired), VpnRed, stringResource(R.string.plan_renew))
-        UserPlan.FREE_TRIAL -> Triple(stringResource(R.string.plan_free), VpnOrange, "")
+        UserPlan.FREE_TRIAL -> Triple(serverPlanName ?: stringResource(R.string.plan_free), VpnOrange, "")
     }
 
     Card(
@@ -1555,23 +1561,32 @@ private fun SubscriptionBottomSheet(
 
             // Current plan info
             val quotaMonth = stringResource(R.string.plan_quota_month)
-            val trafficGb: Int? = currentLimits?.trafficLimitBytes
+            val unknownPlanData = stringResource(R.string.plan_unknown_name)
+            val unknownDeviceCount = stringResource(R.string.plan_unknown_device_count)
+            val unknownQuotaDescription = "$quotaMonth \u00B7 ${stringResource(R.string.plan_devices_unknown)}"
+            val trafficLimitBytes = currentLimits?.trafficLimitBytes
+            val currentDeviceLimit = currentLimits?.deviceLimit
+            val trafficGb: Int? = trafficLimitBytes
                 ?.takeIf { it > 0 }
                 ?.let { (it / (1024L * 1024L * 1024L)).toInt() }
-            val deviceLimit: Int? = currentLimits?.deviceLimit?.takeIf { it > 0 }
+            val deviceLimit: Int? = currentDeviceLimit?.takeIf { it > 0 }
             val showLimits = authState is AuthState.Authenticated &&
                 (authState.plan == UserPlan.PAID || authState.plan == UserPlan.ADMIN)
             val limitsLoading = showLimits &&
                 currentLimits == null &&
                 (purchasePlansLoading || !purchasePlansLoaded)
-            val trafficLimitValue = trafficGb
-                ?.let { "$it ${stringResource(R.string.unit_gb)}" }
-                ?: if (currentLimits != null && currentLimits.trafficLimitBytes <= 0) {
-                    "\u221E"
-                } else {
-                    "\u2014"
-                }
-            val deviceLimitValue = deviceLimit?.toString() ?: "\u2014"
+            val trafficLimitValue = when {
+                trafficGb != null -> "$trafficGb ${stringResource(R.string.unit_gb)}"
+                trafficLimitBytes == null -> unknownPlanData
+                trafficLimitBytes <= 0 -> "\u221E"
+                else -> unknownPlanData
+            }
+            val deviceLimitValue = when {
+                deviceLimit != null -> deviceLimit.toString()
+                currentDeviceLimit == null -> unknownDeviceCount
+                currentDeviceLimit <= 0 -> "\u221E"
+                else -> unknownDeviceCount
+            }
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
@@ -1615,27 +1630,29 @@ private fun SubscriptionBottomSheet(
                                 )
                             }
                             is AuthState.Authenticated -> {
+                                val serverPlanName = authState.planDisplayName?.takeIf {
+                                    it.isNotBlank() && authState.plan != UserPlan.EXPIRED
+                                }
                                 when (authState.plan) {
-                                    UserPlan.ADMIN -> {
-                                        CurrentPlanName(
-                                            text = stringResource(R.string.plan_admin),
-                                            color = VpnGreen,
-                                        )
-                                        CurrentPlanDescription(
-                                            text = stringResource(R.string.plan_unlimited_access),
-                                            maxLines = 2,
-                                        )
-                                    }
+                                    UserPlan.ADMIN,
                                     UserPlan.PAID -> {
                                         CurrentPlanName(
-                                            text = stringResource(R.string.plan_standard),
+                                            text = serverPlanName ?: stringResource(R.string.plan_unknown_name),
                                             color = VpnGreen,
                                         )
-                                        authState.planExpiresAt?.let {
-                                            CurrentPlanDescription(
-                                                text = stringResource(R.string.plan_active_until, formatDate(it)),
-                                            )
+                                        val description = when {
+                                            authState.planExpiresAt != null -> {
+                                                stringResource(R.string.plan_active_until, formatDate(authState.planExpiresAt))
+                                            }
+                                            limitsLoading -> stringResource(R.string.loading_data)
+                                            trafficLimitBytes == null || currentDeviceLimit == null -> unknownQuotaDescription
+                                            trafficLimitBytes <= 0 && currentDeviceLimit <= 0 -> stringResource(R.string.plan_unlimited_access)
+                                            else -> stringResource(R.string.plan_active)
                                         }
+                                        CurrentPlanDescription(
+                                            text = description,
+                                            maxLines = 2,
+                                        )
                                     }
                                     UserPlan.EXPIRED -> {
                                         CurrentPlanName(
@@ -1648,7 +1665,7 @@ private fun SubscriptionBottomSheet(
                                     }
                                     UserPlan.FREE_TRIAL -> {
                                         CurrentPlanName(
-                                            text = stringResource(R.string.plan_free),
+                                            text = serverPlanName ?: stringResource(R.string.plan_free),
                                             color = VpnOrange,
                                         )
                                         CurrentPlanDescription(
@@ -1751,7 +1768,7 @@ private fun SubscriptionBottomSheet(
                     isRussian -> prices["RUB"]?.amount?.let(::formatRubAmount)
                         ?: prices["USD"]?.amount?.let(::formatUsdAmount)
                         ?: prices["XTR"]?.amount?.let(::formatXtrAmount)
-                        ?: "—"
+                        ?: unknownPlanData
                     else -> prices["USD"]?.amount?.let(::formatUsdAmount)
                         ?: prices["RUB"]?.amount?.let { rub ->
                             val rubValue = rub.toDoubleOrNull()
@@ -1762,7 +1779,7 @@ private fun SubscriptionBottomSheet(
                             }
                         }
                         ?: prices["XTR"]?.amount?.let(::formatXtrAmount)
-                        ?: "—"
+                        ?: unknownPlanData
                 }
             }
 
@@ -1892,6 +1909,13 @@ private fun SubscriptionBottomSheet(
                     val selectedLabel = plans.firstOrNull { it.key == selectedPlan }
                         ?: plans.firstOrNull()
                         ?: return@Column
+                    val actionTextRes = if (authState is AuthState.Authenticated &&
+                        authState.plan != UserPlan.FREE_TRIAL
+                    ) {
+                        R.string.renew_plan
+                    } else {
+                        R.string.buy_plan
+                    }
                     Button(
                         onClick = {
                             onDismiss()
@@ -1915,7 +1939,7 @@ private fun SubscriptionBottomSheet(
                     ) {
                         SubscriptionActionText(
                             stringResource(
-                                R.string.buy_plan,
+                                actionTextRes,
                                 selectedLabel.title,
                                 selectedLabel.priceDisplay,
                             )

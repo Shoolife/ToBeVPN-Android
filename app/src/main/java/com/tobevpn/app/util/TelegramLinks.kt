@@ -110,7 +110,14 @@ object DeviceQrScanParser {
             expectedBotUsername = TelegramLinks.DEFAULT_BOT_USERNAME,
         )?.let { return DeviceQrScanAction.OpenTelegramAuth(it) }
 
-        val scheme = runCatching { Uri.parse(trimmed).scheme }.getOrNull()
+        val uri = runCatching { Uri.parse(trimmed) }.getOrNull()
+        if (uri != null) {
+            DeepLinkBus.parsePairingCode(uri)?.let { code ->
+                return DeviceQrScanAction.LegacyPairingCode(code)
+            }
+        }
+
+        val scheme = uri?.scheme
         return if (scheme.isNullOrBlank()) {
             DeviceQrScanAction.LegacyPairingCode(trimmed)
         } else {

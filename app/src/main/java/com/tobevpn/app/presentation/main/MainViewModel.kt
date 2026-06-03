@@ -48,8 +48,8 @@ import java.net.Socket
 import javax.inject.Inject
 
 data class CurrentPlanLimits(
-    val trafficLimitBytes: Long,
-    val deviceLimit: Int,
+    val trafficLimitBytes: Long?,
+    val deviceLimit: Int?,
 )
 
 @HiltViewModel
@@ -489,7 +489,7 @@ class MainViewModel @Inject constructor(
                 if (request == purchaseLoadRequest) clearPurchaseState()
                 return
             }
-            val limits = loadCurrentLimitsNow(authenticated)
+            val limits = loadCurrentLimitsNow()
             if (request != purchaseLoadRequest ||
                 authRepository.getAuthStateSnapshot() != authenticated
             ) {
@@ -522,16 +522,15 @@ class MainViewModel @Inject constructor(
         _currentLimits.value = null
     }
 
-    private suspend fun loadCurrentLimitsNow(authenticated: AuthState.Authenticated): CurrentPlanLimits? {
+    private suspend fun loadCurrentLimitsNow(): CurrentPlanLimits? {
         return try {
-            val user = authRepository.getPanelUserByTelegramId(authenticated.telegramId)
-            if (user != null) {
+            authRepository.getCurrentSubscriptionPlan()?.let { plan ->
                 CurrentPlanLimits(
-                    trafficLimitBytes = user.trafficLimitBytes,
-                    deviceLimit = user.hwidDeviceLimit ?: 0,
+                    trafficLimitBytes = plan.trafficLimitBytes,
+                    deviceLimit = plan.deviceLimit,
                 )
-            } else {
-                SafeDiagnostics.warn(TAG, "Current plan limits response did not contain a user")
+            } ?: run {
+                SafeDiagnostics.warn(TAG, "Current plan limits response did not contain current-plan data")
                 null
             }
         } catch (error: Exception) {

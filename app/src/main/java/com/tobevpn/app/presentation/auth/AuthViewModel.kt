@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.repository.AuthRepository
+import com.tobevpn.app.data.repository.DevicePairingPollResult
 import com.tobevpn.app.data.repository.VpnRepository
 import com.tobevpn.app.util.DeepLinkBus
 import com.tobevpn.app.util.TelegramLinks
@@ -24,7 +25,9 @@ import javax.inject.Inject
 sealed interface AuthUiState {
     data object Idle : AuthUiState
     data object OpeningTelegram : AuthUiState
+    data object LoadingDevicePairing : AuthUiState
     data object Polling : AuthUiState
+    data class WaitingDevicePairing(val code: String, val expiresIn: Int) : AuthUiState
     data object Success : AuthUiState
     data class Error(@StringRes val messageRes: Int) : AuthUiState
 }
@@ -48,6 +51,7 @@ class AuthViewModel @Inject constructor(
 
     private var pollingJob: Job? = null
     private var currentAuthToken: String? = null
+    private var currentPairingCode: String? = null
 
     init {
         // Subscribe to deep links from MainActivity (e.g. tobevpn://auth_callback)
@@ -64,6 +68,8 @@ class AuthViewModel @Inject constructor(
     }
 
     fun startTelegramAuth(context: Context) {
+        pollingJob?.cancel()
+        currentPairingCode = null
         viewModelScope.launch {
             _uiState.value = AuthUiState.OpeningTelegram
 
@@ -83,6 +89,28 @@ class AuthViewModel @Inject constructor(
                 authRepository.clearPendingAuthToken()
                 _uiState.value = AuthUiState.Error(R.string.auth_error_open_telegram)
             }
+        }
+    }
+
+    fun startDevicePairing() {
+        pollingJob?.cancel()
+        currentAuthToken = null
+        viewModelScope.launch {
+            _uiState.value = AuthUiState.LoadingDevicePairing
+            authRepository.clearPendingAuthToken()
+            authRepository.requestDevicePairing()
+                .onSuccess { pairing ->
+                    currentPairingCode = pairing.code
+                    _uiState.value = AuthUiState.WaitingDevicePairing(
+                        code = pairing.code,
+                        expiresIn = pairing.expiresIn,
+                    )
+                    startDevicePairingPolling(pairing.code)
+                }
+                .onFailure {
+                    currentPairingCode = null
+                    _uiState.value = AuthUiState.Error(R.string.auth_error_server)
+                }
         }
     }
 
@@ -145,6 +173,38 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    private fun startDevicePairingPolling(code: String) {
+        pollingJob?.cancel()
+        pollingJob = viewModelScope.launch {
+            repeat(MAX_POLL_ATTEMPTS) {
+                delay(POLL_INTERVAL_MS)
+                val result = authRepository.checkDevicePairingStatus(code)
+                result.onSuccess { status ->
+                    when (status) {
+                        DevicePairingPollResult.Completed -> {
+                            onAuthSuccess()
+                            currentPairingCode = null
+                            return@launch
+                        }
+                        DevicePairingPollResult.Expired -> {
+                            currentPairingCode = null
+                            _uiState.value = AuthUiState.Error(R.string.auth_error_timeout)
+                            return@launch
+                        }
+                        DevicePairingPollResult.Pending -> Unit
+                    }
+                }
+                result.onFailure {
+                    currentPairingCode = null
+                    _uiState.value = AuthUiState.Error(R.string.auth_error_server)
+                    return@launch
+                }
+            }
+            currentPairingCode = null
+            _uiState.value = AuthUiState.Error(R.string.auth_error_timeout)
+        }
+    }
+
     private suspend fun onAuthSuccess() {
         // Force the sync — we just authenticated and the user expects to
         // immediately see the right plan (PAID / FREE_TRIAL), not whatever
@@ -183,6 +243,7 @@ class AuthViewModel @Inject constructor(
         _uiState.value = AuthUiState.Idle
         _showEmailPrompt.value = false
         currentAuthToken = null
+        currentPairingCode = null
         viewModelScope.launch {
             authRepository.clearPendingAuthToken()
         }

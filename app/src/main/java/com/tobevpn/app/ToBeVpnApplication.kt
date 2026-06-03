@@ -5,6 +5,7 @@ import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.local.SessionStore
 import com.tobevpn.app.data.local.dao.SessionDao
 import com.tobevpn.app.data.remote.BootstrapManager
+import com.tobevpn.app.update.UpdateDownloader
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,6 +28,9 @@ class ToBeVpnApplication : Application() {
     @Inject
     lateinit var sessionStore: SessionStore
 
+    @Inject
+    lateinit var updateDownloader: UpdateDownloader
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
@@ -36,6 +40,7 @@ class ToBeVpnApplication : Application() {
         // before the UI starts hitting the API. If we're offline this fails silently
         // and the AuthHeaderInterceptor will re-try on the first request.
         appScope.launch {
+            runCatching { updateDownloader.cleanupStaleDownloads() }
             runCatching { bootstrapManager.ensureBootstrapped() }
             runCatching { migrateLegacyEmail() }
         }

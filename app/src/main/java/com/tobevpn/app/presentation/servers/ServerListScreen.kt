@@ -40,7 +40,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit
@@ -133,8 +132,6 @@ fun ServerListScreen(
                     val textMeasurer = rememberTextMeasurer()
 
                     BoxWithConstraints {
-                        val serverCardScale = (maxWidth.value / 400f).coerceIn(0.80f, 1f)
-                        val serverCardVerticalScale = (maxWidth.value / 400f).coerceIn(0.72f, 1f)
                         val names = servers.map { serverDisplayName(it.name, it.country) }
                         val trailingWidthPx = servers.maxOf { server ->
                             when {
@@ -171,11 +168,11 @@ fun ServerListScreen(
                         val nameWidthPx = with(density) {
                             (
                                 maxWidth -
-                                    scaledDp(32f, serverCardScale) - // card outer horizontal margin
-                                    scaledDp(32f, serverCardScale) - // card inner horizontal padding
-                                    scaledDp(36f, serverCardScale) - // flag slot
-                                    scaledDp(16f, serverCardScale) - // gap after flag
-                                    scaledDp(16f, serverCardScale) - // visual gap before ping/status
+                                    32.dp - // card outer horizontal margin
+                                    32.dp - // card inner horizontal padding
+                                    32.dp - // flag slot
+                                    16.dp - // gap after flag
+                                    16.dp - // visual gap before ping/status
                                     trailingWidth
                                 ).coerceAtLeast(1.dp).roundToPx()
                         }
@@ -186,7 +183,7 @@ fun ServerListScreen(
                             density.fontScale,
                         ) {
                             var candidate = titleStyle.fontSize.value
-                            while (candidate > 11f) {
+                            while (candidate > 13f) {
                                 val widestNamePx = names.maxOf { name ->
                                     textMeasurer.measure(
                                         text = AnnotatedString(name),
@@ -201,11 +198,8 @@ fun ServerListScreen(
                                 if (widestNamePx <= nameWidthPx) break
                                 candidate -= 0.5f
                             }
-                            candidate.coerceAtLeast(11f).sp
+                            candidate.coerceAtLeast(13f).sp
                         }
-                        val serverRowScale = (
-                            serverNameFontSize.value / titleStyle.fontSize.value
-                            ).coerceIn(0.76f, 1f)
 
                         LazyColumn {
                             items(servers, key = { it.id }) { server ->
@@ -217,9 +211,6 @@ fun ServerListScreen(
                                         selectedKey = selectedServerKey,
                                     ),
                                     serverNameFontSize = serverNameFontSize,
-                                    serverRowScale = serverRowScale,
-                                    serverCardScale = serverCardScale,
-                                    serverCardVerticalScale = serverCardVerticalScale,
                                     onClick = {
                                         scope.launch {
                                             if (viewModel.selectServer(server)) {
@@ -242,9 +233,6 @@ private fun ServerItem(
     server: Server,
     selected: Boolean,
     serverNameFontSize: TextUnit,
-    serverRowScale: Float,
-    serverCardScale: Float,
-    serverCardVerticalScale: Float,
     onClick: () -> Unit,
 ) {
     val isDark = isSystemInDarkTheme()
@@ -263,11 +251,11 @@ private fun ServerItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                horizontal = scaledDp(16f, serverCardScale),
-                vertical = scaledDp(3f, serverCardVerticalScale),
+                horizontal = 16.dp,
+                vertical = 4.dp,
             )
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(scaledDp(16f, serverCardScale)),
+        shape = RoundedCornerShape(16.dp),
         // surfaceContainerHigh sits a step lighter than surfaceContainerLow
         // in the dark Material You palette, so server tiles match the
         // brighter card fill used on Home. On light theme this slot is
@@ -285,25 +273,19 @@ private fun ServerItem(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(
-                    horizontal = scaledDp(16f, serverCardScale),
-                    vertical = scaledDp(12f, serverCardVerticalScale),
-                ),
+                .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             // Country flag
             Text(
                 text = countryFlagForUi(server.country, server.name),
-                fontSize = (32f * serverRowScale).sp,
+                fontSize = 32.sp,
             )
-            Spacer(modifier = Modifier.width(scaledDp(16f, serverCardScale)))
+            Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     serverDisplayName(server.name, server.country),
-                    style = scaledTextStyle(
-                        MaterialTheme.typography.titleMedium,
-                        serverRowScale,
-                    ),
+                    style = MaterialTheme.typography.titleMedium,
                     fontSize = serverNameFontSize,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
@@ -313,62 +295,44 @@ private fun ServerItem(
                 if (!server.isOnline) {
                     Text(
                         stringResource(R.string.server_unavailable),
-                        style = scaledTextStyle(
-                            MaterialTheme.typography.bodySmall,
-                            serverRowScale,
-                        ),
+                        style = MaterialTheme.typography.bodySmall,
                         color = VpnRed,
                     )
                 } else {
                     Text(
                         countryName(serverCountryCodeForUi(server.country, server.name)),
-                        style = scaledTextStyle(
-                            MaterialTheme.typography.bodySmall,
-                            serverRowScale,
-                        ),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
             // Ping, unreachable or offline
             if (!server.isOnline || server.ping != 0L) {
-                Spacer(modifier = Modifier.width(scaledDp(16f, serverCardScale)))
+                Spacer(modifier = Modifier.width(16.dp))
             }
             if (!server.isOnline) {
                 Text(
                     text = stringResource(R.string.server_offline),
-                    style = scaledTextStyle(
-                        MaterialTheme.typography.labelSmall,
-                        serverRowScale,
-                    ),
+                    style = MaterialTheme.typography.labelSmall,
                     color = VpnRed,
                 )
             } else if (server.ping < 0) {
                 Text(
                     text = stringResource(R.string.server_unavailable),
-                    style = scaledTextStyle(
-                        MaterialTheme.typography.labelSmall,
-                        serverRowScale,
-                    ),
+                    style = MaterialTheme.typography.labelSmall,
                     color = VpnRed,
                 )
             } else if (server.ping > 0) {
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = "${server.ping}",
-                        style = scaledTextStyle(
-                            MaterialTheme.typography.titleMedium,
-                            serverRowScale,
-                        ),
+                        style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
                         color = pingColor(server.ping),
                     )
                     Text(
                         text = "ms",
-                        style = scaledTextStyle(
-                            MaterialTheme.typography.labelSmall,
-                            serverRowScale,
-                        ),
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -376,16 +340,6 @@ private fun ServerItem(
         }
     }
 }
-
-private fun scaledFontSize(base: TextUnit, scale: Float): TextUnit =
-    if (base == TextUnit.Unspecified) base else (base.value * scale).sp
-
-private fun scaledTextStyle(base: TextStyle, scale: Float) = base.copy(
-    fontSize = scaledFontSize(base.fontSize, scale),
-    lineHeight = scaledFontSize(base.lineHeight, scale),
-)
-
-private fun scaledDp(base: Float, scale: Float) = (base * scale).dp
 
 private fun pingColor(ping: Long) = when {
     ping < 100 -> VpnGreen

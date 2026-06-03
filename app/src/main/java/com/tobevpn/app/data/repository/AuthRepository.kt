@@ -11,10 +11,13 @@ import com.tobevpn.app.data.remote.BootstrapManager
 import com.tobevpn.app.data.remote.BotApi
 import com.tobevpn.app.data.remote.SubscriptionPinger
 import com.tobevpn.app.data.remote.dto.AuthRequestDto
+import com.tobevpn.app.data.remote.dto.CurrentPlanDto
 import com.tobevpn.app.data.remote.dto.DeviceRegisterRequestDto
 import com.tobevpn.app.data.remote.dto.DeviceUnlinkRequestDto
 import com.tobevpn.app.data.remote.dto.EnsureUserRequestDto
 import com.tobevpn.app.data.remote.dto.SaveEmailRequestDto
+import com.tobevpn.app.data.remote.dto.TvPairCreateResponseDto
+import com.tobevpn.app.data.remote.dto.TvPairCreateRequestDto
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.util.SafeDiagnostics
@@ -33,6 +36,24 @@ import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
 
+sealed interface DevicePairingPollResult {
+    data object Pending : DevicePairingPollResult
+    data object Expired : DevicePairingPollResult
+    data object Completed : DevicePairingPollResult
+}
+
+data class CurrentSubscriptionPlanInfo(
+    val displayName: String?,
+    val trafficLimitBytes: Long?,
+    val deviceLimit: Int?,
+    val expiresAtMillis: Long?,
+    val isActive: Boolean?,
+    val isExpired: Boolean?,
+    val isTrial: Boolean?,
+    val isUnlimited: Boolean?,
+    val hasPlanData: Boolean,
+)
+
 @Singleton
 class AuthRepository @Inject constructor(
     private val sessionDao: SessionDao,
@@ -47,8 +68,6 @@ class AuthRepository @Inject constructor(
 ) {
     companion object {
         private const val TAG = "AuthRepository"
-        // Fallback defaults if server is unreachable
-        private const val DEFAULT_FREE_TRIAL_TRAFFIC_BYTES = 3_221_225_472L // 3 GB
     }
 
     // Serialises concurrent syncSubscription() callers (MainViewModel.init,
@@ -68,6 +87,7 @@ class AuthRepository @Inject constructor(
                 telegramId = session.telegramId,
                 plan = planFromString(session.userPlan),
                 planExpiresAt = session.planExpiresAt,
+                planDisplayName = session.planDisplayName,
             )
         } else {
             AuthState.Anonymous
@@ -202,6 +222,22 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    suspend fun getCurrentSubscriptionPlan(): CurrentSubscriptionPlanInfo? {
+        return try {
+            withFreshDeviceSessionRetry {
+                val response = botApi.getCurrentPlan()
+                if (response.success) {
+                    response.data?.toCurrentSubscriptionPlanInfo()
+                } else {
+                    null
+                }
+            }
+        } catch (error: Exception) {
+            SafeDiagnostics.warn(TAG, "Current plan request failed: ${SafeDiagnostics.failureCategory(error)}")
+            null
+        }
+    }
+
     private suspend fun <T> withFreshDeviceSessionRetry(block: suspend () -> T): T {
         return try {
             block()
@@ -316,6 +352,20 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    suspend fun requestDevicePairing(): Result<TvPairCreateResponseDto> {
+        return try {
+            val response = botApi.createTvPairing(TvPairCreateRequestDto())
+            val data = response.data
+            if (response.success && data != null) {
+                Result.success(data)
+            } else {
+                Result.failure(IllegalStateException(response.message ?: "Could not create pairing code"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     private fun planForPanelUser(panelUser: com.tobevpn.app.data.remote.dto.PanelUserDto): String {
         val squads = panelUser.activeInternalSquads.map { it.name.uppercase(Locale.ROOT) }
         return when {
@@ -323,6 +373,63 @@ class AuthRepository @Inject constructor(
             "STANDART" in squads -> "PAID"
             else -> "FREE_TRIAL"
         }
+    }
+
+    private fun CurrentPlanDto.toCurrentSubscriptionPlanInfo(): CurrentSubscriptionPlanInfo {
+        val snapshot = currentPlan ?: planSnapshot
+        val subscriptionStatus = subscription?.status
+            ?: subscription?.storedStatus
+            ?: status
+        val expiresAtMillis = epochTimestampToMillis(subscription?.expireAtTs)
+            ?: parsePanelExpireAtMillisOrNull(subscription?.expireAt)
+            ?: parsePanelExpireAtMillisOrNull(subscription?.expiresAt)
+            ?: parsePanelExpireAtMillisOrNull(expireAt)
+            ?: parsePanelExpireAtMillisOrNull(expiresAt)
+        val isExpired = subscription?.isExpired
+            ?: subscriptionStatus?.equals("EXPIRED", ignoreCase = true)
+            ?: expiresAtMillis?.let { it <= System.currentTimeMillis() }
+        val isActive = subscription?.isActive
+            ?: subscriptionStatus?.let { it.equals("ACTIVE", ignoreCase = true) }
+        val hasPlanData = snapshot != null || subscription != null ||
+            !planName.isNullOrBlank() || !name.isNullOrBlank()
+        return CurrentSubscriptionPlanInfo(
+            displayName = snapshot?.name?.trim()?.takeIf { it.isNotBlank() }
+                ?: planName?.trim()?.takeIf { it.isNotBlank() }
+                ?: name?.trim()?.takeIf { it.isNotBlank() },
+            trafficLimitBytes = normalizeTrafficLimitBytes(
+                trafficLimitBytes = subscription?.trafficLimitBytes,
+                trafficLimit = subscription?.trafficLimit,
+            ) ?: normalizeTrafficLimitBytes(
+                trafficLimitBytes = snapshot?.trafficLimitBytes,
+                trafficLimit = snapshot?.trafficLimit,
+            ),
+            deviceLimit = subscription?.deviceLimit ?: snapshot?.deviceLimit,
+            expiresAtMillis = expiresAtMillis,
+            isActive = isActive,
+            isExpired = isExpired,
+            isTrial = subscription?.isTrial ?: snapshot?.isTrial,
+            isUnlimited = subscription?.isUnlimited
+                ?: snapshot?.type?.equals("UNLIMITED", ignoreCase = true),
+            hasPlanData = hasPlanData,
+        )
+    }
+
+    private fun normalizeTrafficLimitBytes(trafficLimitBytes: Long?, trafficLimit: Long?): Long? {
+        if (trafficLimitBytes != null) return trafficLimitBytes
+        return normalizePlanTrafficLimit(trafficLimit)
+    }
+
+    private fun normalizePlanTrafficLimit(value: Long?): Long? {
+        val raw = value ?: return null
+        if (raw <= 0) return 0
+        // plan_snapshot.traffic_limit is GB on the server. If a future
+        // response already sends bytes, keep it as-is.
+        return if (raw > 1024L * 1024L) raw else raw * 1024L * 1024L * 1024L
+    }
+
+    private fun epochTimestampToMillis(value: Long?): Long? {
+        val timestamp = value?.takeIf { it > 0 } ?: return null
+        return if (timestamp < 10_000_000_000L) timestamp * 1000L else timestamp
     }
 
     private fun selectBestPanelUser(
@@ -364,6 +471,10 @@ class AuthRepository @Inject constructor(
         }.getOrDefault(Long.MIN_VALUE)
     }
 
+    private fun parsePanelExpireAtMillisOrNull(value: String?): Long? {
+        return parsePanelExpireAtMillis(value).takeIf { it != Long.MIN_VALUE }
+    }
+
     /**
      * Polls the backend for auth completion.
      * Returns true when Telegram auth is confirmed.
@@ -374,47 +485,12 @@ class AuthRepository @Inject constructor(
             val status = response.data ?: return false
 
             if (status.status == "completed" && status.telegramId != null) {
-                val deviceId = getOrCreateDeviceId()
-                sessionStore.updateOrCreate(deviceId) { current ->
-                    current.copy(
-                        authState = "AUTHENTICATED",
-                        telegramId = status.telegramId,
-                        shortUuid = status.shortUuid ?: current.shortUuid,
-                        isLinked = true,
-                        pendingAuthToken = null,
-                    )
-                }
-                // Auth completion binds the backend device session to Telegram,
-                // but the locally cached access token may still be the anonymous
-                // one minted before the link. Re-open the device session before
-                // account-scoped calls so the token claims match local auth state.
-                runCatching { bootstrapManager.bootstrap() }
-
-                // Sync panel user info via proxy
-                try {
-                    val panelUser = getPanelUserByTelegramId(status.telegramId)
-                    if (panelUser != null) {
-                        val resolvedPlan = planForPanelUser(panelUser)
-                        sessionStore.update { current ->
-                            current.copy(
-                                panelUserUuid = panelUser.uuid,
-                                shortUuid = panelUser.shortUuid,
-                                userPlan = resolvedPlan,
-                            )
-                        }
-                        // Paid/Admin subscriptions have their own server-side
-                        // counters. Trial remains device-scoped, so keep the
-                        // anonymous usage accumulated before Telegram auth.
-                        if (resolvedPlan != "FREE_TRIAL") {
-                            prefsDataStore.clearAnonymousUsageState()
-                            usageRepository.resetSession()
-                        }
-                    }
-                } catch (_: Exception) {
-                }
-
-                registerCurrentDevice()
-
+                applyAuthenticatedDevice(
+                    telegramId = status.telegramId,
+                    shortUuid = status.shortUuid,
+                    panelUserUuid = status.panelUserUuid,
+                    clearPendingAuthToken = true,
+                )
                 true
             } else {
                 false
@@ -422,6 +498,97 @@ class AuthRepository @Inject constructor(
         } catch (_: Exception) {
             false
         }
+    }
+
+    suspend fun checkDevicePairingStatus(code: String): Result<DevicePairingPollResult> {
+        return try {
+            val response = botApi.checkTvPairingStatus(code)
+            if (!response.success) {
+                return Result.failure(
+                    IllegalStateException(response.message ?: "Could not check pairing status")
+                )
+            }
+            val status = response.data ?: return Result.success(DevicePairingPollResult.Pending)
+            when (status.status) {
+                "completed" -> {
+                    val telegramId = status.telegramId ?: return Result.failure(
+                        IllegalStateException("Pairing completed without telegram_id")
+                    )
+                    applyAuthenticatedDevice(
+                        telegramId = telegramId,
+                        shortUuid = status.shortUuid,
+                        panelUserUuid = status.panelUserUuid,
+                        clearPendingAuthToken = false,
+                    )
+                    Result.success(DevicePairingPollResult.Completed)
+                }
+                "expired" -> Result.success(DevicePairingPollResult.Expired)
+                "rejected" -> Result.failure(
+                    IllegalStateException(response.message ?: "Pairing was rejected")
+                )
+                else -> Result.success(DevicePairingPollResult.Pending)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun applyAuthenticatedDevice(
+        telegramId: Long,
+        shortUuid: String?,
+        panelUserUuid: String?,
+        clearPendingAuthToken: Boolean,
+    ) {
+        val deviceId = getOrCreateDeviceId()
+        sessionStore.updateOrCreate(deviceId) { current ->
+            current.copy(
+                authState = "AUTHENTICATED",
+                telegramId = telegramId,
+                shortUuid = shortUuid ?: current.shortUuid,
+                panelUserUuid = panelUserUuid ?: current.panelUserUuid,
+                isLinked = true,
+                pendingAuthToken = if (clearPendingAuthToken) null else current.pendingAuthToken,
+            )
+        }
+        // Server has just bound this device row. Open a fresh session so
+        // bearer-token claims include telegram_id/panel_user_uuid.
+        runCatching { bootstrapManager.bootstrap() }
+
+        try {
+            val panelUser = getPanelUserByTelegramId(telegramId)
+            if (panelUser != null) {
+                sessionStore.update { current ->
+                    current.copy(
+                        panelUserUuid = panelUser.uuid,
+                        shortUuid = panelUser.shortUuid,
+                        email = panelUser.email ?: current.email,
+                    )
+                }
+            }
+        } catch (_: Exception) {
+        }
+
+        val currentPlanInfo = getCurrentSubscriptionPlan()
+        val currentSession = sessionDao.getSession()
+        if (currentSession != null) {
+            val resolvedPlan = resolvePlanFromCurrentPlan(currentSession.userPlan, currentPlanInfo)
+            sessionStore.update { current ->
+                current.copy(
+                    userPlan = resolvedPlan,
+                    planDisplayName = currentPlanInfo
+                        ?.displayName
+                        ?.takeIf { resolvedPlan != "EXPIRED" },
+                    planExpiresAt = currentPlanInfo?.expiresAtMillis,
+                )
+            }
+            currentPlanInfo?.trafficLimitBytes?.let { usageRepository.updateLimits(it, 0) }
+            if (resolvedPlan != "FREE_TRIAL") {
+                prefsDataStore.clearAnonymousUsageState()
+                usageRepository.resetSession()
+            }
+        }
+
+        registerCurrentDevice()
     }
 
     /**
@@ -452,12 +619,25 @@ class AuthRepository @Inject constructor(
         }
     }
 
+    private fun resolvePlanFromCurrentPlan(
+        cachedPlan: String,
+        currentPlanInfo: CurrentSubscriptionPlanInfo?,
+    ): String {
+        if (currentPlanInfo == null) return cachedPlan
+        if (!currentPlanInfo.hasPlanData) return "FREE_TRIAL"
+        return when {
+            currentPlanInfo.isExpired == true || currentPlanInfo.isActive == false -> "EXPIRED"
+            currentPlanInfo.isTrial == true -> "FREE_TRIAL"
+            else -> "PAID"
+        }
+    }
+
     private suspend fun runSyncSubscription(overwriteUsage: Boolean) {
         try {
             var session = sessionDao.getSession() ?: return
             var panelUser: com.tobevpn.app.data.remote.dto.PanelUserDto? = null
+            var currentPlanInfo: CurrentSubscriptionPlanInfo? = null
 
-            // For authenticated users, refresh panel user info by telegramId
             if (session.authState == "AUTHENTICATED" && session.telegramId != null) {
                 try {
                     panelUser = getPanelUserByTelegramId(session.telegramId)
@@ -469,93 +649,71 @@ class AuthRepository @Inject constructor(
                             )
                         }
                         if (updated != null) session = updated
-                        // Keep locally-stored email in sync with panel
                         if (!panelUser.email.isNullOrBlank()) {
                             sessionStore.update { it.copy(email = panelUser.email) }
                         }
                     }
                 } catch (error: Exception) {
                     SafeDiagnostics.warn(TAG, "Panel user refresh failed: ${SafeDiagnostics.failureCategory(error)}")
-                    // Fall through — use existing shortUuid
+                }
+
+                currentPlanInfo = getCurrentSubscriptionPlan()
+                val resolvedPlan = resolvePlanFromCurrentPlan(session.userPlan, currentPlanInfo)
+                val updated = sessionStore.update { current ->
+                    current.copy(
+                        userPlan = resolvedPlan,
+                        planDisplayName = currentPlanInfo
+                            ?.displayName
+                            ?.takeIf { resolvedPlan != "EXPIRED" },
+                        planExpiresAt = currentPlanInfo?.expiresAtMillis,
+                    )
+                }
+                if (updated != null) session = updated
+
+                currentPlanInfo?.trafficLimitBytes?.let { trafficLimitBytes ->
+                    usageRepository.updateLimits(trafficLimitBytes, 0)
                 }
             }
 
-            val shortUuid = session.shortUuid ?: return
-            val subInfo = botApi.getSubscriptionInfo(shortUuid).response
-            if (!subInfo.isFound || subInfo.user == null) return
-
-            // Direct hit on the public subscription URL with HWID headers —
-            // this is the request that refreshes HWID device tracking,
-            // and the response carries the service-recommended auto-refresh
-            // cadence we use to throttle subsequent calls.
-            val effectiveUrl = panelUser?.subscriptionUrl ?: subInfo.subscriptionUrl
-            sessionStore.update { it.copy(subscriptionUrl = effectiveUrl) }
-            val pingResult = subscriptionPinger.ping(effectiveUrl)
-            if (pingResult != null) {
-                prefsDataStore.setSubscriptionUsageBlocked(shortUuid, pingResult.isUsageBlocked)
-                prefsDataStore.setUpdateRequired(pingResult.isUpdateRequired)
+            val shortUuid = session.shortUuid
+            if (shortUuid == null) {
+                if (session.authState == "AUTHENTICATED") {
+                    registerCurrentDevice()
+                }
+                return
             }
-            persistSyncState(pingResult?.intervalMs)
 
-            val sub = subInfo.user
-            val isActive = sub.isActive && sub.userStatus == "ACTIVE"
-            val cachedPlan = session.userPlan
-            val trafficLimitBytes = sub.trafficLimitBytes.toLongOrNull() ?: 0
-            val hasPaidTrafficLimit = trafficLimitBytes > DEFAULT_FREE_TRIAL_TRAFFIC_BYTES
+            val subInfo = runCatching {
+                botApi.getSubscriptionInfo(shortUuid).response
+            }.onFailure { error ->
+                SafeDiagnostics.warn(TAG, "Subscription info refresh failed: ${SafeDiagnostics.failureCategory(error)}")
+            }.getOrNull()
 
-            // Plan derivation order:
-            //   1. Inactive subscription => EXPIRED, regardless of cache.
-            //   2. Panel data with a non-trivial squad (ADMIN / PAID) wins.
-            //   3. MONTH-strategy traffic limit is the canonical "paid"
-            //      signal in the subscription payload — trust it even if
-            //      the panel response arrived without a squad list.
-            //   4. A complete panel-user response is authoritative even
-            //      when it says FREE_TRIAL.
-            //   5. Without a panel-user response, never silently downgrade
-            //      an already-PAID/ADMIN cached plan to FREE_TRIAL. A
-            //      transient account endpoint failure otherwise flips the
-            //      badge to "Бесплатный" after an app restart or language
-            //      change while the paid traffic limits remain visible.
-            //   6. Recover clients that an older build already downgraded:
-            //      an authenticated active subscription with a limit above
-            //      the anonymous trial allowance is paid even when the
-            //      account endpoint is temporarily unavailable.
-            val panelPlan = panelUser?.let(::planForPanelUser)
-            val plan = when {
-                !isActive -> "EXPIRED"
-                panelPlan != null && panelPlan != "FREE_TRIAL" -> panelPlan
-                sub.trafficLimitStrategy == "MONTH" -> "PAID"
-                panelPlan != null -> panelPlan
-                cachedPlan == "PAID" || cachedPlan == "ADMIN" -> cachedPlan
-                session.authState == "AUTHENTICATED" && hasPaidTrafficLimit -> "PAID"
-                else -> "FREE_TRIAL"
-            }
-            // Parse expiry date
-            val expiresAtMillis = try {
-                val expiresStr = sub.expiresAt
-                if (expiresStr != null) {
-                    val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
-                        timeZone = TimeZone.getTimeZone("UTC")
+            val effectiveUrl = panelUser?.subscriptionUrl
+                ?: subInfo?.subscriptionUrl
+                ?: session.subscriptionUrl
+            val intervalMs = if (!effectiveUrl.isNullOrBlank()) {
+                runCatching {
+                    sessionStore.update { it.copy(subscriptionUrl = effectiveUrl) }
+                    val pingResult = subscriptionPinger.ping(effectiveUrl)
+                    if (pingResult != null) {
+                        prefsDataStore.setSubscriptionUsageBlocked(shortUuid, pingResult.isUsageBlocked)
+                        prefsDataStore.setUpdateRequired(pingResult.isUpdateRequired)
                     }
-                    val clean = expiresStr.replace(Regex("[.+Z].*"), "")
-                    sdf.parse(clean)?.time
-                } else null
-            } catch (_: Exception) {
+                    pingResult?.intervalMs
+                }.onFailure { error ->
+                    SafeDiagnostics.warn(TAG, "Subscription ping failed: ${SafeDiagnostics.failureCategory(error)}")
+                }.getOrNull()
+            } else {
                 null
             }
+            persistSyncState(intervalMs)
 
-            sessionStore.update { it.copy(userPlan = plan, planExpiresAt = expiresAtMillis) }
-
-            // Sync traffic limits from panel (0 = unlimited)
-            usageRepository.updateLimits(trafficLimitBytes, 0)
-
-            if (overwriteUsage) {
-                val keepDeviceScopedUsage = session.authState != "AUTHENTICATED" || plan == "FREE_TRIAL"
+            val sub = subInfo?.user
+            if (overwriteUsage && sub != null) {
+                val keepDeviceScopedUsage = session.authState != "AUTHENTICATED" || session.userPlan == "FREE_TRIAL"
                 val subscriptionTrafficUsedBytes = sub.trafficUsedBytes.toLongOrNull() ?: 0
                 val trafficUsedBytes = if (keepDeviceScopedUsage) {
-                    // Trial traffic is device-scoped: anonymous bytes must
-                    // survive auth/logout cycles, otherwise the same device
-                    // can make a fresh-looking trial by changing identity.
                     try {
                         val resp = botApi.getDeviceTraffic()
                         maxOf(resp.data?.anonTrafficBytes ?: 0, subscriptionTrafficUsedBytes)
@@ -675,6 +833,7 @@ class AuthRepository @Inject constructor(
                 shortUuid = null,
                 panelUserUuid = null,
                 userPlan = "FREE_TRIAL",
+                planDisplayName = null,
                 email = null,
             )
         }

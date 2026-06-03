@@ -39,7 +39,7 @@ object DatabaseModule {
             "tobevpn.db",
         )
             .openHelperFactory(SupportOpenHelperFactory(passphrase))
-            .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
+            .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
             .fallbackToDestructiveMigration(dropAllTables = false)
             // TRUNCATE journal (no WAL) — committed writes land in the
             // main .db file synchronously, so a process kill / force-stop
@@ -84,6 +84,15 @@ object DatabaseModule {
     private val MIGRATION_10_11 = object : Migration(10, 11) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE session ADD COLUMN subscriptionUrl TEXT")
+        }
+    }
+
+    // v11 -> v12: cache the human-readable current tariff name returned by
+    // the backend current-plan endpoint. The enum userPlan remains the coarse
+    // behaviour flag (FREE_TRIAL / PAID / ADMIN / EXPIRED).
+    private val MIGRATION_11_12 = object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE session ADD COLUMN planDisplayName TEXT")
         }
     }
 

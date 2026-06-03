@@ -6,6 +6,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.os.Environment
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
@@ -34,8 +35,10 @@ class UpdateDownloader @Inject constructor(
 
     private val downloadManager: DownloadManager =
         context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     fun start(url: String, fileName: String): Long {
+        cleanupStaleDownloads(removeRecent = true)
         // Ensure the target dir exists; getExternalFilesDir returns null on
         // emulators with no shared storage configured, in which case we fall
         // back to the app's private files dir (still installer-readable via
@@ -56,11 +59,34 @@ class UpdateDownloader @Inject constructor(
             )
         }
 
-        return downloadManager.enqueue(request)
+        return downloadManager.enqueue(request).also(::track)
     }
 
     fun cancel(downloadId: Long) {
+        cleanupDownload(downloadId)
+    }
+
+    /**
+     * Removes APKs left by an older update attempt. A successful APK has to
+     * remain available while Android's package installer is open, so startup
+     * cleanup only removes old files. A replacement download clears them all.
+     */
+    fun cleanupStaleDownloads(removeRecent: Boolean = false) {
+        val ids = prefs.getStringSet(KEY_DOWNLOAD_IDS, emptySet())
+            .orEmpty()
+            .mapNotNull(String::toLongOrNull)
+            .filter { removeRecent || isStale(it) }
+        if (ids.isNotEmpty()) {
+            downloadManager.remove(*ids.toLongArray())
+            ids.forEach(::forget)
+        }
+        cleanupUpdateDirectories(removeRecent)
+    }
+
+    private fun cleanupDownload(downloadId: Long) {
         downloadManager.remove(downloadId)
+        forget(downloadId)
+        cleanupUpdateDirectories(removeRecent = true)
     }
 
     /**
@@ -71,11 +97,16 @@ class UpdateDownloader @Inject constructor(
         while (true) {
             val snapshot = querySnapshot(downloadId) ?: run {
                 emit(DownloadProgress.Failed("Download record disappeared"))
+                cleanupDownload(downloadId)
                 return@flow
             }
             emit(snapshot)
             when (snapshot) {
-                is DownloadProgress.Done, is DownloadProgress.Failed -> return@flow
+                is DownloadProgress.Done -> return@flow
+                is DownloadProgress.Failed -> {
+                    cleanupDownload(downloadId)
+                    return@flow
+                }
                 else -> Unit
             }
             delay(500)
@@ -118,8 +149,49 @@ class UpdateDownloader @Inject constructor(
         }
     }
 
+    private fun track(downloadId: Long) {
+        val ids = prefs.getStringSet(KEY_DOWNLOAD_IDS, emptySet()).orEmpty().toMutableSet()
+        ids += downloadId.toString()
+        prefs.edit().putStringSet(KEY_DOWNLOAD_IDS, ids).apply()
+    }
+
+    private fun forget(downloadId: Long) {
+        val ids = prefs.getStringSet(KEY_DOWNLOAD_IDS, emptySet()).orEmpty().toMutableSet()
+        ids -= downloadId.toString()
+        if (ids.isEmpty()) {
+            prefs.edit().remove(KEY_DOWNLOAD_IDS).apply()
+        } else {
+            prefs.edit().putStringSet(KEY_DOWNLOAD_IDS, ids).apply()
+        }
+    }
+
+    private fun isStale(downloadId: Long): Boolean {
+        val cursor = downloadManager.query(DownloadManager.Query().setFilterById(downloadId))
+            ?: return true
+        cursor.use {
+            if (!it.moveToFirst()) return true
+            val modifiedIdx = it.getColumnIndex(DownloadManager.COLUMN_LAST_MODIFIED_TIMESTAMP)
+            val modifiedAt = if (modifiedIdx >= 0) it.getLong(modifiedIdx) else 0L
+            return modifiedAt <= 0L || System.currentTimeMillis() - modifiedAt >= STALE_DOWNLOAD_MS
+        }
+    }
+
+    private fun cleanupUpdateDirectories(removeRecent: Boolean) {
+        listOfNotNull(
+            context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS),
+            File(context.filesDir, "updates"),
+        ).forEach { directory ->
+            directory.listFiles()
+                ?.filter { removeRecent || System.currentTimeMillis() - it.lastModified() >= STALE_DOWNLOAD_MS }
+                ?.forEach { it.deleteRecursively() }
+        }
+    }
+
     private companion object {
         const val APK_MIME = "application/vnd.android.package-archive"
+        const val PREFS_NAME = "tobevpn_update_downloads"
+        const val KEY_DOWNLOAD_IDS = "download_ids"
+        const val STALE_DOWNLOAD_MS = 24 * 60 * 60 * 1000L
     }
 }
 

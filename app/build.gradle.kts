@@ -16,6 +16,9 @@ val localProperties = Properties().apply {
 val releaseBuildRequested = gradle.startParameter.taskNames.any {
     it.contains("release", ignoreCase = true)
 }
+val versionCodeOverride = providers.gradleProperty("tobevpn.versionCodeOverride")
+    .orNull
+    ?.toIntOrNull()
 
 fun requireConfiguredReleaseFallback(name: String, value: String) {
     val normalized = value.trim()
@@ -44,7 +47,7 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = 29
+        versionCode = versionCodeOverride ?: 29
         versionName = "1.0.28"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -229,6 +232,7 @@ dependencies {
 
     // ML Kit Barcode Scanner (for linking TV via QR)
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    implementation(libs.zxing.core)
 
     // SQLCipher
     implementation(libs.sqlcipher)

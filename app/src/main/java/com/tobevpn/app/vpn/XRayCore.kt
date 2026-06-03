@@ -79,17 +79,22 @@ object XRayCore {
 
     private fun copyAssetsIfNeeded(context: Context): String {
         val targetDir = context.filesDir.absolutePath
-        val assets = listOf("geoip.dat", "geosite.dat")
+        val versionFile = File(targetDir, "assets_version")
+        val currentVersion = try {
+            context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toString()
+        } catch (_: Exception) { "0" }
+        val needsCopy = !versionFile.exists() || versionFile.readText().trim() != currentVersion
 
-        for (asset in assets) {
-            val targetFile = File(targetDir, asset)
-            if (!targetFile.exists()) {
+        if (needsCopy) {
+            val assets = listOf("geoip.dat", "geosite.dat")
+            for (asset in assets) {
                 context.assets.open(asset).use { input ->
-                    FileOutputStream(targetFile).use { output ->
+                    FileOutputStream(File(targetDir, asset)).use { output ->
                         input.copyTo(output)
                     }
                 }
             }
+            versionFile.writeText(currentVersion)
         }
         return targetDir
     }

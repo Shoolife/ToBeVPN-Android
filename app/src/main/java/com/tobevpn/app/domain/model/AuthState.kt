@@ -6,6 +6,7 @@ sealed interface AuthState {
         val telegramId: Long,
         val plan: UserPlan,
         val planExpiresAt: Long? = null,
+        val planDisplayName: String? = null,
     ) : AuthState
 }
 

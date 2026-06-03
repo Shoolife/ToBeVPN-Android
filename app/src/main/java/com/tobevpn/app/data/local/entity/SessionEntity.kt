@@ -11,6 +11,7 @@ data class SessionEntity(
     val telegramId: Long? = null,
     val pendingAuthToken: String? = null,
     val userPlan: String = "FREE_TRIAL",
+    val planDisplayName: String? = null,
     val planExpiresAt: Long? = null,
     val accessToken: String? = null,
     val refreshToken: String? = null,

@@ -12,6 +12,9 @@ object ServerListRoute
 object AuthRoute
 
 @Serializable
+object DevicePairingAuthRoute
+
+@Serializable
 object SettingsRoute
 
 @Serializable

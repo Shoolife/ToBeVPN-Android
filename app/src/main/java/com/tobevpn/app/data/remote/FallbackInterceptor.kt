@@ -23,9 +23,11 @@ import javax.net.ssl.SSLHandshakeException
  * It receives the original API target through the expected query parameter and
  * preserves method/body semantics.
  *
- * A non-2xx HTTP response from the primary is **not** a fallback trigger —
- * that's the upstream telling us something genuine (auth failed, validation
- * error, …). Only IOExceptions / abrupt socket failures are.
+ * Most non-2xx HTTP responses from the primary are not fallback triggers —
+ * they're the upstream telling us something genuine (validation error, …).
+ * A 403 is the exception: allow one fallback attempt because restricted
+ * networks can reject the primary route with an HTTP response instead of a
+ * DNS/TCP error. The fallback response remains authoritative.
  *
  * The interceptor is a no-op when [BuildConfig.FALLBACK_BOT_DOMAIN] is
  * empty (no operator-configured fallback) — keeps debug builds working
@@ -41,7 +43,18 @@ class FallbackInterceptor : Interceptor {
         }
 
         return try {
-            chain.proceed(original)
+            val primaryResponse = chain.proceed(original)
+            if (primaryResponse.code != FALLBACK_HTTP_STATUS ||
+                isFallbackUrl(original.url, fallbackProxyUrl)
+            ) {
+                primaryResponse
+            } else {
+                val fallbackRequest = buildFallbackRequest(original, fallbackProxyUrl)
+                    ?: return primaryResponse
+                primaryResponse.close()
+                SafeDiagnostics.warn(TAG, "Primary API route rejected request; retrying via fallback")
+                chain.proceed(fallbackRequest)
+            }
         } catch (primaryError: IOException) {
             if (!isFallbackEligible(primaryError)) throw primaryError
             val fallbackRequest = buildFallbackRequest(original, fallbackProxyUrl)
@@ -90,21 +103,32 @@ class FallbackInterceptor : Interceptor {
     }
 
     private fun buildFallbackRequest(original: Request, fallbackProxyUrl: String): Request? {
-        val proxyUrl = fallbackProxyUrl
-            .trim()
-            .let { value ->
-                when {
-                    value.startsWith("https://") || value.startsWith("http://") -> value
-                    else -> "https://$value"
-                }
-            }
-            .toHttpUrlOrNull()
+        val proxyUrl = normalizedFallbackUrl(fallbackProxyUrl)
             ?: return null
 
         val rebuiltUrl = proxyUrl.newBuilder()
             .setQueryParameter("u", original.url.toProxyTarget())
             .build()
         return original.newBuilder().url(rebuiltUrl).build()
+    }
+
+    private fun isFallbackUrl(url: HttpUrl, fallbackProxyUrl: String): Boolean {
+        val fallbackUrl = normalizedFallbackUrl(fallbackProxyUrl) ?: return false
+        return url.host == fallbackUrl.host &&
+            url.port == fallbackUrl.port &&
+            url.encodedPath == fallbackUrl.encodedPath
+    }
+
+    private fun normalizedFallbackUrl(value: String): HttpUrl? {
+        return value
+            .trim()
+            .let {
+                when {
+                    it.startsWith("https://") || it.startsWith("http://") -> it
+                    else -> "https://$it"
+                }
+            }
+            .toHttpUrlOrNull()
     }
 
     private fun HttpUrl.toProxyTarget(): String {
@@ -130,5 +154,6 @@ class FallbackInterceptor : Interceptor {
 
     private companion object {
         const val TAG = "FallbackInterceptor"
+        const val FALLBACK_HTTP_STATUS = 403
     }
 }

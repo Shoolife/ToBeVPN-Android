@@ -17,6 +17,7 @@ import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ConnectionState
+import com.tobevpn.app.util.DeepLinkBus
 import com.tobevpn.app.util.LocaleManager
 import com.tobevpn.app.vpn.VpnConnectionManager
 import com.tobevpn.app.vpn.XRayCore
@@ -40,6 +41,7 @@ class SettingsViewModel @Inject constructor(
     private val botApi: BotApi,
     private val prefsDataStore: PrefsDataStore,
     private val sessionDao: SessionDao,
+    deepLinkBus: DeepLinkBus,
     appFilterRepository: AppFilterRepository,
 ) : ViewModel() {
 
@@ -84,6 +86,11 @@ class SettingsViewModel @Inject constructor(
                 } else {
                     _linkedDevicesState.value = LinkedDevicesUiState()
                 }
+            }
+        }
+        viewModelScope.launch {
+            deepLinkBus.devicePairingCodes.collectLatest { code ->
+                requestTvPairConfirmation(code)
             }
         }
     }
@@ -205,14 +212,30 @@ class SettingsViewModel @Inject constructor(
         _linkedDevicesState.value = _linkedDevicesState.value.copy(errorMessage = null)
     }
 
-    /** Confirms a legacy pairing code against the backend. */
-    fun confirmTvPairing(code: String) {
-        val current = authState.value
-        if (current !is AuthState.Authenticated) {
-            _tvPairResult.value = TvPairResult.Error(context.getString(R.string.error_auth_required))
+    fun requestTvPairConfirmation(code: String) {
+        val normalizedCode = code.trim()
+        if (normalizedCode.isBlank()) {
+            _tvPairResult.value = TvPairResult.Error(context.getString(R.string.devices_unsupported_qr))
             return
         }
         viewModelScope.launch {
+            val current = authRepository.getAuthStateSnapshot()
+            _tvPairResult.value = if (current is AuthState.Authenticated) {
+                TvPairResult.PendingConfirmation(normalizedCode)
+            } else {
+                TvPairResult.Error(context.getString(R.string.error_auth_required))
+            }
+        }
+    }
+
+    /** Confirms a pairing code from the in-app scanner, manual input, or a tobevpn://pair deep link. */
+    fun confirmTvPairing(code: String) {
+        viewModelScope.launch {
+            val current = authRepository.getAuthStateSnapshot()
+            if (current !is AuthState.Authenticated) {
+                _tvPairResult.value = TvPairResult.Error(context.getString(R.string.error_auth_required))
+                return@launch
+            }
             _tvPairResult.value = TvPairResult.Loading
             _tvPairResult.value = try {
                 val response = botApi.confirmTvPairing(
@@ -255,6 +278,7 @@ sealed interface EmailSaveResult {
 }
 
 sealed interface TvPairResult {
+    data class PendingConfirmation(val code: String) : TvPairResult
     data object Loading : TvPairResult
     data object Success : TvPairResult
     data class Error(val message: String) : TvPairResult

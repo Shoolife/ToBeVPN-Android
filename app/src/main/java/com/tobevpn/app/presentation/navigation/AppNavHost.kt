@@ -45,6 +45,7 @@ fun AppNavHost(
             when (destination) {
                 DeepLinkDestination.AUTH -> navController.navigateSingleTop(AuthRoute)
                 DeepLinkDestination.MAIN -> navController.navigateSingleTop(MainRoute)
+                DeepLinkDestination.SETTINGS -> navController.navigateSingleTop(SettingsRoute)
             }
         }
     }
@@ -83,6 +84,12 @@ fun AppNavHost(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
             )
         }
+        composable<DevicePairingAuthRoute> {
+            AuthScreen(
+                onBack = { navController.popBackStackOrRecover(startDestination) },
+                startWithDevicePairing = true,
+            )
+        }
         composable<StatsRoute> {
             StatsScreen(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
@@ -97,6 +104,7 @@ fun AppNavHost(
             SettingsScreen(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
                 onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
+                onNavigateToDevicePairingAuth = { navController.navigateSingleTop(DevicePairingAuthRoute) },
                 onNavigateToAppFilter = { navController.navigateSingleTop(AppFilterRoute) },
             )
         }

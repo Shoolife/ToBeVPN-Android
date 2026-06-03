@@ -85,13 +85,15 @@
     <!-- Plans -->
     <string name="plan_admin">Admin</string>
     <string name="plan_standard">Standard</string>
+    <string name="plan_unknown_name">XXX</string>
     <string name="plan_expired">Expired</string>
     <string name="plan_free">Free</string>
     <string name="plan_unlimited">Unlimited</string>
     <string name="plan_until">until %1$s</string>
     <string name="plan_renew">Renew subscription</string>
+    <string name="plan_active">Plan active</string>
     <string name="plan_active_until">Active until %1$s</string>
-    <string name="plan_quota_month">—</string>
+    <string name="plan_quota_month">XXX GB / month</string>
     <string name="plan_renew_full">Renew subscription</string>
     <string name="plan_unlimited_access">Unlimited access</string>
     <string name="plan_limited_traffic">Limited traffic</string>
@@ -99,6 +101,7 @@
     <string name="unit_gb">GB</string>
     <string name="per_month_short">per month</string>
     <string name="devices_label">devices</string>
+    <string name="plan_unknown_device_count">XX</string>
     <string name="plan_traffic_month_fmt">%1$d GB / month</string>
     <string name="plan_devices_fmt">up to %1$d devices</string>
     <string name="plan_devices_unknown">up to XX devices</string>
@@ -109,9 +112,10 @@
     <string name="payment_success_title">Subscription activated</string>
     <string name="payment_success_description">Payment succeeded. Your plan has been updated.</string>
     <string name="payment_notification_channel">Subscription payments</string>
-    <string name="login_via_telegram">Sign in via Telegram</string>
+    <string name="login_via_telegram">Sign in to your account</string>
     <string name="login_required_for_purchase">You need to sign in before purchasing a subscription</string>
     <string name="buy_plan">Buy "%1$s" for %2$s</string>
+    <string name="renew_plan">Renew "%1$s" for %2$s</string>
     <string name="price_rub">%1$s\u20BD</string>
     <string name="price_usd">$%1$s</string>
     <string name="plan_day">1 day</string>
@@ -121,10 +125,19 @@
     <string name="plan_year">1 year</string>
 
     <!-- Auth screen -->
+    <string name="auth_title">Sign in</string>
     <string name="auth_telegram_title">Sign in via Telegram</string>
     <string name="auth_telegram_description">Sign in through Telegram to manage your subscription.</string>
     <string name="auth_open_telegram">Open Telegram</string>
+    <string name="auth_open_device_pairing">Sign in through another device</string>
     <string name="auth_opening_telegram">Opening Telegram…</string>
+    <string name="auth_pairing_loading">Preparing sign-in code…</string>
+    <string name="auth_device_pairing_title">Sign in through another device</string>
+    <string name="auth_device_pairing_description">To use another account, the owner must confirm this QR or code on their phone in Settings, under Devices.</string>
+    <string name="auth_pairing_code_label">Sign-in code</string>
+    <string name="auth_copy_pairing_code">Copy code</string>
+    <string name="auth_pairing_code_copied">Code copied</string>
+    <string name="auth_pairing_waiting">Waiting for confirmation on an authorized device…</string>
     <string name="auth_waiting">Waiting for authorization…</string>
     <string name="auth_press_start">Confirm sign-in in Telegram, then come back here.</string>
     <string name="auth_success">Authorization successful!</string>
@@ -168,6 +181,9 @@
     <string name="link_tv_success_title">Device linked</string>
     <string name="link_tv_success_text">The device is now signed in to your account.</string>
     <string name="link_tv_error_title">Could not link device</string>
+    <string name="link_tv_confirm_title">Connect this device?</string>
+    <string name="link_tv_confirm_text">The new device will get access to this account. Confirm only your own devices or devices owned by people you trust.</string>
+    <string name="link_tv_confirm_action">Connect</string>
 
     <!-- Stats -->
     <string name="stats_title">Statistics</string>
@@ -207,10 +223,15 @@
     <!-- Devices -->
     <string name="devices_title">Devices</string>
     <string name="devices_manage_title">Linked devices</string>
-    <string name="devices_manage_hint">Open your device list and scan a QR code to sign in on a new device. Telegram links open automatically.</string>
+    <string name="devices_manage_hint">Open your device list to scan a QR code or enter a code for sign-in on a new device. ToBeVPN codes are confirmed in the app; Telegram links open automatically.</string>
     <string name="devices_sign_in_hint">Sign in to manage devices connected to this account.</string>
     <string name="devices_count">%1$d of %2$d devices connected</string>
+    <string name="devices_count_unlimited">%1$d devices connected · unlimited</string>
     <string name="devices_scan_qr">Scan QR</string>
+    <string name="devices_enter_code">Enter code</string>
+    <string name="devices_enter_code_hint">Enter the code shown on the new device.</string>
+    <string name="devices_pairing_code_label">Connection code</string>
+    <string name="devices_pairing_code_required">Enter a connection code</string>
     <string name="devices_refresh">Refresh</string>
     <string name="devices_loading">Loading devices…</string>
     <string name="devices_limit_reached">You have reached the device limit. Disconnect one device before linking a new one.</string>

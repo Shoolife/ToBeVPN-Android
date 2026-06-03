@@ -10,6 +10,7 @@ import javax.inject.Singleton
 enum class DeepLinkDestination {
     AUTH,
     MAIN,
+    SETTINGS,
 }
 
 /**
@@ -26,10 +27,12 @@ enum class DeepLinkDestination {
 class DeepLinkBus @Inject constructor() {
     private val authChannel = Channel<Uri>(capacity = Channel.BUFFERED)
     private val paymentChannel = Channel<Uri>(capacity = Channel.BUFFERED)
+    private val devicePairingChannel = Channel<String>(capacity = Channel.BUFFERED)
     private val navigationChannel = Channel<DeepLinkDestination>(capacity = Channel.BUFFERED)
 
     val authCallbacks: Flow<Uri> = authChannel.receiveAsFlow()
     val paymentCallbacks: Flow<Uri> = paymentChannel.receiveAsFlow()
+    val devicePairingCodes: Flow<String> = devicePairingChannel.receiveAsFlow()
     val navigationRequests: Flow<DeepLinkDestination> = navigationChannel.receiveAsFlow()
 
     fun post(uri: Uri) {
@@ -44,6 +47,12 @@ class DeepLinkBus @Inject constructor() {
                 navigationChannel.trySend(DeepLinkDestination.MAIN)
             }
             OPEN_HOST -> navigationChannel.trySend(DeepLinkDestination.MAIN)
+            PAIR_HOST -> {
+                parsePairingCode(uri)?.let { code ->
+                    devicePairingChannel.trySend(code)
+                    navigationChannel.trySend(DeepLinkDestination.SETTINGS)
+                }
+            }
         }
     }
 
@@ -51,7 +60,8 @@ class DeepLinkBus @Inject constructor() {
         return uri.scheme == SCHEME &&
             (uri.host == AUTH_CALLBACK_HOST ||
                 uri.host == PAYMENT_CALLBACK_HOST ||
-                uri.host == OPEN_HOST)
+                uri.host == OPEN_HOST ||
+                uri.host == PAIR_HOST)
     }
 
     companion object {
@@ -59,5 +69,21 @@ class DeepLinkBus @Inject constructor() {
         const val AUTH_CALLBACK_HOST = "auth_callback"
         const val PAYMENT_CALLBACK_HOST = "payment_callback"
         const val OPEN_HOST = "open"
+        const val PAIR_HOST = "pair"
+        const val PAIR_CODE_QUERY = "code"
+
+        fun createPairingUri(code: String): String = Uri.Builder()
+            .scheme(SCHEME)
+            .authority(PAIR_HOST)
+            .appendQueryParameter(PAIR_CODE_QUERY, code)
+            .build()
+            .toString()
+
+        fun parsePairingCode(uri: Uri): String? {
+            if (uri.scheme != SCHEME || uri.host != PAIR_HOST) return null
+            return uri.getQueryParameter(PAIR_CODE_QUERY)
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+        }
     }
 }

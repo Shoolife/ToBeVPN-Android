@@ -1,6 +1,7 @@
 package com.tobevpn.app.presentation.settings
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -85,6 +86,7 @@ import com.tobevpn.app.util.TelegramLinks
 fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToAuth: () -> Unit,
+    onNavigateToDevicePairingAuth: () -> Unit,
     onNavigateToAppFilter: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
@@ -97,8 +99,10 @@ fun SettingsScreen(
     val context = LocalContext.current
     var pendingLanguage by remember { mutableStateOf<String?>(null) }
     var showDevicesSheet by remember { mutableStateOf(false) }
+    var showPairingCodeInput by remember { mutableStateOf(false) }
 
-    val canLinkMoreDevices = linkedDevicesState.devices.size < linkedDevicesState.maxDevices
+    val canLinkMoreDevices = linkedDevicesState.maxDevices == 0 ||
+        linkedDevicesState.devices.size < linkedDevicesState.maxDevices
 
     val startDeviceQrScan: () -> Unit = startPairing@{
         if (!canLinkMoreDevices) {
@@ -123,7 +127,7 @@ fun SettingsScreen(
                         }
 
                         is DeviceQrScanAction.LegacyPairingCode -> {
-                            viewModel.confirmTvPairing(action.code)
+                            viewModel.requestTvPairConfirmation(action.code)
                         }
 
                         DeviceQrScanAction.Unsupported -> {
@@ -179,13 +183,14 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(12.dp))
                     when (authState) {
                         is AuthState.Anonymous -> {
+                            val isDark = androidx.compose.foundation.isSystemInDarkTheme()
                             Button(
                                 onClick = onNavigateToAuth,
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(14.dp),
                                 // Same dark-grey CTA family as "Купить" /
                                 // "Сканировать QR" / speed-test "Запустить".
-                                colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                                colors = if (isDark) {
                                     ButtonDefaults.buttonColors()
                                 } else {
                                     ButtonDefaults.buttonColors(
@@ -199,23 +204,48 @@ fun SettingsScreen(
                                     fontWeight = FontWeight.Medium,
                                 )
                             }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedButton(
+                                onClick = onNavigateToDevicePairingAuth,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = if (isDark) {
+                                    ButtonDefaults.outlinedButtonColors()
+                                } else {
+                                    ButtonDefaults.outlinedButtonColors(
+                                        contentColor = Color.Black,
+                                        disabledContentColor = Color.Black.copy(alpha = 0.38f),
+                                    )
+                                },
+                                border = if (isDark) {
+                                    ButtonDefaults.outlinedButtonBorder
+                                } else {
+                                    BorderStroke(1.dp, Color(0xFFD6D6D6))
+                                },
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.auth_open_device_pairing),
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
                         }
 
                         is AuthState.Authenticated -> {
                             val auth = authState as AuthState.Authenticated
                             InfoRow(stringResource(R.string.telegram_id), "${auth.telegramId}")
 
+                            val serverPlanName = auth.planDisplayName?.takeIf {
+                                it.isNotBlank() && auth.plan != UserPlan.EXPIRED
+                            }
                             val (planLabel, planColor) = when (auth.plan) {
-                                UserPlan.ADMIN -> stringResource(R.string.plan_admin) to VpnGreen
-                                UserPlan.PAID -> stringResource(R.string.plan_standard) to VpnGreen
+                                UserPlan.ADMIN -> (serverPlanName ?: stringResource(R.string.plan_unknown_name)) to VpnGreen
+                                UserPlan.PAID -> (serverPlanName ?: stringResource(R.string.plan_unknown_name)) to VpnGreen
                                 UserPlan.EXPIRED -> stringResource(R.string.plan_expired) to VpnRed
-                                UserPlan.FREE_TRIAL -> stringResource(R.string.plan_free) to VpnOrange
+                                UserPlan.FREE_TRIAL -> (serverPlanName ?: stringResource(R.string.plan_free)) to VpnOrange
                             }
                             InfoRow(stringResource(R.string.plan), planLabel, planColor)
 
-                            if (auth.plan == UserPlan.ADMIN) {
-                                InfoRow(stringResource(R.string.traffic), stringResource(R.string.plan_unlimited))
-                            } else if (auth.plan == UserPlan.PAID && auth.planExpiresAt != null) {
+                            if ((auth.plan == UserPlan.ADMIN || auth.plan == UserPlan.PAID) && auth.planExpiresAt != null) {
                                 InfoRow(stringResource(R.string.expires), formatDate(auth.planExpiresAt))
                             }
                             if (auth.plan == UserPlan.EXPIRED) {
@@ -498,6 +528,7 @@ fun SettingsScreen(
             onDismiss = { showDevicesSheet = false },
             onRefresh = { viewModel.refreshLinkedDevices() },
             onScanQr = startDeviceQrScan,
+            onEnterCode = { showPairingCodeInput = true },
             onDisconnect = { viewModel.disconnectDevice(it) },
             onClearError = { viewModel.clearLinkedDevicesError() },
         )
@@ -505,6 +536,52 @@ fun SettingsScreen(
 
     when (val result = tvPairResult) {
         null -> {}
+        is TvPairResult.PendingConfirmation -> {
+            val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+            AlertDialog(
+                onDismissRequest = { viewModel.clearTvPairResult() },
+                title = { Text(stringResource(R.string.link_tv_confirm_title)) },
+                text = {
+                    Column {
+                        Text(stringResource(R.string.link_tv_confirm_text))
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = result.code,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { viewModel.confirmTvPairing(result.code) },
+                        colors = if (isDark) {
+                            ButtonDefaults.buttonColors()
+                        } else {
+                            ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF3F3F3F),
+                                contentColor = Color.White,
+                            )
+                        },
+                    ) {
+                        Text(stringResource(R.string.link_tv_confirm_action))
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { viewModel.clearTvPairResult() },
+                        colors = if (isDark) {
+                            ButtonDefaults.textButtonColors()
+                        } else {
+                            ButtonDefaults.textButtonColors(contentColor = Color.Black)
+                        },
+                    ) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                },
+            )
+        }
+
         is TvPairResult.Loading -> {
             AlertDialog(
                 onDismissRequest = {},
@@ -546,6 +623,95 @@ fun SettingsScreen(
             )
         }
     }
+
+    if (showPairingCodeInput) {
+        PairingCodeInputDialog(
+            onDismiss = { showPairingCodeInput = false },
+            onSubmit = { code ->
+                showPairingCodeInput = false
+                viewModel.requestTvPairConfirmation(code)
+            },
+        )
+    }
+}
+
+@Composable
+private fun PairingCodeInputDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (String) -> Unit,
+) {
+    var code by remember { mutableStateOf("") }
+    val normalizedCode = code.trim()
+    var showCodeError by remember { mutableStateOf(false) }
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.devices_enter_code)) },
+        text = {
+            Column {
+                Text(
+                    text = stringResource(R.string.devices_enter_code_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { value ->
+                        showCodeError = false
+                        code = value
+                            .filterNot { it.isWhitespace() }
+                            .take(32)
+                            .uppercase()
+                    },
+                    singleLine = true,
+                    label = { Text(stringResource(R.string.devices_pairing_code_label)) },
+                    isError = showCodeError,
+                    supportingText = if (showCodeError) {
+                        { Text(stringResource(R.string.devices_pairing_code_required)) }
+                    } else {
+                        null
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (normalizedCode.isBlank()) {
+                        showCodeError = true
+                    } else {
+                        onSubmit(normalizedCode)
+                    }
+                },
+                colors = if (isDark) {
+                    ButtonDefaults.buttonColors()
+                } else {
+                    ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF3F3F3F),
+                        contentColor = Color.White,
+                    )
+                },
+            ) {
+                Text(stringResource(R.string.continue_btn))
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                colors = if (isDark) {
+                    ButtonDefaults.textButtonColors()
+                } else {
+                    ButtonDefaults.textButtonColors(contentColor = Color.Black)
+                },
+            ) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -555,13 +721,20 @@ private fun LinkedDevicesBottomSheet(
     onDismiss: () -> Unit,
     onRefresh: () -> Unit,
     onScanQr: () -> Unit,
+    onEnterCode: () -> Unit,
     onDisconnect: (String) -> Unit,
     onClearError: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val currentDevice = state.devices.firstOrNull { it.deviceId == state.currentDeviceId }
     val otherDevices = state.devices.filter { it.deviceId != state.currentDeviceId }
-    val canLinkMoreDevices = state.devices.size < state.maxDevices
+    val canLinkMoreDevices = state.maxDevices == 0 || state.devices.size < state.maxDevices
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val lightOutlinedButtonColors = ButtonDefaults.outlinedButtonColors(
+        contentColor = Color.Black,
+        disabledContentColor = Color.Black.copy(alpha = 0.38f),
+    )
+    val lightOutlinedButtonBorder = BorderStroke(1.dp, Color(0xFFD6D6D6))
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -570,7 +743,7 @@ private fun LinkedDevicesBottomSheet(
         // White sheet on light theme so it reads as a clean modal surface
         // against the off-white app background. Dark theme keeps the M3
         // default surfaceContainerLow.
-        containerColor = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+        containerColor = if (isDark) {
             androidx.compose.material3.BottomSheetDefaults.ContainerColor
         } else {
             Color.White
@@ -590,11 +763,15 @@ private fun LinkedDevicesBottomSheet(
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = stringResource(
-                    R.string.devices_count,
-                    state.devices.size,
-                    state.maxDevices,
-                ),
+                text = if (state.maxDevices == 0) {
+                    stringResource(R.string.devices_count_unlimited, state.devices.size)
+                } else {
+                    stringResource(
+                        R.string.devices_count,
+                        state.devices.size,
+                        state.maxDevices,
+                    )
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -612,7 +789,7 @@ private fun LinkedDevicesBottomSheet(
                     // Same dark-grey CTA as the "Купить" button on the
                     // subscription sheet — both are committed primary
                     // actions on a white surface. Light theme only.
-                    colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                    colors = if (isDark) {
                         ButtonDefaults.buttonColors()
                     } else {
                         ButtonDefaults.buttonColors(
@@ -624,12 +801,32 @@ private fun LinkedDevicesBottomSheet(
                     DeviceActionText(stringResource(R.string.devices_scan_qr))
                 }
                 OutlinedButton(
-                    onClick = onRefresh,
-                    enabled = !state.isLoading,
+                    onClick = onEnterCode,
+                    enabled = !state.isLoading && canLinkMoreDevices,
                     modifier = Modifier.weight(1f),
+                    colors = if (isDark) {
+                        ButtonDefaults.outlinedButtonColors()
+                    } else {
+                        lightOutlinedButtonColors
+                    },
+                    border = if (isDark) ButtonDefaults.outlinedButtonBorder else lightOutlinedButtonBorder,
                 ) {
-                    DeviceActionText(stringResource(R.string.devices_refresh))
+                    DeviceActionText(stringResource(R.string.devices_enter_code))
                 }
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = onRefresh,
+                enabled = !state.isLoading,
+                modifier = Modifier.fillMaxWidth(),
+                colors = if (isDark) {
+                    ButtonDefaults.outlinedButtonColors()
+                } else {
+                    lightOutlinedButtonColors
+                },
+                border = if (isDark) ButtonDefaults.outlinedButtonBorder else lightOutlinedButtonBorder,
+            ) {
+                DeviceActionText(stringResource(R.string.devices_refresh))
             }
 
             if (!canLinkMoreDevices) {

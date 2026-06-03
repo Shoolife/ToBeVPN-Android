@@ -4,6 +4,7 @@ import com.tobevpn.app.data.remote.dto.ApiResponse
 import com.tobevpn.app.data.remote.dto.AuthRequestDto
 import com.tobevpn.app.data.remote.dto.AuthRequestResponseDto
 import com.tobevpn.app.data.remote.dto.AuthStatusDto
+import com.tobevpn.app.data.remote.dto.CurrentPlanDto
 import com.tobevpn.app.data.remote.dto.DeviceTrafficDto
 import com.tobevpn.app.data.remote.dto.DeviceRegisterRequestDto
 import com.tobevpn.app.data.remote.dto.DeviceUnlinkRequestDto
@@ -18,6 +19,9 @@ import com.tobevpn.app.data.remote.dto.PurchasePlansDto
 import com.tobevpn.app.data.remote.dto.RemoteConfigDto
 import com.tobevpn.app.data.remote.dto.SaveEmailRequestDto
 import com.tobevpn.app.data.remote.dto.TvPairConfirmRequestDto
+import com.tobevpn.app.data.remote.dto.TvPairCreateRequestDto
+import com.tobevpn.app.data.remote.dto.TvPairCreateResponseDto
+import com.tobevpn.app.data.remote.dto.TvPairStatusDto
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
@@ -42,6 +46,9 @@ interface BotApi {
     @GET("api/device/traffic")
     suspend fun getDeviceTraffic(): ApiResponse<DeviceTrafficDto>
 
+    @GET("api/subscription/current-plan")
+    suspend fun getCurrentPlan(): ApiResponse<CurrentPlanDto>
+
     @POST("api/device/register")
     suspend fun registerDevice(
         @Body request: DeviceRegisterRequestDto,
@@ -62,6 +69,16 @@ interface BotApi {
     suspend fun confirmTvPairing(
         @Body request: TvPairConfirmRequestDto,
     ): ApiResponse<Unit>
+
+    @POST("api/tv/pair/create")
+    suspend fun createTvPairing(
+        @Body request: TvPairCreateRequestDto = TvPairCreateRequestDto(),
+    ): ApiResponse<TvPairCreateResponseDto>
+
+    @GET("api/tv/pair/status")
+    suspend fun checkTvPairingStatus(
+        @Query("code") code: String,
+    ): ApiResponse<TvPairStatusDto>
 
     // Device user management (business logic stays server-side)
 
