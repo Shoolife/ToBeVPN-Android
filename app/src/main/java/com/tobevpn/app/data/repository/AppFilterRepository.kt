@@ -2,16 +2,21 @@ package com.tobevpn.app.data.repository
 
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.local.dao.AppFilterDao
-import com.tobevpn.app.data.local.entity.AppFilterEntry
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,17 +25,31 @@ class AppFilterRepository @Inject constructor(
     private val dao: AppFilterDao,
     private val prefs: PrefsDataStore,
 ) {
+    private val writeMutex = Mutex()
     // Writes run on this singleton-scoped coroutine, *not* the calling
-    // ViewModel's viewModelScope. Otherwise a fast user (tap a checkbox,
-    // immediately back out of the screen) would have the toggle coroutine
-    // cancelled before dao.insert() ever ran — exactly the data-loss
-    // we hit in v1.0.11 (TBV-FILTER logs showed an empty table on every
-    // cold start despite the user having ticked apps).
+    // ViewModel's viewModelScope. The DataStore value is the source of truth;
+    // Room is kept only as a legacy migration source and best-effort mirror.
     private val writeScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    init {
+        writeScope.launch {
+            writeMutex.withLock { getSelectedPackagesLocked() }
+        }
+    }
+
     fun observeMode(): Flow<AppFilterMode> = prefs.appFilterMode.map { parseMode(it) }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     fun observeSelectedPackages(): Flow<Set<String>> =
-        dao.observePackages().map { it.toSet() }
+        prefs.appFilterPackages
+            .flatMapLatest { stored ->
+                if (stored != null) {
+                    flowOf(stored)
+                } else {
+                    dao.observePackages().map { it.toSet() }
+                }
+            }
+            .distinctUntilChanged()
 
     /**
      * Combined snapshot of the current policy. Used by the ViewModel for the
@@ -47,7 +66,7 @@ class AppFilterRepository @Inject constructor(
      */
     suspend fun getSnapshot(): AppFilterState {
         val mode = parseMode(prefs.getAppFilterMode())
-        val selected = dao.getPackages().toSet()
+        val selected = writeMutex.withLock { getSelectedPackagesLocked() }
         return AppFilterState(mode = mode, selectedPackages = selected)
     }
 
@@ -57,23 +76,50 @@ class AppFilterRepository @Inject constructor(
 
     fun toggle(packageName: String) {
         writeScope.launch {
-            val current = dao.getPackages().toSet()
-            if (packageName in current) dao.delete(packageName)
-            else dao.insert(AppFilterEntry(packageName))
+            writeMutex.withLock {
+                val current = getSelectedPackagesLocked()
+                val updated = if (packageName in current) current - packageName else current + packageName
+                persistSelectedPackagesLocked(updated)
+            }
         }
     }
 
     fun setSelected(packageNames: Collection<String>) {
-        val snapshot = packageNames.toList()
         writeScope.launch {
-            dao.clear()
-            snapshot.forEach { dao.insert(AppFilterEntry(it)) }
+            writeMutex.withLock {
+                persistSelectedPackagesLocked(packageNames)
+            }
         }
     }
 
     fun clearAll() {
-        writeScope.launch { dao.clear() }
+        writeScope.launch {
+            writeMutex.withLock {
+                persistSelectedPackagesLocked(emptySet())
+            }
+        }
     }
+
+    private suspend fun getSelectedPackagesLocked(): Set<String> {
+        val stored = prefs.getAppFilterPackages()
+        if (stored != null) return stored
+
+        val legacy = normalizePackages(dao.getPackages())
+        prefs.setAppFilterPackages(legacy)
+        return legacy
+    }
+
+    private suspend fun persistSelectedPackagesLocked(packageNames: Collection<String>) {
+        val normalized = normalizePackages(packageNames)
+        prefs.setAppFilterPackages(normalized)
+        runCatching { dao.replaceAll(normalized) }
+    }
+
+    private fun normalizePackages(packageNames: Collection<String>): Set<String> =
+        packageNames.asSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
 
     private fun parseMode(raw: String?): AppFilterMode = when (raw) {
         AppFilterMode.WHITELIST.name -> AppFilterMode.WHITELIST

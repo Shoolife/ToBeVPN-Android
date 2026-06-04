@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import javax.inject.Inject
 
 @HiltViewModel
@@ -27,6 +28,7 @@ class ServerListViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val _pings = MutableStateFlow<Map<String, Long>>(emptyMap())
+    private val refreshMutex = Mutex()
 
     val servers: StateFlow<List<Server>> = vpnRepository.observeServers()
         .combine(_pings) { serverList, pingMap ->
@@ -70,25 +72,36 @@ class ServerListViewModel @Inject constructor(
 
     fun refreshServers(force: Boolean = true) {
         viewModelScope.launch {
-            _isLoading.value = true
-            _error.value = null
-            // Anonymous users get a panel user (with 3 GB free trial) on demand.
-            // Without this, opening the server list before MainViewModel has
-            // finished its init leaves shortUuid null and refreshServers fails
-            // with "Нет подписки".
-            authRepository.ensurePanelUser()
-            authRepository.syncSubscription(force = force)
-            val result = vpnRepository.refreshServers()
-            result.onFailure { _error.value = it.message }
-            result.onSuccess { measurePings(it) }
-            _isLoading.value = false
+            if (!refreshMutex.tryLock()) return@launch
+            try {
+                _isLoading.value = true
+                _error.value = null
+                // Anonymous users get a panel user (with 3 GB free trial) on demand.
+                // Without this, opening the server list before MainViewModel has
+                // finished its init leaves shortUuid null and refreshServers fails
+                // with "Нет подписки".
+                authRepository.ensurePanelUser()
+                authRepository.syncSubscription(force = force)
+                val result = vpnRepository.refreshServers()
+                result.onFailure { _error.value = it.message }
+                result.onSuccess { updatePings(it) }
+            } catch (error: Exception) {
+                _error.value = error.message
+            } finally {
+                _isLoading.value = false
+                refreshMutex.unlock()
+            }
         }
     }
 
     private fun measurePings(serverList: List<Server>) {
         viewModelScope.launch {
-            _pings.value = serverQualityRepository.measurePings(serverList, force = true)
+            updatePings(serverList)
         }
+    }
+
+    private suspend fun updatePings(serverList: List<Server>) {
+        _pings.value = serverQualityRepository.measurePings(serverList, force = true)
     }
 
     suspend fun selectAutomaticServer(): Boolean {

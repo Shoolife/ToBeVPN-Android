@@ -65,12 +65,11 @@ class PrefsDataStore @Inject constructor(
         val SERVER_CACHE_OWNER = stringPreferencesKey("server_cache_owner")
         val BLOCKED_SUBSCRIPTION_OWNER = stringPreferencesKey("blocked_subscription_owner")
         val UPDATE_REQUIRED = booleanPreferencesKey("update_required")
-        // Per-app VPN filter mode: "OFF", "WHITELIST" or "BLACKLIST".
-        // The set of selected packages lives in the Room app_filter table —
-        // we keep the mode in Prefs so a destructive DB migration doesn't
-        // accidentally land us in WHITELIST with an empty selection (which
-        // would block every app's traffic).
+        // Per-app VPN filter state. The selected package set is kept here as
+        // the source of truth so it survives DB resets/destructive migrations
+        // during app updates; the Room app_filter table is only a legacy mirror.
         val APP_FILTER_MODE = stringPreferencesKey("app_filter_mode")
+        val APP_FILTER_PACKAGES = stringPreferencesKey("app_filter_packages")
     }
 
     val deviceId: Flow<String?> = context.dataStore.data.map { it[Keys.DEVICE_ID] }
@@ -324,6 +323,9 @@ class PrefsDataStore @Inject constructor(
     }
 
     val appFilterMode: Flow<String?> = context.dataStore.data.map { it[Keys.APP_FILTER_MODE] }
+    val appFilterPackages: Flow<Set<String>?> = context.dataStore.data.map {
+        it[Keys.APP_FILTER_PACKAGES]?.let(::decodeAppFilterPackages)
+    }
 
     suspend fun getAppFilterMode(): String? {
         return context.dataStore.data.first()[Keys.APP_FILTER_MODE]
@@ -332,6 +334,30 @@ class PrefsDataStore @Inject constructor(
     suspend fun setAppFilterMode(mode: String) {
         context.dataStore.edit { it[Keys.APP_FILTER_MODE] = mode }
     }
+
+    suspend fun getAppFilterPackages(): Set<String>? {
+        return context.dataStore.data.first()[Keys.APP_FILTER_PACKAGES]?.let(::decodeAppFilterPackages)
+    }
+
+    suspend fun setAppFilterPackages(packageNames: Collection<String>) {
+        context.dataStore.edit {
+            it[Keys.APP_FILTER_PACKAGES] = encodeAppFilterPackages(packageNames)
+        }
+    }
+
+    private fun encodeAppFilterPackages(packageNames: Collection<String>): String =
+        packageNames.asSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+            .joinToString(separator = "\n")
+
+    private fun decodeAppFilterPackages(raw: String): Set<String> =
+        raw.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
 
     companion object {
         const val DEFAULT_SUB_INTERVAL_MS: Long = 12L * 60L * 60L * 1000L

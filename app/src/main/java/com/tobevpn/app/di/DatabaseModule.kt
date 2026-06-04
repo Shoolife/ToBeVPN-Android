@@ -61,10 +61,10 @@ object DatabaseModule {
         }
     }
 
-    // v9 → v10: per-app VPN filter selection. Stores only the package names
-    // chosen by the user; the mode (off/whitelist/blacklist) lives in
-    // PrefsDataStore so a wipe of the encrypted DB doesn't strand an
-    // empty whitelist that would block all traffic on next connect.
+    // v9 → v10: legacy per-app VPN filter selection table. Newer builds keep
+    // package selection in PrefsDataStore as the update-safe source of truth;
+    // this table remains for migration from older installs and best-effort
+    // local mirroring.
     private val MIGRATION_9_10 = object : Migration(9, 10) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL(

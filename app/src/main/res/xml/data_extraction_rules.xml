@@ -4,7 +4,7 @@
 
     Same intent as backup_rules.xml: only the encrypted Room database is
     excluded. tobevpn_prefs.preferences_pb is *included* so non-sensitive
-    settings (filter mode, language, selected server id, etc.) ride along
+    settings (app filter state, language, selected server id, etc.) ride along
     in cloud backup and device-transfer flows. Secrets (auth tokens,
     subscription URL, email) live inside the encrypted database.
 -->

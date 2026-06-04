@@ -4,7 +4,7 @@
 
     What gets backed up (everything not listed below):
       * tobevpn_prefs.preferences_pb — non-sensitive preferences
-        (filter mode, language, selected server id, anon usage counters,
+        (app filter state, language, selected server id, anon usage counters,
         throttle bookkeeping). After a reinstall these come back
         automatically when the user is signed into the same Google account.
 
