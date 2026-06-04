@@ -51,6 +51,18 @@ data class CurrentPlanLimits(
     val deviceLimit: Int?,
 )
 
+private data class SelectedServerSnapshot(
+    val server: Server?,
+    val selectedId: String?,
+    val selectedKey: String?,
+    val automatic: Boolean,
+) {
+    fun hasSameSelection(other: SelectedServerSnapshot): Boolean =
+        selectedId == other.selectedId &&
+            selectedKey == other.selectedKey &&
+            automatic == other.automatic
+}
+
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val connectionManager: VpnConnectionManager,
@@ -119,8 +131,11 @@ class MainViewModel @Inject constructor(
     // 0 = not measured yet, >0 = successful TCP connect latency, <0 = unreachable.
     private val _serverPing = MutableStateFlow<Long>(0)
 
-    // Show the selected server (from prefs), not just the connected one
-    val currentServer: StateFlow<Server?> = combine(
+    // Show the selected server (from prefs), not just the connected one.
+    // Keep the raw selection fields too: a server can change because the
+    // background subscription refresh rewrote the cache, and that must not be
+    // treated as a user-requested server switch while VPN is already running.
+    private val selectedServerSnapshot: StateFlow<SelectedServerSnapshot> = combine(
         prefsDataStore.selectedServerId,
         prefsDataStore.selectedServerKey,
         prefsDataStore.automaticServerSelection,
@@ -133,8 +148,21 @@ class MainViewModel @Inject constructor(
             selectedKey = selectedKey,
             allowFallback = automatic,
         )
-        server?.copy(ping = ping)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+        SelectedServerSnapshot(
+            server = server?.copy(ping = ping),
+            selectedId = selectedId,
+            selectedKey = selectedKey,
+            automatic = automatic,
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.Eagerly,
+        SelectedServerSnapshot(null, null, null, true),
+    )
+
+    val currentServer: StateFlow<Server?> = selectedServerSnapshot
+        .map { it.server }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val automaticServerSelection: StateFlow<Boolean> = prefsDataStore.automaticServerSelection
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
@@ -211,26 +239,31 @@ class MainViewModel @Inject constructor(
         // If VPN is currently active and the selected server changes,
         // automatically reconnect to the new server.
         viewModelScope.launch {
-            var lastServer: Server? = null
-            currentServer.collect { server ->
+            var lastSnapshot: SelectedServerSnapshot? = null
+            selectedServerSnapshot.collect { snapshot ->
+                val server = snapshot.server
                 if (server != null) {
-                    val previous = lastServer
-                    val vpnConfigChanged = previous == null || !server.hasSameVpnConfig(previous)
-                    lastServer = server
-                    if (!vpnConfigChanged) return@collect
-                    prefsDataStore.setSelectedServer(
-                        id = stableServerId(server),
-                        key = serverSelectionKey(server),
-                    )
-                    _serverPing.value = serverQualityRepository.measurePing(server, force = true)
+                    val previousSnapshot = lastSnapshot
+                    val previousServer = previousSnapshot?.server
+                    val vpnConfigChanged = previousServer == null || !server.hasSameVpnConfig(previousServer)
+                    val selectionChanged = previousSnapshot != null &&
+                        !snapshot.hasSameSelection(previousSnapshot)
+                    lastSnapshot = snapshot
+                    if (vpnConfigChanged || selectionChanged) {
+                        _serverPing.value = serverQualityRepository.measurePing(server, force = true)
+                    }
                     // Auto-reconnect if VPN was running on a different server.
+                    // Only do it for a real selected-server preference change.
+                    // Plain subscription/server-list refreshes can reorder or
+                    // re-resolve the same automatic choice; reconnecting there
+                    // makes navigation to Settings look like VPN off/on.
                     // Skip when the new pick is the panel's "subscription
                     // expired" sentinel — switchServer would call startVpn,
                     // and xray would crash on its all-zeros uuid. Skip on
                     // EXPIRED plan in general so we don't pretend the user
                     // can roam between servers when nothing is going to
                     // tunnel anyway.
-                    if (previous != null && !server.isSentinel && !isExpired()) {
+                    if (selectionChanged && !server.isSentinel && !isExpired()) {
                         val state = connectionState.value
                         val managedServer = connectionManager.currentServer.value
                         if (_connectionPreparation.value) {
@@ -457,8 +490,11 @@ class MainViewModel @Inject constructor(
             // If VPN is currently active, don't let panel overwrite the
             // live local usage counter — it lags behind and causes the UI
             // to jump backwards.
-            val isConnected = connectionState.value is ConnectionState.Connected
-            authRepository.syncSubscription(overwriteUsage = !isConnected)
+            val isActive = connectionState.value is ConnectionState.Connected ||
+                connectionState.value is ConnectionState.Connecting ||
+                _connectionPreparation.value
+            authRepository.syncSubscription(overwriteUsage = !isActive)
+            if (isActive) return@launch
             val servers = vpnRepository.refreshServers().getOrNull().orEmpty()
             ensureAutomaticServerSelected(servers)
         }
