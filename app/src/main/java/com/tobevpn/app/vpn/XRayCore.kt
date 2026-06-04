@@ -7,6 +7,8 @@ import libv2ray.CoreController
 import libv2ray.Libv2ray
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.util.concurrent.atomic.AtomicBoolean
 
 object XRayCore {
@@ -14,13 +16,15 @@ object XRayCore {
     private var controller: CoreController? = null
     private val initialized = AtomicBoolean(false)
 
+    @Synchronized
     fun init(context: Context) {
-        if (!initialized.compareAndSet(false, true)) return
+        if (initialized.get()) return
 
         Seq.setContext(context.applicationContext)
 
         val assetDir = copyAssetsIfNeeded(context)
         Libv2ray.initCoreEnv(assetDir, "")
+        initialized.set(true)
     }
 
     fun createController(callback: CoreCallbackHandler): CoreController {
@@ -80,18 +84,40 @@ object XRayCore {
     private fun copyAssetsIfNeeded(context: Context): String {
         val targetDir = context.filesDir.absolutePath
         val versionFile = File(targetDir, "assets_version")
+        val assets = listOf("geoip.dat", "geosite.dat")
         val currentVersion = try {
             context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode.toString()
         } catch (_: Exception) { "0" }
-        val needsCopy = !versionFile.exists() || versionFile.readText().trim() != currentVersion
+        val installedVersion = runCatching { versionFile.readText().trim() }.getOrNull()
+        val needsCopy = installedVersion != currentVersion ||
+            assets.any { asset ->
+                val file = File(targetDir, asset)
+                !file.isFile || file.length() <= 0L
+            }
 
         if (needsCopy) {
-            val assets = listOf("geoip.dat", "geosite.dat")
             for (asset in assets) {
+                val target = File(targetDir, asset)
+                val temporary = File(targetDir, "$asset.tmp")
                 context.assets.open(asset).use { input ->
-                    FileOutputStream(File(targetDir, asset)).use { output ->
+                    FileOutputStream(temporary).use { output ->
                         input.copyTo(output)
+                        output.fd.sync()
                     }
+                }
+                runCatching {
+                    Files.move(
+                        temporary.toPath(),
+                        target.toPath(),
+                        StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING,
+                    )
+                }.getOrElse {
+                    Files.move(
+                        temporary.toPath(),
+                        target.toPath(),
+                        StandardCopyOption.REPLACE_EXISTING,
+                    )
                 }
             }
             versionFile.writeText(currentVersion)

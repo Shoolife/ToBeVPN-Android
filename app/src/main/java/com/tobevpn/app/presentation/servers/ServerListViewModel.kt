@@ -4,12 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.repository.AuthRepository
+import com.tobevpn.app.data.repository.ServerQualityRepository
 import com.tobevpn.app.data.repository.VpnRepository
 import com.tobevpn.app.domain.model.Server
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,9 +16,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.net.InetSocketAddress
-import java.net.Socket
 import javax.inject.Inject
 
 @HiltViewModel
@@ -28,6 +23,7 @@ class ServerListViewModel @Inject constructor(
     private val vpnRepository: VpnRepository,
     private val authRepository: AuthRepository,
     private val prefsDataStore: PrefsDataStore,
+    private val serverQualityRepository: ServerQualityRepository,
 ) : ViewModel() {
 
     private val _pings = MutableStateFlow<Map<String, Long>>(emptyMap())
@@ -45,6 +41,9 @@ class ServerListViewModel @Inject constructor(
 
     val selectedServerKey: StateFlow<String?> = prefsDataStore.selectedServerKey
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val automaticServerSelection: StateFlow<Boolean> = prefsDataStore.automaticServerSelection
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -88,37 +87,25 @@ class ServerListViewModel @Inject constructor(
 
     private fun measurePings(serverList: List<Server>) {
         viewModelScope.launch {
-            val results = serverList.map { server ->
-                async(Dispatchers.IO) {
-                    server.id to measureTcpPing(server.address, server.port)
-                }
-            }.awaitAll()
-            _pings.value = results.toMap()
+            _pings.value = serverQualityRepository.measurePings(serverList, force = true)
         }
     }
 
-    private suspend fun measureTcpPing(host: String, port: Int): Long {
-        return withContext(Dispatchers.IO) {
-            try {
-                val start = System.currentTimeMillis()
-                Socket().use { socket ->
-                    socket.connect(InetSocketAddress(host, port), 3000)
-                }
-                System.currentTimeMillis() - start
-            } catch (_: Exception) {
-                -1L
-            }
-        }
+    suspend fun selectAutomaticServer(): Boolean {
+        val best = serverQualityRepository.selectBestServer(servers.value, forceProbe = true)
+            ?: return false
+        prefsDataStore.setAutomaticSelectedServer(
+            id = stableServerId(best),
+            key = serverSelectionKey(best),
+        )
+        return true
     }
 
     suspend fun selectServer(server: Server): Boolean {
-        // Refuse to persist the panel's "subscription expired" placeholder.
-        // VpnRepository already filters it out of refreshed lists, but a
-        // stale cached entry from before the upgrade could still surface
-        // it — never let it become the selected server, the auto-reconnect
-        // path would feed it to xray and SIGSEGV the native loop.
-        if (server.isSentinel) return false
-        prefsDataStore.setSelectedServer(
+        // The UI can update between pointer-down and this call. Keep the
+        // persistence layer from accepting an offline or failed-probe entry.
+        if (!server.isSelectable) return false
+        prefsDataStore.setManualSelectedServer(
             id = stableServerId(server),
             key = serverSelectionKey(server),
         )

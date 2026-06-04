@@ -1,5 +1,6 @@
 package com.tobevpn.app.data.remote
 
+import android.os.SystemClock
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.data.device.DeviceFingerprintProvider
 import com.tobevpn.app.util.SafeDiagnostics
@@ -29,8 +30,8 @@ data class SubscriptionPingResult(
 // endpoints don't expose the same device-binding path.
 // We hit the URL (a) before each VPN connect, (b) on subscription refresh.
 //
-// Resiliency: if the subscription host is unreachable (network-level block,
-// partner outage, TLS handshake failure, timeout) and the operator has
+// Resiliency: if the subscription host is unreachable or a restricted network
+// rejects the route with an HTTP response, and the operator has
 // configured FALLBACK_SUBS_DOMAIN, we transparently retry against the
 // fallback — same HWID headers, same effective subscription key. HWID
 // still lands so the user keeps a working subscription record even when
@@ -43,6 +44,14 @@ class SubscriptionPinger @Inject constructor(
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
+    private val primaryProbeClient = client.newBuilder()
+        .connectTimeout(FAST_PRIMARY_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .readTimeout(FAST_PRIMARY_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .callTimeout(FAST_PRIMARY_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        .build()
+
+    @Volatile
+    private var primaryUnavailableUntilMs = 0L
 
     /**
      * Sends an HWID-tagged GET to [subscriptionUrl] and returns the service's
@@ -64,15 +73,42 @@ class SubscriptionPinger @Inject constructor(
             .header("x-device-model", fp.model)
             .header("User-Agent", fp.userAgent)
             .build()
+        val fallbackRequest = buildFallbackRequest(subscriptionUrl, baseRequest)
+
+        if (fallbackRequest != null && SystemClock.elapsedRealtime() < primaryUnavailableUntilMs) {
+            try {
+                client.newCall(fallbackRequest).execute().use {
+                    primaryUnavailableUntilMs = SystemClock.elapsedRealtime() + PRIMARY_FAILURE_COOLDOWN_MS
+                    return@withContext readResult(it)
+                }
+            } catch (fallbackError: IOException) {
+                logFailure("fallback", fallbackError)
+            }
+        }
 
         try {
-            client.newCall(baseRequest).execute().use { return@withContext readResult(it) }
+            primaryProbeClient.newCall(baseRequest).execute().use { response ->
+                if (response.code == FALLBACK_HTTP_STATUS && fallbackRequest != null) {
+                    val primaryResult = readResult(response)
+                    SafeDiagnostics.warn(TAG, "Primary subscription route rejected request; retrying via fallback")
+                    return@withContext try {
+                        client.newCall(fallbackRequest).execute().use {
+                            primaryUnavailableUntilMs = SystemClock.elapsedRealtime() + PRIMARY_FAILURE_COOLDOWN_MS
+                            readResult(it)
+                        }
+                    } catch (fallbackError: IOException) {
+                        logFailure("fallback", fallbackError)
+                        primaryResult
+                    }
+                }
+                primaryUnavailableUntilMs = 0L
+                return@withContext readResult(response)
+            }
         } catch (primaryError: IOException) {
             if (!isFallbackEligible(primaryError)) {
                 logFailure("primary", primaryError)
                 return@withContext null
             }
-            val fallbackRequest = buildFallbackRequest(subscriptionUrl, baseRequest)
             if (fallbackRequest == null) {
                 logFailure("primary", primaryError)
                 return@withContext null
@@ -83,10 +119,18 @@ class SubscriptionPinger @Inject constructor(
                     SafeDiagnostics.failureCategory(primaryError),
             )
             try {
-                client.newCall(fallbackRequest).execute().use { return@withContext readResult(it) }
+                client.newCall(fallbackRequest).execute().use {
+                    primaryUnavailableUntilMs = SystemClock.elapsedRealtime() + PRIMARY_FAILURE_COOLDOWN_MS
+                    return@withContext readResult(it)
+                }
             } catch (fallbackError: IOException) {
                 logFailure("fallback", fallbackError)
-                return@withContext null
+                try {
+                    client.newCall(baseRequest).execute().use { return@withContext readResult(it) }
+                } catch (retryError: IOException) {
+                    logFailure("primary", retryError)
+                    return@withContext null
+                }
             }
         }
     }
@@ -150,6 +194,7 @@ class SubscriptionPinger @Inject constructor(
 
     private companion object {
         const val TAG = "SubscriptionPinger"
+        const val FALLBACK_HTTP_STATUS = 403
         const val BLOCK_HEADER = "is-hack"
         const val UPDATE_REQUIRED_HEADER = "update-required"
         const val BLOCK_VALUE = "yes"
@@ -158,5 +203,7 @@ class SubscriptionPinger @Inject constructor(
         // subscription refreshes for the foreseeable future.
         const val MIN_INTERVAL_HOURS = 1.0
         const val MAX_INTERVAL_HOURS = 24.0 * 7.0
+        const val FAST_PRIMARY_TIMEOUT_MS = 1_200L
+        const val PRIMARY_FAILURE_COOLDOWN_MS = 2L * 60L * 1000L
     }
 }

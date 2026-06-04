@@ -17,7 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -38,8 +38,7 @@ fun OnboardingScreen(
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val trialTerms = viewModel.trialTerms.collectAsStateWithLifecycle().value
-    val context = LocalContext.current
-    val locale = context.resources.configuration.locales[0] ?: Locale.getDefault()
+    val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
     val unitGb = stringResource(R.string.unit_gb)
     val anonTraffic = formatTrafficLimit(bytes = trialTerms.anonBytes, unit = unitGb, locale = locale)
     val bonusTraffic = formatTrafficLimit(bytes = trialTerms.bonusBytes, unit = unitGb, locale = locale)

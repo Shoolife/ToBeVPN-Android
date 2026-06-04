@@ -38,6 +38,8 @@ class PrefsDataStore @Inject constructor(
         val ONBOARDING_SEEN = booleanPreferencesKey("onboarding_seen")
         val SELECTED_SERVER_ID = stringPreferencesKey("selected_server_id")
         val SELECTED_SERVER_KEY = stringPreferencesKey("selected_server_key")
+        val AUTOMATIC_SERVER_SELECTION = booleanPreferencesKey("automatic_server_selection")
+        val SERVER_QUALITY_STATE = stringPreferencesKey("server_quality_state")
         val EMAIL_PROMPT_SHOWN = booleanPreferencesKey("email_prompt_shown")
         // USER_EMAIL was removed in v9 — email now lives in the encrypted
         // SessionEntity. We still scrub the legacy plaintext key on first launch
@@ -75,6 +77,9 @@ class PrefsDataStore @Inject constructor(
     val onboardingSeen: Flow<Boolean> = context.dataStore.data.map { it[Keys.ONBOARDING_SEEN] ?: false }
     val selectedServerId: Flow<String?> = context.dataStore.data.map { it[Keys.SELECTED_SERVER_ID] }
     val selectedServerKey: Flow<String?> = context.dataStore.data.map { it[Keys.SELECTED_SERVER_KEY] }
+    val automaticServerSelection: Flow<Boolean> = context.dataStore.data.map {
+        it[Keys.AUTOMATIC_SERVER_SELECTION] ?: (it[Keys.SELECTED_SERVER_ID] == null)
+    }
     val emailPromptShown: Flow<Boolean> = context.dataStore.data.map { it[Keys.EMAIL_PROMPT_SHOWN] ?: false }
     val language: Flow<String?> = context.dataStore.data.map { it[Keys.LANGUAGE] }
 
@@ -101,14 +106,54 @@ class PrefsDataStore @Inject constructor(
     }
 
     suspend fun setSelectedServerId(id: String) {
-        context.dataStore.edit { it[Keys.SELECTED_SERVER_ID] = id }
+        context.dataStore.edit {
+            val automatic = it[Keys.AUTOMATIC_SERVER_SELECTION] ?: (it[Keys.SELECTED_SERVER_ID] == null)
+            it[Keys.SELECTED_SERVER_ID] = id
+            it.remove(Keys.SELECTED_SERVER_KEY)
+            it[Keys.AUTOMATIC_SERVER_SELECTION] = automatic
+        }
     }
 
     suspend fun setSelectedServer(id: String, key: String) {
         context.dataStore.edit {
+            val automatic = it[Keys.AUTOMATIC_SERVER_SELECTION] ?: (it[Keys.SELECTED_SERVER_ID] == null)
             it[Keys.SELECTED_SERVER_ID] = id
             it[Keys.SELECTED_SERVER_KEY] = key
+            it[Keys.AUTOMATIC_SERVER_SELECTION] = automatic
         }
+    }
+
+    suspend fun setManualSelectedServer(id: String, key: String) {
+        context.dataStore.edit {
+            it[Keys.SELECTED_SERVER_ID] = id
+            it[Keys.SELECTED_SERVER_KEY] = key
+            it[Keys.AUTOMATIC_SERVER_SELECTION] = false
+        }
+    }
+
+    suspend fun setAutomaticSelectedServer(id: String, key: String) {
+        context.dataStore.edit {
+            it[Keys.SELECTED_SERVER_ID] = id
+            it[Keys.SELECTED_SERVER_KEY] = key
+            it[Keys.AUTOMATIC_SERVER_SELECTION] = true
+        }
+    }
+
+    suspend fun isAutomaticServerSelection(): Boolean {
+        val prefs = context.dataStore.data.first()
+        return prefs[Keys.AUTOMATIC_SERVER_SELECTION] ?: (prefs[Keys.SELECTED_SERVER_ID] == null)
+    }
+
+    suspend fun getSelectedServerId(): String? {
+        return context.dataStore.data.first()[Keys.SELECTED_SERVER_ID]
+    }
+
+    suspend fun getServerQualityState(): String? {
+        return context.dataStore.data.first()[Keys.SERVER_QUALITY_STATE]
+    }
+
+    suspend fun setServerQualityState(value: String) {
+        context.dataStore.edit { it[Keys.SERVER_QUALITY_STATE] = value }
     }
 
     suspend fun setEmailPromptShown() {

@@ -1,5 +1,6 @@
 package com.tobevpn.app.data.remote
 
+import android.os.SystemClock
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.util.SafeDiagnostics
 import okhttp3.HttpUrl
@@ -10,6 +11,7 @@ import okhttp3.Response
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLException
 import javax.net.ssl.SSLHandshakeException
 
@@ -38,44 +40,83 @@ class FallbackInterceptor : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
         val fallbackProxyUrl = BuildConfig.FALLBACK_BOT_DOMAIN
-        if (fallbackProxyUrl.isBlank()) {
+        if (fallbackProxyUrl.isBlank() || isFallbackUrl(original.url, fallbackProxyUrl)) {
             return chain.proceed(original)
         }
 
+        val fallbackRequest = buildFallbackRequest(original, fallbackProxyUrl)
+            ?: return chain.proceed(original)
+        val isSafeRead = original.method == "GET" || original.method == "HEAD"
+        if (isSafeRead && SystemClock.elapsedRealtime() < primaryUnavailableUntilMs) {
+            return fallbackFirst(chain, original, fallbackRequest)
+        }
+
+        val primaryChain = if (isSafeRead) {
+            chain
+                .withConnectTimeout(FAST_PRIMARY_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                .withReadTimeout(FAST_PRIMARY_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        } else {
+            chain
+        }
+
         return try {
-            val primaryResponse = chain.proceed(original)
-            if (primaryResponse.code != FALLBACK_HTTP_STATUS ||
-                isFallbackUrl(original.url, fallbackProxyUrl)
-            ) {
+            val primaryResponse = primaryChain.proceed(original)
+            if (primaryResponse.code != FALLBACK_HTTP_STATUS) {
+                if (primaryResponse.isSuccessful) {
+                    primaryUnavailableUntilMs = 0L
+                }
                 primaryResponse
             } else {
-                val fallbackRequest = buildFallbackRequest(original, fallbackProxyUrl)
-                    ?: return primaryResponse
                 primaryResponse.close()
                 SafeDiagnostics.warn(TAG, "Primary API route rejected request; retrying via fallback")
-                chain.proceed(fallbackRequest)
+                proceedFallback(chain, fallbackRequest)
             }
         } catch (primaryError: IOException) {
             if (!isFallbackEligible(primaryError)) throw primaryError
-            val fallbackRequest = buildFallbackRequest(original, fallbackProxyUrl)
-                ?: throw primaryError
             SafeDiagnostics.warn(
                 TAG,
                 "Primary API request failed; retrying via fallback: " +
                     SafeDiagnostics.failureCategory(primaryError),
             )
             try {
-                chain.proceed(fallbackRequest)
+                proceedFallback(chain, fallbackRequest)
             } catch (fallbackError: IOException) {
                 SafeDiagnostics.warn(
                     TAG,
                     "Fallback API request failed: ${SafeDiagnostics.failureCategory(fallbackError)}",
                 )
-                // Surface the *primary* error so callers get the original
-                // (and more diagnostic-useful) failure cause when both legs
-                // are down.
-                throw primaryError
+                if (isSafeRead) {
+                    chain.proceed(original)
+                } else {
+                    throw primaryError
+                }
             }
+        }
+    }
+
+    private fun fallbackFirst(
+        chain: Interceptor.Chain,
+        original: Request,
+        fallbackRequest: Request,
+    ): Response {
+        return try {
+            proceedFallback(chain, fallbackRequest)
+        } catch (fallbackError: IOException) {
+            SafeDiagnostics.warn(
+                TAG,
+                "Fallback API request failed; retrying primary: " +
+                    SafeDiagnostics.failureCategory(fallbackError),
+            )
+            chain.proceed(original)
+        }
+    }
+
+    private fun proceedFallback(
+        chain: Interceptor.Chain,
+        fallbackRequest: Request,
+    ): Response {
+        return chain.proceed(fallbackRequest).also {
+            primaryUnavailableUntilMs = SystemClock.elapsedRealtime() + PRIMARY_FAILURE_COOLDOWN_MS
         }
     }
 
@@ -155,5 +196,10 @@ class FallbackInterceptor : Interceptor {
     private companion object {
         const val TAG = "FallbackInterceptor"
         const val FALLBACK_HTTP_STATUS = 403
+        const val FAST_PRIMARY_TIMEOUT_MS = 1_200
+        const val PRIMARY_FAILURE_COOLDOWN_MS = 2L * 60L * 1000L
+
+        @Volatile
+        var primaryUnavailableUntilMs = 0L
     }
 }

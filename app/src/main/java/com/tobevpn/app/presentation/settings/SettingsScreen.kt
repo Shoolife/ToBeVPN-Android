@@ -97,6 +97,10 @@ fun SettingsScreen(
     val tvPairResult by viewModel.tvPairResult.collectAsStateWithLifecycle()
     val linkedDevicesState by viewModel.linkedDevicesState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val devicesLimitReachedText = stringResource(R.string.devices_limit_reached)
+    val authOpenTelegramErrorText = stringResource(R.string.auth_error_open_telegram)
+    val unsupportedQrText = stringResource(R.string.devices_unsupported_qr)
+    val scannerUnavailableText = stringResource(R.string.devices_scanner_unavailable)
     var pendingLanguage by remember { mutableStateOf<String?>(null) }
     var showDevicesSheet by remember { mutableStateOf(false) }
     var showPairingCodeInput by remember { mutableStateOf(false) }
@@ -107,7 +111,7 @@ fun SettingsScreen(
 
     val startDeviceQrScan: () -> Unit = startPairing@{
         if (!canLinkMoreDevices) {
-            viewModel.setTvPairError(context.getString(R.string.devices_limit_reached))
+            viewModel.setTvPairError(devicesLimitReachedText)
             return@startPairing
         }
         try {
@@ -121,9 +125,7 @@ fun SettingsScreen(
                     when (val action = DeviceQrScanParser.parse(raw)) {
                         is DeviceQrScanAction.OpenTelegramAuth -> {
                             if (!TelegramLinks.openStartLink(context, action.link)) {
-                                viewModel.setTvPairError(
-                                    context.getString(R.string.auth_error_open_telegram),
-                                )
+                                viewModel.setTvPairError(authOpenTelegramErrorText)
                             }
                         }
 
@@ -132,15 +134,13 @@ fun SettingsScreen(
                         }
 
                         DeviceQrScanAction.Unsupported -> {
-                            viewModel.setTvPairError(
-                                context.getString(R.string.devices_unsupported_qr),
-                            )
+                            viewModel.setTvPairError(unsupportedQrText)
                         }
                     }
                 }
                 .addOnFailureListener { /* user cancelled or module missing */ }
         } catch (_: Exception) {
-            viewModel.setTvPairError(context.getString(R.string.devices_scanner_unavailable))
+            viewModel.setTvPairError(scannerUnavailableText)
         }
     }
 

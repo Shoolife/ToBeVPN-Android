@@ -65,6 +65,8 @@ class AuthRepository @Inject constructor(
     private val usageRepository: UsageRepository,
     private val subscriptionPinger: SubscriptionPinger,
     private val bootstrapManager: BootstrapManager,
+    private val subscriptionInfoProvider: SubscriptionInfoProvider,
+    private val vpnRepository: VpnRepository,
 ) {
     companion object {
         private const val TAG = "AuthRepository"
@@ -625,7 +627,7 @@ class AuthRepository @Inject constructor(
                     return@withLock
                 }
             }
-            runSyncSubscription(overwriteUsage)
+            runSyncSubscription(overwriteUsage, forceRefresh = force)
         }
     }
 
@@ -642,7 +644,10 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    private suspend fun runSyncSubscription(overwriteUsage: Boolean) {
+    private suspend fun runSyncSubscription(
+        overwriteUsage: Boolean,
+        forceRefresh: Boolean,
+    ) {
         try {
             var session = sessionDao.getSession() ?: return
             var panelUser: com.tobevpn.app.data.remote.dto.PanelUserDto? = null
@@ -693,8 +698,8 @@ class AuthRepository @Inject constructor(
                 return
             }
 
-            val subInfo = runCatching {
-                botApi.getSubscriptionInfo(shortUuid).response
+            var subInfo = runCatching {
+                subscriptionInfoProvider.get(shortUuid, forceRefresh)
             }.onFailure { error ->
                 SafeDiagnostics.warn(TAG, "Subscription info refresh failed: ${SafeDiagnostics.failureCategory(error)}")
             }.getOrNull()
@@ -709,6 +714,18 @@ class AuthRepository @Inject constructor(
                     if (pingResult != null) {
                         prefsDataStore.setSubscriptionUsageBlocked(shortUuid, pingResult.isUsageBlocked)
                         prefsDataStore.setUpdateRequired(pingResult.isUpdateRequired)
+                        // HWID binding can change the effective subscription
+                        // links. Never leave the server cache populated from
+                        // the pre-ping response.
+                        subscriptionInfoProvider.invalidate(shortUuid)
+                        subInfo = runCatching {
+                            subscriptionInfoProvider.get(shortUuid, forceRefresh = true)
+                        }.onFailure { error ->
+                            SafeDiagnostics.warn(
+                                TAG,
+                                "Post-ping subscription refresh failed: ${SafeDiagnostics.failureCategory(error)}",
+                            )
+                        }.getOrNull() ?: subInfo
                     }
                     pingResult?.intervalMs
                 }.onFailure { error ->
@@ -718,6 +735,9 @@ class AuthRepository @Inject constructor(
                 null
             }
             persistSyncState(intervalMs)
+            if (subInfo != null) {
+                vpnRepository.updateServersFromSubscription(shortUuid, subInfo)
+            }
 
             val sub = subInfo?.user
             if (overwriteUsage && sub != null) {
@@ -783,6 +803,7 @@ class AuthRepository @Inject constructor(
             val result = subscriptionPinger.ping(url) ?: return wasBlocked
             prefsDataStore.setSubscriptionUsageBlocked(shortUuid, result.isUsageBlocked)
             prefsDataStore.setUpdateRequired(result.isUpdateRequired)
+            subscriptionInfoProvider.invalidate(shortUuid)
             result.isUsageBlocked
         } catch (_: Exception) {
             wasBlocked

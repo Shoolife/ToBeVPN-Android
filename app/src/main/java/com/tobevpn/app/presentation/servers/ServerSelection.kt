@@ -31,7 +31,12 @@ fun resolveSelectedServer(
     servers: List<Server>,
     selectedId: String?,
     selectedKey: String?,
+    allowFallback: Boolean = true,
 ): Server? {
-    if (selectedId == null && selectedKey == null) return servers.firstOrNull()
-    return servers.firstOrNull { isSelectedServer(it, selectedId, selectedKey) }
+    val availableServers = servers.filter { it.isAvailable }
+    if (selectedId == null && selectedKey == null) {
+        return availableServers.firstOrNull().takeIf { allowFallback }
+    }
+    return availableServers.firstOrNull { isSelectedServer(it, selectedId, selectedKey) }
+        ?: availableServers.firstOrNull().takeIf { allowFallback }
 }

@@ -11,12 +11,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -64,6 +66,7 @@ fun ServerListScreen(
     val servers by viewModel.servers.collectAsStateWithLifecycle()
     val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
     val selectedServerKey by viewModel.selectedServerKey.collectAsStateWithLifecycle()
+    val automaticServerSelection by viewModel.automaticServerSelection.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -102,9 +105,7 @@ fun ServerListScreen(
                 .padding(paddingValues),
         ) {
             when {
-                // Like the desktop client: any (re)load shows a centered
-                // spinner in place of the list, not only the first load.
-                isLoading -> {
+                isLoading && servers.isEmpty() -> {
                     CircularProgressIndicator(
                         modifier = Modifier.align(Alignment.Center),
                     )
@@ -202,14 +203,29 @@ fun ServerListScreen(
                         }
 
                         LazyColumn {
+                            item(key = "automatic") {
+                                AutomaticServerItem(
+                                    selected = automaticServerSelection,
+                                    enabled = servers.any { it.isSelectable },
+                                    onClick = {
+                                        scope.launch {
+                                            if (viewModel.selectAutomaticServer()) {
+                                                onBack()
+                                            }
+                                        }
+                                    },
+                                )
+                            }
                             items(servers, key = { it.id }) { server ->
+                                val selectable = server.isSelectable
                                 ServerItem(
                                     server = server,
-                                    selected = isSelectedServer(
+                                    selected = !automaticServerSelection && selectable && isSelectedServer(
                                         server = server,
                                         selectedId = selectedServerId,
                                         selectedKey = selectedServerKey,
                                     ),
+                                    enabled = selectable,
                                     serverNameFontSize = serverNameFontSize,
                                     onClick = {
                                         scope.launch {
@@ -229,9 +245,71 @@ fun ServerListScreen(
 }
 
 @Composable
+private fun AutomaticServerItem(
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    val isDark = isSystemInDarkTheme()
+    val selectedContainerColor = if (isDark) {
+        VpnGreen.copy(alpha = 0.14f)
+    } else {
+        Color(0xFFE7F5EA)
+    }
+    val selectedBorderColor = if (isDark) {
+        VpnGreen.copy(alpha = 0.72f)
+    } else {
+        VpnGreen.copy(alpha = 0.58f)
+    }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clickable(enabled = enabled, onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (selected) selectedContainerColor
+            else MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+        border = if (selected) BorderStroke(1.dp, selectedBorderColor) else null,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Default.Bolt,
+                contentDescription = null,
+                tint = VpnGreen,
+                modifier = Modifier.size(32.dp),
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.server_auto),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                )
+                Text(
+                    text = stringResource(R.string.server_auto_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun ServerItem(
     server: Server,
     selected: Boolean,
+    enabled: Boolean,
     serverNameFontSize: TextUnit,
     onClick: () -> Unit,
 ) {
@@ -254,7 +332,7 @@ private fun ServerItem(
                 horizontal = 16.dp,
                 vertical = 4.dp,
             )
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         // surfaceContainerHigh sits a step lighter than surfaceContainerLow
         // in the dark Material You palette, so server tiles match the

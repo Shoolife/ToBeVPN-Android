@@ -36,4 +36,34 @@ data class Server(
             name.contains("ИСТЕКЛА", ignoreCase = true) ||
             name.contains("EXPIRED", ignoreCase = true) ||
             name.contains("истекла", ignoreCase = true)
+
+    /** Server metadata allows the client to use this entry for a tunnel. */
+    val isAvailable: Boolean
+        get() = isOnline && !isSentinel
+
+    /**
+     * The server can be selected from a measured list. ping == 0 means the
+     * probe is still pending; a negative value means it completed and failed.
+     */
+    val isSelectable: Boolean
+        get() = isAvailable && ping > 0
+
+    /**
+     * Compares only fields that affect the XRay outbound. Country, online
+     * metadata and ping can change without requiring a tunnel restart.
+     */
+    fun hasSameVpnConfig(other: Server): Boolean =
+        address == other.address &&
+            port == other.port &&
+            uuid == other.uuid &&
+            flow == other.flow &&
+            security == other.security &&
+            sni == other.sni &&
+            fingerprint == other.fingerprint &&
+            publicKey == other.publicKey &&
+            shortId == other.shortId &&
+            network == other.network &&
+            path == other.path &&
+            mode == other.mode &&
+            spx == other.spx
 }

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -79,6 +80,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -119,6 +121,7 @@ fun MainScreen(
     val usageInfo by viewModel.usageInfo.collectAsStateWithLifecycle()
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val currentServer by viewModel.currentServer.collectAsStateWithLifecycle()
+    val automaticServerSelection by viewModel.automaticServerSelection.collectAsStateWithLifecycle()
     val sessionTime by viewModel.sessionTimeSeconds.collectAsStateWithLifecycle()
     val rubToUsdRate by viewModel.rubToUsdRate.collectAsStateWithLifecycle()
     val purchasePlans by viewModel.purchasePlans.collectAsStateWithLifecycle()
@@ -129,7 +132,7 @@ fun MainScreen(
     val paymentSuccessVisible by viewModel.paymentSuccessVisible.collectAsStateWithLifecycle()
     val subscriptionUsageBlocked by viewModel.subscriptionUsageBlocked.collectAsStateWithLifecycle()
     val updateRequired by viewModel.updateRequired.collectAsStateWithLifecycle()
-    val activity = LocalContext.current as Activity
+    val activity = LocalActivity.current
 
     // Re-sync on every resume (e.g. after payment in Telegram)
     LifecycleResumeEffect(Unit) {
@@ -161,20 +164,24 @@ fun MainScreen(
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) {
-        deferredPurchaseUrl?.let { url -> viewModel.openPurchaseUrl(activity, url) }
+        val currentActivity = activity
+        if (currentActivity != null) {
+            deferredPurchaseUrl?.let { url -> viewModel.openPurchaseUrl(currentActivity, url) }
+        }
         deferredPurchaseUrl = null
     }
 
     val openPurchaseUrl: (String?) -> Unit = { url ->
-        if (!url.isNullOrBlank()) {
+        val currentActivity = activity
+        if (!url.isNullOrBlank() && currentActivity != null) {
             val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                ContextCompat.checkSelfPermission(activity, Manifest.permission.POST_NOTIFICATIONS) !=
+                ContextCompat.checkSelfPermission(currentActivity, Manifest.permission.POST_NOTIFICATIONS) !=
                 PackageManager.PERMISSION_GRANTED
             if (needsPermission) {
                 deferredPurchaseUrl = url
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             } else {
-                viewModel.openPurchaseUrl(activity, url)
+                viewModel.openPurchaseUrl(currentActivity, url)
             }
         }
     }
@@ -187,14 +194,15 @@ fun MainScreen(
         }
     }
 
-    val onConnectClick: () -> Unit = {
+    val onConnectClick: () -> Unit = connectClick@{
         if (connectionPreparation ||
             connectionState is ConnectionState.Connecting ||
             connectionState is ConnectionState.Connected
         ) {
             viewModel.toggleConnection()
         } else {
-            val vpnIntent = viewModel.getVpnPermissionIntent(activity)
+            val currentActivity = activity ?: return@connectClick
+            val vpnIntent = viewModel.getVpnPermissionIntent(currentActivity)
             if (vpnIntent != null) {
                 vpnPermissionLauncher.launch(vpnIntent)
             } else {
@@ -324,6 +332,7 @@ fun MainScreen(
                 server = if (subscriptionUsageBlocked) null else currentServer,
                 onClick = if (subscriptionUsageBlocked) {{ }} else onNavigateToServers,
                 isAuthenticated = authState is AuthState.Authenticated,
+                automatic = automaticServerSelection,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -480,7 +489,7 @@ fun MainScreen(
 
     if (updateRequired) {
         UpdateRequiredDialog(
-            onQuit = { activity.finishAffinity() },
+            onQuit = { activity?.finishAffinity() },
         )
     }
 
@@ -1011,6 +1020,7 @@ private fun ServerSelectorCard(
     server: Server?,
     onClick: () -> Unit,
     isAuthenticated: Boolean,
+    automatic: Boolean,
 ) {
     Card(
         modifier = Modifier
@@ -1060,7 +1070,11 @@ private fun ServerSelectorCard(
                         )
                     } else {
                         Text(
-                            text = countryName(serverCountryCodeForUi(server.country, server.name)),
+                            text = if (automatic) {
+                                stringResource(R.string.server_auto_selected)
+                            } else {
+                                countryName(serverCountryCodeForUi(server.country, server.name))
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1719,7 +1733,7 @@ private fun SubscriptionBottomSheet(
 
             data class PlanInfo(val key: String, val title: String, val priceDisplay: String, val description: String, val botPaymentUrl: String? = null)
 
-            val isRussian = LocalContext.current.resources.configuration.locales[0].language == "ru"
+            val isRussian = LocalConfiguration.current.locales[0].language == "ru"
 
             // Build the per-row description ("200 ГБ / месяц · до 5 устройств") from the
             // backend plan, falling back to an explicit unknown quota when the data is missing.
@@ -1793,12 +1807,17 @@ private fun SubscriptionBottomSheet(
                 else -> "d$days"
             }
 
+            val planDayTitle = stringResource(R.string.plan_day)
+            val planWeekTitle = stringResource(R.string.plan_week)
+            val planMonthTitle = stringResource(R.string.plan_month)
+            val planThreeMonthTitle = stringResource(R.string.plan_3month)
+            val planYearTitle = stringResource(R.string.plan_year)
             fun planTitle(days: Int): String = when (days) {
-                1 -> context.getString(R.string.plan_day)
-                7 -> context.getString(R.string.plan_week)
-                30 -> context.getString(R.string.plan_month)
-                90 -> context.getString(R.string.plan_3month)
-                365 -> context.getString(R.string.plan_year)
+                1 -> planDayTitle
+                7 -> planWeekTitle
+                30 -> planMonthTitle
+                90 -> planThreeMonthTitle
+                365 -> planYearTitle
                 else -> "$days"
             }
 

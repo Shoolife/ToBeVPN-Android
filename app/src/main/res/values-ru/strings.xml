@@ -54,6 +54,9 @@
 
     <!-- Servers -->
     <string name="server_select">Выберите сервер</string>
+    <string name="server_auto">Автоматически</string>
+    <string name="server_auto_description">Самый быстрый доступный сервер</string>
+    <string name="server_auto_selected">Выбран автоматически</string>
     <string name="server_offline">offline</string>
     <string name="server_unavailable">Недоступен</string>
     <string name="servers_load_error">Ошибка загрузки</string>

@@ -15,6 +15,7 @@ import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.data.repository.AuthRepository
 import com.tobevpn.app.data.repository.CurrencyRepository
 import com.tobevpn.app.data.repository.PurchaseRepository
+import com.tobevpn.app.data.repository.ServerQualityRepository
 import com.tobevpn.app.data.repository.VpnRepository
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AuthState
@@ -23,6 +24,8 @@ import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.presentation.servers.resolveSelectedServer
+import com.tobevpn.app.presentation.servers.serverSelectionKey
+import com.tobevpn.app.presentation.servers.stableServerId
 import com.tobevpn.app.util.DeepLinkBus
 import com.tobevpn.app.util.PaymentNotifications
 import com.tobevpn.app.util.SafeDiagnostics
@@ -30,7 +33,6 @@ import com.tobevpn.app.vpn.VpnConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
@@ -41,10 +43,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.net.InetSocketAddress
-import java.net.Socket
 import javax.inject.Inject
 
 data class CurrentPlanLimits(
@@ -61,6 +60,7 @@ class MainViewModel @Inject constructor(
     private val currencyRepository: CurrencyRepository,
     private val purchaseRepository: PurchaseRepository,
     private val appFilterRepository: AppFilterRepository,
+    private val serverQualityRepository: ServerQualityRepository,
     private val deepLinkBus: DeepLinkBus,
     private val paymentNotifications: PaymentNotifications,
     @ApplicationContext private val context: Context,
@@ -123,16 +123,21 @@ class MainViewModel @Inject constructor(
     val currentServer: StateFlow<Server?> = combine(
         prefsDataStore.selectedServerId,
         prefsDataStore.selectedServerKey,
+        prefsDataStore.automaticServerSelection,
         vpnRepository.observeServers(),
         _serverPing,
-    ) { selectedId, selectedKey, servers, ping ->
+    ) { selectedId, selectedKey, automatic, servers, ping ->
         val server = resolveSelectedServer(
             servers = servers,
             selectedId = selectedId,
             selectedKey = selectedKey,
+            allowFallback = automatic,
         )
         server?.copy(ping = ping)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val automaticServerSelection: StateFlow<Boolean> = prefsDataStore.automaticServerSelection
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
     val authState: StateFlow<AuthState> = authRepository.observeAuthState()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AuthState.Anonymous)
@@ -176,7 +181,8 @@ class MainViewModel @Inject constructor(
             // (e.g. from a transient panel hiccup that returned empty squads)
             // sticks for up to 12h until the next force-refresh.
             authRepository.syncSubscription(force = true)
-            vpnRepository.refreshServers()
+            val servers = vpnRepository.refreshServers().getOrNull().orEmpty()
+            ensureAutomaticServerSelected(servers, forceSelection = true)
             lastSyncTime = System.currentTimeMillis()
             initialized = true
             startPendingPurchaseRefreshIfNeeded()
@@ -205,12 +211,18 @@ class MainViewModel @Inject constructor(
         // If VPN is currently active and the selected server changes,
         // automatically reconnect to the new server.
         viewModelScope.launch {
-            var lastServerId: String? = null
+            var lastServer: Server? = null
             currentServer.collect { server ->
-                if (server != null && server.id != lastServerId) {
-                    val previousId = lastServerId
-                    lastServerId = server.id
-                    _serverPing.value = measureTcpPing(server.address, server.port)
+                if (server != null) {
+                    val previous = lastServer
+                    val vpnConfigChanged = previous == null || !server.hasSameVpnConfig(previous)
+                    lastServer = server
+                    if (!vpnConfigChanged) return@collect
+                    prefsDataStore.setSelectedServer(
+                        id = stableServerId(server),
+                        key = serverSelectionKey(server),
+                    )
+                    _serverPing.value = serverQualityRepository.measurePing(server, force = true)
                     // Auto-reconnect if VPN was running on a different server.
                     // Skip when the new pick is the panel's "subscription
                     // expired" sentinel — switchServer would call startVpn,
@@ -218,13 +230,16 @@ class MainViewModel @Inject constructor(
                     // EXPIRED plan in general so we don't pretend the user
                     // can roam between servers when nothing is going to
                     // tunnel anyway.
-                    if (previousId != null && !server.isSentinel && !isExpired()) {
+                    if (previous != null && !server.isSentinel && !isExpired()) {
                         val state = connectionState.value
+                        val managedServer = connectionManager.currentServer.value
                         if (_connectionPreparation.value) {
                             cancelConnectionPreparation()
                             connectionManager.stopVpn()
                             prepareAndStartConnection()
-                        } else if (state is ConnectionState.Connected || state is ConnectionState.Connecting) {
+                        } else if ((state is ConnectionState.Connected || state is ConnectionState.Connecting) &&
+                            managedServer?.hasSameVpnConfig(server) != true
+                        ) {
                             connectionManager.switchServer(server)
                         }
                     }
@@ -270,23 +285,46 @@ class MainViewModel @Inject constructor(
             while (true) {
                 delay(5000)
                 val server = currentServer.value ?: continue
-                _serverPing.value = measureTcpPing(server.address, server.port)
+                val ping = serverQualityRepository.measurePing(server, force = true)
+                _serverPing.value = ping
+                val state = connectionState.value
+                if (ping < 0L &&
+                    automaticServerSelection.value &&
+                    state !is ConnectionState.Connected &&
+                    state !is ConnectionState.Connecting
+                ) {
+                    selectAutomaticServer(excludeServerId = server.id)
+                }
             }
         }
     }
 
-    private suspend fun measureTcpPing(host: String, port: Int): Long {
-        return withContext(Dispatchers.IO) {
-            try {
-                val start = System.currentTimeMillis()
-                Socket().use { socket ->
-                    socket.connect(InetSocketAddress(host, port), 3000)
-                }
-                System.currentTimeMillis() - start
-            } catch (_: Exception) {
-                -1L
-            }
-        }
+    private suspend fun ensureAutomaticServerSelected(
+        servers: List<Server>,
+        forceSelection: Boolean = false,
+    ) {
+        if (!prefsDataStore.isAutomaticServerSelection()) return
+        val selectedId = prefsDataStore.getSelectedServerId()
+        if (!forceSelection && selectedId != null && servers.any { it.id == selectedId && it.isAvailable }) return
+        val best = serverQualityRepository.selectBestServer(servers) ?: return
+        prefsDataStore.setAutomaticSelectedServer(
+            id = stableServerId(best),
+            key = serverSelectionKey(best),
+        )
+    }
+
+    private suspend fun selectAutomaticServer(excludeServerId: String? = null): Server? {
+        if (!prefsDataStore.isAutomaticServerSelection()) return null
+        val best = serverQualityRepository.selectBestServer(
+            servers = vpnRepository.getServers(),
+            excludeServerId = excludeServerId,
+            forceProbe = true,
+        ) ?: return null
+        prefsDataStore.setAutomaticSelectedServer(
+            id = stableServerId(best),
+            key = serverSelectionKey(best),
+        )
+        return best
     }
 
     private fun isExpired(): Boolean {
@@ -294,13 +332,9 @@ class MainViewModel @Inject constructor(
         return state is AuthState.Authenticated && state.plan == UserPlan.EXPIRED
     }
 
-    private fun hasUnlimitedPlan(state: AuthState): Boolean {
-        return state is AuthState.Authenticated &&
-            (state.plan == UserPlan.PAID || state.plan == UserPlan.ADMIN)
-    }
-
     private suspend fun prepareServerForConnect(server: Server): Server? {
-        if (hasUnlimitedPlan(authRepository.getAuthStateSnapshot())) return server
+        val automatic = prefsDataStore.isAutomaticServerSelection()
+        if (!automatic && (!server.isAvailable || server.ping < 0)) return null
 
         authRepository.ensurePanelUser()
         authRepository.syncSubscription(
@@ -308,9 +342,28 @@ class MainViewModel @Inject constructor(
             force = true,
         )
 
-        val refreshedServers = vpnRepository.refreshServers().getOrNull().orEmpty()
-        return refreshedServers.firstOrNull { it.id == server.id }
-            ?: refreshedServers.firstOrNull()
+        val availableServers = vpnRepository.refreshServers()
+            .getOrNull()
+            .orEmpty()
+            .filter { it.isAvailable }
+        val resolved = if (automatic) {
+            serverQualityRepository.selectBestServer(availableServers, forceProbe = true)
+        } else {
+            availableServers.firstOrNull { it.id == server.id }
+                ?: availableServers.firstOrNull { it.name == server.name }
+        }
+        if (automatic && resolved != null) {
+            prefsDataStore.setAutomaticSelectedServer(
+                id = stableServerId(resolved),
+                key = serverSelectionKey(resolved),
+            )
+        }
+        if (!automatic && resolved != null &&
+            serverQualityRepository.measurePing(resolved, force = true) < 0L
+        ) {
+            return null
+        }
+        return resolved
     }
 
     fun toggleConnection() {
@@ -406,7 +459,8 @@ class MainViewModel @Inject constructor(
             // to jump backwards.
             val isConnected = connectionState.value is ConnectionState.Connected
             authRepository.syncSubscription(overwriteUsage = !isConnected)
-            vpnRepository.refreshServers()
+            val servers = vpnRepository.refreshServers().getOrNull().orEmpty()
+            ensureAutomaticServerSelected(servers)
         }
     }
 
