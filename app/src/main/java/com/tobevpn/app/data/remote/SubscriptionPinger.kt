@@ -78,8 +78,9 @@ class SubscriptionPinger @Inject constructor(
         if (fallbackRequest != null && SystemClock.elapsedRealtime() < primaryUnavailableUntilMs) {
             try {
                 client.newCall(fallbackRequest).execute().use {
-                    primaryUnavailableUntilMs = SystemClock.elapsedRealtime() + PRIMARY_FAILURE_COOLDOWN_MS
-                    return@withContext readResult(it)
+                    readFallbackResult(it)?.let { result ->
+                        return@withContext result
+                    }
                 }
             } catch (fallbackError: IOException) {
                 logFailure("fallback", fallbackError)
@@ -93,8 +94,7 @@ class SubscriptionPinger @Inject constructor(
                     SafeDiagnostics.warn(TAG, "Primary subscription route rejected request; retrying via fallback")
                     return@withContext try {
                         client.newCall(fallbackRequest).execute().use {
-                            primaryUnavailableUntilMs = SystemClock.elapsedRealtime() + PRIMARY_FAILURE_COOLDOWN_MS
-                            readResult(it)
+                            readFallbackResult(it) ?: primaryResult
                         }
                     } catch (fallbackError: IOException) {
                         logFailure("fallback", fallbackError)
@@ -120,8 +120,9 @@ class SubscriptionPinger @Inject constructor(
             )
             try {
                 client.newCall(fallbackRequest).execute().use {
-                    primaryUnavailableUntilMs = SystemClock.elapsedRealtime() + PRIMARY_FAILURE_COOLDOWN_MS
-                    return@withContext readResult(it)
+                    readFallbackResult(it)?.let { result ->
+                        return@withContext result
+                    }
                 }
             } catch (fallbackError: IOException) {
                 logFailure("fallback", fallbackError)
@@ -135,11 +136,27 @@ class SubscriptionPinger @Inject constructor(
         }
     }
 
+    private fun readFallbackResult(response: Response): SubscriptionPingResult? {
+        if (isGatewayAuthError(response)) return null
+        primaryUnavailableUntilMs = SystemClock.elapsedRealtime() + PRIMARY_FAILURE_COOLDOWN_MS
+        return readResult(response)
+    }
+
     private fun readResult(response: Response) = SubscriptionPingResult(
         intervalMs = readIntervalMs(response.header("profile-update-interval")),
         isUsageBlocked = response.header(BLOCK_HEADER)?.trim() == BLOCK_VALUE,
         isUpdateRequired = response.header(UPDATE_REQUIRED_HEADER)?.trim()?.lowercase() == BLOCK_VALUE,
     )
+
+    private fun isGatewayAuthError(response: Response): Boolean {
+        if (response.code != FALLBACK_HTTP_STATUS) return false
+        val body = runCatching {
+            response.peekBody(MAX_GATEWAY_BODY_BYTES).string()
+        }.getOrDefault("")
+        return body.contains("\"errorCode\":403") &&
+            body.contains("Forbidden: Not authorized", ignoreCase = true) &&
+            body.contains("ClientError", ignoreCase = true)
+    }
 
     /**
      * Parses the V2Ray-style `profile-update-interval` header. The value is
@@ -205,5 +222,6 @@ class SubscriptionPinger @Inject constructor(
         const val MAX_INTERVAL_HOURS = 24.0 * 7.0
         const val FAST_PRIMARY_TIMEOUT_MS = 1_200L
         const val PRIMARY_FAILURE_COOLDOWN_MS = 2L * 60L * 1000L
+        const val MAX_GATEWAY_BODY_BYTES = 1_024L
     }
 }

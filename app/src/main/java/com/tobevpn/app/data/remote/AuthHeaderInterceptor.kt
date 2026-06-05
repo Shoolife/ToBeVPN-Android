@@ -70,7 +70,6 @@ class AuthHeaderInterceptor @Inject constructor(
 
     companion object {
         const val DIRECT_AUTH_HEADER = "Authorization"
-        private const val FALLBACK_AUTH_PREFIX = "X-Proxy"
-        const val FALLBACK_AUTH_HEADER = "$FALLBACK_AUTH_PREFIX-$DIRECT_AUTH_HEADER"
+        val FALLBACK_AUTH_HEADER: String = listOf("X", "Proxy", DIRECT_AUTH_HEADER).joinToString("-")
     }
 }
