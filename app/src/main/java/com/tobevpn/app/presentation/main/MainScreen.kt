@@ -123,6 +123,7 @@ fun MainScreen(
     val currentServer by viewModel.currentServer.collectAsStateWithLifecycle()
     val automaticServerSelection by viewModel.automaticServerSelection.collectAsStateWithLifecycle()
     val sessionTime by viewModel.sessionTimeSeconds.collectAsStateWithLifecycle()
+    val sessionBytes by viewModel.sessionBytes.collectAsStateWithLifecycle()
     val rubToUsdRate by viewModel.rubToUsdRate.collectAsStateWithLifecycle()
     val purchasePlans by viewModel.purchasePlans.collectAsStateWithLifecycle()
     val purchasePlansLoading by viewModel.purchasePlansLoading.collectAsStateWithLifecycle()
@@ -338,7 +339,11 @@ fun MainScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // Traffic stats
-            TrafficCard(usageInfo = usageInfo, authState = authState, sessionTime = sessionTime, onStatsClick = onNavigateToStats)
+            TrafficCard(
+                sessionBytes = sessionBytes,
+                sessionTime = sessionTime,
+                onStatsClick = onNavigateToStats,
+            )
 
             Spacer(modifier = Modifier.height(16.dp))
 
@@ -434,6 +439,7 @@ fun MainScreen(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
+                            SubscriptionUsageSummary(usageInfo = usageInfo)
                             Icon(
                                 Icons.Default.KeyboardArrowRight,
                                 contentDescription = null,
@@ -443,11 +449,12 @@ fun MainScreen(
                     }
                 }
                 is AuthState.Authenticated -> {
-                                    PlanCard(
-                                        auth = authState as AuthState.Authenticated,
-                                        onClick = {
-                                            viewModel.requestSubscriptionSheet {
-                                                showSubscriptionSheet = true
+                    PlanCard(
+                        auth = authState as AuthState.Authenticated,
+                        usageInfo = usageInfo,
+                        onClick = {
+                            viewModel.requestSubscriptionSheet {
+                                showSubscriptionSheet = true
                             }
                         },
                     )
@@ -1116,8 +1123,7 @@ private fun ServerSelectorCard(
 
 @Composable
 private fun TrafficCard(
-    usageInfo: UsageInfo,
-    authState: AuthState,
+    sessionBytes: Long,
     sessionTime: Long,
     onStatsClick: () -> Unit,
 ) {
@@ -1156,51 +1162,20 @@ private fun TrafficCard(
             }
             Spacer(modifier = Modifier.height(12.dp))
 
-            val isPaid = authState is AuthState.Authenticated &&
-                (authState as AuthState.Authenticated).plan in listOf(UserPlan.PAID, UserPlan.ADMIN)
-
-            if (isPaid || usageInfo.isUnlimitedTraffic) {
-                // Paid or unlimited — show only used traffic, no progress bar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    StatItem(
-                        label = stringResource(R.string.downloaded),
-                        value = formatBytes(usageInfo.bytesUsed),
-                        modifier = Modifier.weight(1f),
-                    )
-                    StatItem(
-                        label = stringResource(R.string.time),
-                        value = formatTime(sessionTime),
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            } else {
-                // Free tier or limited — show traffic progress bar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(stringResource(R.string.traffic), style = MaterialTheme.typography.labelMedium)
-                    Text(
-                        if (usageInfo.isUnlimitedTraffic) {
-                            formatBytes(usageInfo.bytesUsed)
-                        } else {
-                            "${formatBytes(usageInfo.bytesUsed)} / ${formatBytes(usageInfo.bytesLimit)}"
-                        },
-                        style = MaterialTheme.typography.labelMedium,
-                    )
-                }
-                if (!usageInfo.isUnlimitedTraffic) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    LinearProgressIndicator(
-                        progress = { usageInfo.trafficProgress },
-                        modifier = Modifier.fillMaxWidth(),
-                        color = progressColor(usageInfo.trafficProgress),
-                        trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    )
-                }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                StatItem(
+                    label = stringResource(R.string.downloaded),
+                    value = formatBytes(sessionBytes),
+                    modifier = Modifier.weight(1f),
+                )
+                StatItem(
+                    label = stringResource(R.string.time),
+                    value = formatTime(sessionTime),
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }
@@ -1232,7 +1207,51 @@ private fun StatItem(
 }
 
 @Composable
-private fun PlanCard(auth: AuthState.Authenticated, onClick: () -> Unit) {
+private fun SubscriptionUsageSummary(
+    usageInfo: UsageInfo,
+    modifier: Modifier = Modifier,
+) {
+    if (usageInfo.bytesLimit <= 0L) return
+
+    val progress = usageInfo.trafficProgress
+    Column(
+        modifier = modifier
+            .widthIn(min = 116.dp, max = 148.dp)
+            .padding(start = 12.dp, end = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = "${formatBytes(usageInfo.bytesUsed)} / ${formatBytes(usageInfo.bytesLimit)}",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            autoSize = TextAutoSize.StepBased(
+                minFontSize = 11.sp,
+                maxFontSize = 15.sp,
+            ),
+        )
+        Spacer(modifier = Modifier.height(4.dp))
+        LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(9.dp)
+                .clip(RoundedCornerShape(99.dp)),
+            color = progressColor(progress),
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun PlanCard(
+    auth: AuthState.Authenticated,
+    usageInfo: UsageInfo,
+    onClick: () -> Unit,
+) {
     val serverPlanName = auth.planDisplayName?.takeIf {
         it.isNotBlank() && auth.plan != UserPlan.EXPIRED
     }
@@ -1277,6 +1296,8 @@ private fun PlanCard(auth: AuthState.Authenticated, onClick: () -> Unit) {
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = planColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 if (expiresText.isNotEmpty()) {
                     Text(
@@ -1286,6 +1307,7 @@ private fun PlanCard(auth: AuthState.Authenticated, onClick: () -> Unit) {
                     )
                 }
             }
+            SubscriptionUsageSummary(usageInfo = usageInfo)
             Icon(
                 Icons.Default.KeyboardArrowRight,
                 contentDescription = null,

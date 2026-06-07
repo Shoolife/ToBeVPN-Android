@@ -102,6 +102,7 @@ class MainViewModel @Inject constructor(
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
     val usageInfo: StateFlow<UsageInfo> = connectionManager.usageInfo
     val sessionTimeSeconds: StateFlow<Long> = connectionManager.sessionTimeSeconds
+    val sessionBytes: StateFlow<Long> = connectionManager.sessionBytes
 
     /**
      * Reactive reminder shown on Home when the user's app-filter selection
