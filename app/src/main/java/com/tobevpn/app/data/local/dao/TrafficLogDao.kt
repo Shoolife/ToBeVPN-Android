@@ -68,4 +68,48 @@ interface TrafficLogDao {
     // Total all-time, filtered by auth state
     @Query("SELECT COALESCE(SUM(bytesUsed), 0) FROM traffic_log WHERE isAuthenticated = :isAuthenticated")
     fun getTotalBytes(isAuthenticated: Boolean): Flow<Long>
+
+    // Device-wide stats. Account/subscription-wide traffic is handled by the
+    // subscription payload, while traffic_log is a local per-device history.
+    @Query("""
+        SELECT
+            (timestamp / 3600) * 3600 AS period,
+            SUM(bytesUsed) AS totalBytes,
+            SUM(timeUsedSeconds) AS totalSeconds,
+            COUNT(*) AS sessions
+        FROM traffic_log
+        WHERE timestamp >= :dayStart AND timestamp < :dayEnd
+        GROUP BY period
+        ORDER BY period ASC
+    """)
+    fun getDeviceHourlyStats(dayStart: Long, dayEnd: Long): Flow<List<TrafficStat>>
+
+    @Query("""
+        SELECT
+            ((timestamp + :tzOffsetSec) / 86400) * 86400 - :tzOffsetSec AS period,
+            SUM(bytesUsed) AS totalBytes,
+            SUM(timeUsedSeconds) AS totalSeconds,
+            COUNT(*) AS sessions
+        FROM traffic_log
+        WHERE timestamp >= :weekStart AND timestamp < :weekEnd
+        GROUP BY ((timestamp + :tzOffsetSec) / 86400)
+        ORDER BY period ASC
+    """)
+    fun getDeviceDailyStats(weekStart: Long, weekEnd: Long, tzOffsetSec: Long): Flow<List<TrafficStat>>
+
+    @Query("""
+        SELECT
+            ((timestamp - :monthStart) / 604800) * 604800 + :monthStart AS period,
+            SUM(bytesUsed) AS totalBytes,
+            SUM(timeUsedSeconds) AS totalSeconds,
+            COUNT(*) AS sessions
+        FROM traffic_log
+        WHERE timestamp >= :monthStart AND timestamp < :monthEnd
+        GROUP BY period
+        ORDER BY period ASC
+    """)
+    fun getDeviceWeeklyStats(monthStart: Long, monthEnd: Long): Flow<List<TrafficStat>>
+
+    @Query("SELECT COALESCE(SUM(bytesUsed), 0) FROM traffic_log")
+    fun getDeviceTotalBytes(): Flow<Long>
 }

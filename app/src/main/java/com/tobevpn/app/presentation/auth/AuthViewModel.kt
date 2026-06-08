@@ -92,6 +92,29 @@ class AuthViewModel @Inject constructor(
         }
     }
 
+    fun reopenTelegram(context: Context) {
+        viewModelScope.launch {
+            val authToken = currentAuthToken ?: authRepository.getPendingAuthToken()
+            if (authToken == null) {
+                startTelegramAuth(context)
+                return@launch
+            }
+
+            currentAuthToken = authToken
+            if (TelegramLinks.openStartLink(context, startParam = authToken)) {
+                if (pollingJob?.isActive != true) {
+                    startPolling(authToken)
+                } else {
+                    _uiState.value = AuthUiState.Polling
+                }
+            } else {
+                currentAuthToken = null
+                authRepository.clearPendingAuthToken()
+                _uiState.value = AuthUiState.Error(R.string.auth_error_open_telegram)
+            }
+        }
+    }
+
     fun startDevicePairing() {
         pollingJob?.cancel()
         currentAuthToken = null

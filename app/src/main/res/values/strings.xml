@@ -202,6 +202,7 @@
     <string name="stats_sessions_short">%1$d sess.</string>
     <string name="stats_context_authenticated">Authenticated sessions</string>
     <string name="stats_context_anonymous">Anonymous sessions</string>
+    <string name="stats_context_device">This device only</string>
     <string name="stats_metric_sessions">Sessions</string>
     <string name="stats_metric_time">Time</string>
     <string name="stats_metric_avg">Avg / session</string>

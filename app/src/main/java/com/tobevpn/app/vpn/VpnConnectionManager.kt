@@ -706,14 +706,21 @@ class VpnConnectionManager @Inject constructor(
     }
 
     private suspend fun saveSessionLog() {
-        val currentUsage = usageRepository.getUsage()
-        val derivedSessionBytes = (currentUsage.bytesUsed - sessionStartUsageBytes).coerceAtLeast(0L)
+        val session = sessionDao.getSession()
+        val keepDeviceScopedUsage = session?.authState != "AUTHENTICATED" ||
+            session.userPlan == "FREE_TRIAL"
+        val derivedSessionBytes = if (keepDeviceScopedUsage) {
+            val currentUsage = usageRepository.getUsage()
+            (currentUsage.bytesUsed - sessionStartUsageBytes).coerceAtLeast(0L)
+        } else {
+            0L
+        }
         val sessionBytes = maxOf(sessionBytesAccumulated, derivedSessionBytes)
         val sessionTime = if (connectionStartTime > 0) {
             (System.currentTimeMillis() - connectionStartTime) / 1000
         } else 0L
         if (sessionBytes <= 0 && sessionTime <= 0) return
-        val authenticated = sessionDao.getSession()?.authState == "AUTHENTICATED"
+        val authenticated = session?.authState == "AUTHENTICATED"
         val timestampSeconds = if (connectionStartTime > 0L) {
             connectionStartTime / 1000
         } else {
@@ -920,18 +927,21 @@ class VpnConnectionManager @Inject constructor(
                     }
                 }
 
-                // Keep local usage monotonic while VPN is active; server sync merges later.
                 val session = sessionDao.getSession()
                 val keepDeviceScopedUsage = session?.authState != "AUTHENTICATED" ||
                     session.userPlan == "FREE_TRIAL"
                 if (keepDeviceScopedUsage) {
+                    // Anonymous/trial usage has to stay monotonic locally until
+                    // the backend acknowledges it. Paid/admin subscription
+                    // usage is server-owned; adding tunnel bytes here would
+                    // inflate the monthly total shown on Home.
                     prefsDataStore.addAnonymousPendingBytes(delta)
+                    val usage = usageRepository.getUsage()
+                    usageRepository.updateUsage(
+                        usage.bytesUsed + delta,
+                        usage.timeUsedSeconds + addTimeSeconds,
+                    )
                 }
-                val usage = usageRepository.getUsage()
-                usageRepository.updateUsage(
-                    usage.bytesUsed + delta,
-                    usage.timeUsedSeconds + addTimeSeconds,
-                )
             }
         }
     }

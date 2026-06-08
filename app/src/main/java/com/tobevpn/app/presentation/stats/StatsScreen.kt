@@ -81,7 +81,6 @@ fun StatsScreen(
     val period by viewModel.period.collectAsStateWithLifecycle()
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val totalBytes by viewModel.totalBytes.collectAsStateWithLifecycle()
-    val isAuthenticated by viewModel.isAuthenticated.collectAsStateWithLifecycle()
 
     val totalSessions = remember(stats) { stats.sumOf { it.sessions } }
     val totalSeconds = remember(stats) { stats.sumOf { it.totalSeconds } }
@@ -117,7 +116,6 @@ fun StatsScreen(
                     totalBytes = totalBytes,
                     totalSessions = totalSessions,
                     totalSeconds = totalSeconds,
-                    isAuthenticated = isAuthenticated,
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -208,7 +206,6 @@ private fun HeroStatsCard(
     totalBytes: Long,
     totalSessions: Int,
     totalSeconds: Long,
-    isAuthenticated: Boolean,
 ) {
     val isDarkTheme = isSystemInDarkTheme()
     val primaryContentColor = if (isDarkTheme) {
@@ -276,11 +273,7 @@ private fun HeroStatsCard(
                             color = secondaryContentColor,
                         )
                         Text(
-                            text = if (isAuthenticated) {
-                                stringResource(R.string.stats_context_authenticated)
-                            } else {
-                                stringResource(R.string.stats_context_anonymous)
-                            },
+                            text = stringResource(R.string.stats_context_device),
                             style = MaterialTheme.typography.labelSmall,
                             color = tertiaryContentColor,
                         )

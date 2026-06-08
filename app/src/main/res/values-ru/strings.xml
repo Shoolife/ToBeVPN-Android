@@ -206,6 +206,7 @@
     <string name="stats_sessions_short">%1$d сес.</string>
     <string name="stats_context_authenticated">Авторизованные сессии</string>
     <string name="stats_context_anonymous">Анонимные сессии</string>
+    <string name="stats_context_device">Только это устройство</string>
     <string name="stats_metric_sessions">Сессии</string>
     <string name="stats_metric_time">Время</string>
     <string name="stats_metric_avg">Ср / сессия</string>

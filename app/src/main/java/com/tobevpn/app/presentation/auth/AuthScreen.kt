@@ -135,7 +135,10 @@ fun AuthScreen(
                 is AuthUiState.LoadingDevicePairing -> OpeningContent(
                     text = stringResource(R.string.auth_pairing_loading),
                 )
-                is AuthUiState.Polling -> PollingContent()
+                is AuthUiState.Polling -> PollingContent(
+                    onOpenTelegram = { viewModel.reopenTelegram(context) },
+                    onRestart = { viewModel.startTelegramAuth(context) },
+                )
                 is AuthUiState.WaitingDevicePairing -> {
                     val state = uiState as AuthUiState.WaitingDevicePairing
                     DevicePairingContent(code = state.code)
@@ -229,7 +232,10 @@ private fun OpeningContent(
 }
 
 @Composable
-private fun PollingContent() {
+private fun PollingContent(
+    onOpenTelegram: () -> Unit,
+    onRestart: () -> Unit,
+) {
     CircularProgressIndicator(modifier = Modifier.size(48.dp))
     Spacer(modifier = Modifier.height(16.dp))
     Text(
@@ -243,6 +249,28 @@ private fun PollingContent() {
         textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    Spacer(modifier = Modifier.height(24.dp))
+    Button(
+        onClick = onOpenTelegram,
+        modifier = Modifier.fillMaxWidth(),
+        colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+            androidx.compose.material3.ButtonDefaults.buttonColors()
+        } else {
+            androidx.compose.material3.ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF3F3F3F),
+                contentColor = Color.White,
+            )
+        },
+    ) {
+        Text(stringResource(R.string.auth_open_telegram))
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+    OutlinedButton(
+        onClick = onRestart,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(stringResource(R.string.retry))
+    }
 }
 
 @Composable
