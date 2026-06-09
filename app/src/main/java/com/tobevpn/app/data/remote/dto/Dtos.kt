@@ -101,6 +101,7 @@ data class CurrentPlanSubscriptionDto(
     @SerializedName("device_limit") val deviceLimit: Int? = null,
     @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("created_at_ts") val createdAtTs: Long? = null,
+    val url: String? = null,
 )
 
 data class DeviceRegisterRequestDto(
@@ -210,6 +211,7 @@ data class EnsureUserResponseDto(
     @SerializedName("anon_traffic_bytes") val anonTrafficBytes: Long? = null,
     @SerializedName("is_anonymous") val isAnonymous: Boolean = true,
     @SerializedName("telegram_id") val telegramId: Long? = null,
+    @SerializedName("subscription_url") val subscriptionUrl: String? = null,
 )
 
 // Save email

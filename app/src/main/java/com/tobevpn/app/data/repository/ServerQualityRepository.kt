@@ -101,7 +101,11 @@ class ServerQualityRepository @Inject constructor(
                 ?.server
         }
 
-        return rank(preferredCandidates) ?: rank(available)
+        return rank(preferredCandidates)
+            ?: rank(available)
+            ?: preferredCandidates.firstOrNull()?.let { server ->
+                server.copy(ping = pings[server.id] ?: server.ping)
+            }
     }
 
     suspend fun recordConnectionSuccess(server: Server) {

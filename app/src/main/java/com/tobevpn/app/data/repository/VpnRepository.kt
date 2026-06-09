@@ -4,6 +4,8 @@ import com.tobevpn.app.data.local.dao.ServerDao
 import com.tobevpn.app.data.local.dao.SessionDao
 import com.tobevpn.app.data.local.entity.ServerEntity
 import com.tobevpn.app.data.local.PrefsDataStore
+import com.tobevpn.app.data.local.SessionStore
+import com.tobevpn.app.data.remote.SubscriptionPinger
 import com.tobevpn.app.data.remote.BotApi
 import com.tobevpn.app.data.remote.dto.PanelSubInfoDto
 import com.tobevpn.app.domain.model.Server
@@ -18,6 +20,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import java.io.IOException
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
@@ -27,8 +30,10 @@ import javax.inject.Singleton
 class VpnRepository @Inject constructor(
     private val serverDao: ServerDao,
     private val sessionDao: SessionDao,
+    private val sessionStore: SessionStore,
     private val prefsDataStore: PrefsDataStore,
     private val botApi: BotApi,
+    private val subscriptionPinger: SubscriptionPinger,
     private val subscriptionInfoProvider: SubscriptionInfoProvider,
 ) {
     private val enrichmentScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -45,15 +50,33 @@ class VpnRepository @Inject constructor(
     }
 
     suspend fun refreshServers(forceRefresh: Boolean = false): Result<List<Server>> {
-        val shortUuid = sessionDao.getSession()?.shortUuid
+        val session = sessionDao.getSession()
+        val shortUuid = session?.shortUuid
         if (shortUuid.isNullOrBlank()) {
             clearServerCache()
             return Result.failure(Exception("Нет подписки"))
         }
 
         return try {
-            val subInfo = subscriptionInfoProvider.get(shortUuid, forceRefresh)
-            updateServersFromSubscription(shortUuid, subInfo)
+            val subscriptionUrl = session.subscriptionUrl
+            if (!subscriptionUrl.isNullOrBlank()) {
+                val profile = subscriptionPinger.fetchProfile(subscriptionUrl)
+                    ?: throw IOException("Subscription profile unavailable")
+                prefsDataStore.setSubscriptionUsageBlocked(shortUuid, profile.isUsageBlocked)
+                prefsDataStore.setUpdateRequired(profile.isUpdateRequired)
+                if (profile.links.isEmpty() && !profile.isSuccessful && !profile.isUsageBlocked) {
+                    throw IOException("Subscription profile unavailable")
+                }
+                updateServersFromLinks(shortUuid, profile.links)
+            } else {
+                // Legacy fallback for old backend payloads that do not expose
+                // subscription_url yet (notably anonymous/trial ensure-user).
+                val subInfo = subscriptionInfoProvider.get(shortUuid, forceRefresh)
+                subInfo.subscriptionUrl?.takeIf { it.isNotBlank() }?.let { resolvedUrl ->
+                    sessionStore.update { it.copy(subscriptionUrl = resolvedUrl) }
+                }
+                updateServersFromSubscription(shortUuid, subInfo)
+            }
         } catch (e: Exception) {
             SafeDiagnostics.warn(TAG, "Server refresh failed; checking local cache: ${SafeDiagnostics.failureCategory(e)}")
             val cached = if (prefsDataStore.isServerCacheOwner(shortUuid)) {
@@ -79,7 +102,19 @@ class VpnRepository @Inject constructor(
             return Result.failure(Exception("Подписка не найдена"))
         }
 
-        val servers = subInfo.links.mapNotNull { link -> VlessUrlParser.parse(link) }
+        return updateServersFromLinks(shortUuid, subInfo.links)
+    }
+
+    suspend fun updateServersFromLinks(
+        shortUuid: String,
+        links: List<String>,
+    ): Result<List<Server>> {
+        if (links.isEmpty()) {
+            clearServerCache()
+            return Result.failure(Exception("Подписка не найдена"))
+        }
+
+        val servers = links.mapNotNull { link -> VlessUrlParser.parse(link) }
             .filterNot { it.isSentinel }
         // Drop the panel's "subscription expired" placeholder link so it
         // never appears in the UI or reaches xray.
@@ -102,6 +137,10 @@ class VpnRepository @Inject constructor(
         prefsDataStore.setServerCacheOwner(shortUuid)
         enrichMetadataInBackground(shortUuid, generation, servers)
         return Result.success(entities.map { it.toDomain() })
+    }
+
+    suspend fun clearCachedServers() {
+        clearServerCache()
     }
 
     private fun enrichMetadataInBackground(

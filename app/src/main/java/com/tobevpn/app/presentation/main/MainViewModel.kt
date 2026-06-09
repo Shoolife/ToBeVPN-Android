@@ -321,14 +321,6 @@ class MainViewModel @Inject constructor(
                 val server = currentServer.value ?: continue
                 val ping = serverQualityRepository.measurePing(server, force = true)
                 _serverPing.value = ping
-                val state = connectionState.value
-                if (ping < 0L &&
-                    automaticServerSelection.value &&
-                    state !is ConnectionState.Connected &&
-                    state !is ConnectionState.Connecting
-                ) {
-                    selectAutomaticServer(excludeServerId = server.id)
-                }
             }
         }
     }
@@ -368,7 +360,7 @@ class MainViewModel @Inject constructor(
 
     private suspend fun prepareServerForConnect(server: Server): Server? {
         val automatic = prefsDataStore.isAutomaticServerSelection()
-        if (!automatic && (!server.isAvailable || server.ping < 0)) return null
+        if (!automatic && !server.isAvailable) return null
 
         authRepository.ensurePanelUser()
         authRepository.syncSubscription(
@@ -391,11 +383,6 @@ class MainViewModel @Inject constructor(
                 id = stableServerId(resolved),
                 key = serverSelectionKey(resolved),
             )
-        }
-        if (!automatic && resolved != null &&
-            serverQualityRepository.measurePing(resolved, force = true) < 0L
-        ) {
-            return null
         }
         return resolved
     }

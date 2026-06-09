@@ -107,6 +107,11 @@ interface BotApi {
         @Path("shortUuid") shortUuid: String,
     ): PanelResponse<PanelSubInfoDto>
 
+    @POST("api/panel/sub/{shortUuid}/reset")
+    suspend fun resetSubscription(
+        @Path("shortUuid") shortUuid: String,
+    ): ApiResponse<EnsureUserResponseDto>
+
     // Purchase / tariff plans — server uses session identity.
 
     @GET("api/purchase/plans")

@@ -7,7 +7,6 @@ import com.tobevpn.app.R
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.local.dao.SessionDao
 import com.tobevpn.app.data.remote.BotApi
-import com.tobevpn.app.data.remote.dto.DeviceUnlinkRequestDto
 import com.tobevpn.app.data.remote.dto.LinkedDeviceDto
 import com.tobevpn.app.data.remote.dto.TvPairConfirmRequestDto
 import com.tobevpn.app.data.repository.AppFilterRepository
@@ -192,15 +191,14 @@ class SettingsViewModel @Inject constructor(
                 errorMessage = null,
             )
             _linkedDevicesState.value = try {
-                val response = botApi.unlinkDevice(
-                    DeviceUnlinkRequestDto(deviceId = deviceId)
-                )
-                if (response.success) {
+                val result = authRepository.unlinkDevice(deviceId)
+                if (result.isSuccess) {
                     _linkedDevicesState.value.copy(busyDeviceId = null)
                 } else {
                     _linkedDevicesState.value.copy(
                         busyDeviceId = null,
-                        errorMessage = response.message ?: context.getString(R.string.error_devices_disconnect),
+                        errorMessage = result.exceptionOrNull()?.message
+                            ?: context.getString(R.string.error_devices_disconnect),
                     )
                 }
             } catch (_: Exception) {

@@ -15,6 +15,7 @@ import com.tobevpn.app.data.remote.dto.CurrentPlanDto
 import com.tobevpn.app.data.remote.dto.DeviceRegisterRequestDto
 import com.tobevpn.app.data.remote.dto.DeviceUnlinkRequestDto
 import com.tobevpn.app.data.remote.dto.EnsureUserRequestDto
+import com.tobevpn.app.data.remote.dto.EnsureUserResponseDto
 import com.tobevpn.app.data.remote.dto.SaveEmailRequestDto
 import com.tobevpn.app.data.remote.dto.TvPairCreateResponseDto
 import com.tobevpn.app.data.remote.dto.TvPairCreateRequestDto
@@ -51,6 +52,7 @@ data class CurrentSubscriptionPlanInfo(
     val isExpired: Boolean?,
     val isTrial: Boolean?,
     val isUnlimited: Boolean?,
+    val subscriptionUrl: String?,
     val hasPlanData: Boolean,
 )
 
@@ -266,15 +268,75 @@ class AuthRepository @Inject constructor(
 
     suspend fun unlinkDevice(deviceId: String): Result<Unit> {
         return try {
-            val response = botApi.unlinkDevice(DeviceUnlinkRequestDto(deviceId = deviceId))
-            if (response.success) {
-                Result.success(Unit)
-            } else {
+            val sessionBefore = sessionDao.getSession()
+            val currentDeviceAliases = getCurrentDeviceAliases()
+            val response = withFreshDeviceSessionRetry {
+                botApi.unlinkDevice(DeviceUnlinkRequestDto(deviceId = deviceId))
+            }
+            if (!response.success) {
                 Result.failure(IllegalStateException(response.message ?: "Could not unlink device"))
+            } else {
+                val isCurrentDevice = currentDeviceAliases.any { it.equals(deviceId, ignoreCase = true) }
+                if (!isCurrentDevice) {
+                    resetSubscriptionAfterDeviceUnlink(sessionBefore).getOrThrow()
+                }
+                Result.success(Unit)
             }
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private suspend fun resetSubscriptionAfterDeviceUnlink(sessionBefore: SessionEntity?): Result<Unit> {
+        val oldShortUuid = sessionBefore?.shortUuid?.takeIf { it.isNotBlank() }
+            ?: return Result.success(Unit)
+        return try {
+            val response = withFreshDeviceSessionRetry {
+                botApi.resetSubscription(oldShortUuid)
+            }
+            val data = response.data
+            if (!response.success || data == null) {
+                return Result.failure(
+                    IllegalStateException(response.message ?: "Could not reset subscription link"),
+                )
+            }
+            applyPanelUserSessionData(data)
+            subscriptionInfoProvider.invalidate(oldShortUuid)
+            data.shortUuid.takeIf { it.isNotBlank() }?.let { subscriptionInfoProvider.invalidate(it) }
+            prefsDataStore.clearSubscriptionSyncTimestamp()
+            vpnRepository.clearCachedServers()
+            vpnRepository.refreshServers(forceRefresh = true)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private suspend fun applyPanelUserSessionData(data: EnsureUserResponseDto) {
+        sessionStore.update { current ->
+            current.copy(
+                shortUuid = data.shortUuid,
+                panelUserUuid = data.panelUserUuid,
+                subscriptionUrl = data.subscriptionUrl ?: current.subscriptionUrl,
+                telegramId = data.telegramId ?: current.telegramId,
+                authState = if (!data.isAnonymous && data.telegramId != null) {
+                    "AUTHENTICATED"
+                } else {
+                    current.authState
+                },
+                isLinked = if (!data.isAnonymous && data.telegramId != null) true else current.isLinked,
+            )
+        }
+        usageRepository.updateLimits(data.trafficLimitBytes, 0)
+        val trafficUsedBytes = if (data.isAnonymous) {
+            data.anonTrafficBytes ?: data.trafficUsedBytes
+        } else {
+            data.trafficUsedBytes
+        }
+        syncUsageFromServer(
+            serverBytesUsed = trafficUsedBytes,
+            isAnonymous = data.isAnonymous,
+        )
     }
 
     /**
@@ -316,6 +378,7 @@ class AuthRepository @Inject constructor(
                     pendingAuthToken = if (isAuthenticated) null else current.pendingAuthToken,
                     userPlan = if (isAuthenticated) current.userPlan else "FREE_TRIAL",
                     planExpiresAt = if (isAuthenticated) current.planExpiresAt else null,
+                    subscriptionUrl = data.subscriptionUrl ?: current.subscriptionUrl,
                 )
             }
 
@@ -422,6 +485,7 @@ class AuthRepository @Inject constructor(
             isTrial = subscription?.isTrial ?: snapshot?.isTrial,
             isUnlimited = subscription?.isUnlimited
                 ?: snapshot?.type?.equals("UNLIMITED", ignoreCase = true),
+            subscriptionUrl = subscription?.url?.trim()?.takeIf { it.isNotBlank() },
             hasPlanData = hasPlanData,
         )
     }
@@ -604,8 +668,11 @@ class AuthRepository @Inject constructor(
     }
 
     /**
-     * Syncs subscription info from panel via proxy.
-     * @param overwriteUsage when true, writes panel's trafficUsedBytes into local usage.
+     * Syncs subscription info through the public subscription URL. The
+     * deprecated panel proxy is used only while an older backend response has
+     * not given the client a subscription_url yet.
+     *
+     * @param overwriteUsage when true, writes server traffic usage into local usage.
      *                       Pass false during an active VPN session to avoid clobbering
      *                       the live local counter with a stale panel value.
      * @param force          when true, bypass the panel-recommended refresh
@@ -661,6 +728,7 @@ class AuthRepository @Inject constructor(
                             current.copy(
                                 shortUuid = panelUser.shortUuid,
                                 panelUserUuid = panelUser.uuid,
+                                subscriptionUrl = panelUser.subscriptionUrl,
                             )
                         }
                         if (updated != null) session = updated
@@ -681,6 +749,7 @@ class AuthRepository @Inject constructor(
                             ?.displayName
                             ?.takeIf { resolvedPlan != "EXPIRED" },
                         planExpiresAt = currentPlanInfo?.expiresAtMillis,
+                        subscriptionUrl = currentPlanInfo?.subscriptionUrl ?: current.subscriptionUrl,
                     )
                 }
                 if (updated != null) session = updated
@@ -698,51 +767,57 @@ class AuthRepository @Inject constructor(
                 return
             }
 
-            var subInfo = runCatching {
-                subscriptionInfoProvider.get(shortUuid, forceRefresh)
-            }.onFailure { error ->
-                SafeDiagnostics.warn(TAG, "Subscription info refresh failed: ${SafeDiagnostics.failureCategory(error)}")
-            }.getOrNull()
-
-            val effectiveUrl = panelUser?.subscriptionUrl
-                ?: subInfo?.subscriptionUrl
+            var legacySubInfo: com.tobevpn.app.data.remote.dto.PanelSubInfoDto? = null
+            var effectiveUrl = panelUser?.subscriptionUrl
+                ?: currentPlanInfo?.subscriptionUrl
                 ?: session.subscriptionUrl
-            val intervalMs = if (!effectiveUrl.isNullOrBlank()) {
-                runCatching {
-                    sessionStore.update { it.copy(subscriptionUrl = effectiveUrl) }
-                    val pingResult = subscriptionPinger.ping(effectiveUrl)
-                    if (pingResult != null) {
-                        prefsDataStore.setSubscriptionUsageBlocked(shortUuid, pingResult.isUsageBlocked)
-                        prefsDataStore.setUpdateRequired(pingResult.isUpdateRequired)
-                        // HWID binding can change the effective subscription
-                        // links. Never leave the server cache populated from
-                        // the pre-ping response.
-                        subscriptionInfoProvider.invalidate(shortUuid)
-                        subInfo = runCatching {
-                            subscriptionInfoProvider.get(shortUuid, forceRefresh = true)
-                        }.onFailure { error ->
-                            SafeDiagnostics.warn(
-                                TAG,
-                                "Post-ping subscription refresh failed: ${SafeDiagnostics.failureCategory(error)}",
-                            )
-                        }.getOrNull() ?: subInfo
-                    }
-                    pingResult?.intervalMs
+            if (effectiveUrl.isNullOrBlank()) {
+                legacySubInfo = runCatching {
+                    subscriptionInfoProvider.get(shortUuid, forceRefresh)
                 }.onFailure { error ->
-                    SafeDiagnostics.warn(TAG, "Subscription ping failed: ${SafeDiagnostics.failureCategory(error)}")
+                    SafeDiagnostics.warn(TAG, "Legacy subscription info refresh failed: ${SafeDiagnostics.failureCategory(error)}")
+                }.getOrNull()
+                effectiveUrl = legacySubInfo?.subscriptionUrl
+            }
+
+            var profileTrafficUsedBytes: Long? = null
+            val profileUrl = effectiveUrl
+            val intervalMs = if (!profileUrl.isNullOrBlank()) {
+                runCatching {
+                    sessionStore.update { it.copy(subscriptionUrl = profileUrl) }
+                    val profile = subscriptionPinger.fetchProfile(profileUrl)
+                    if (profile != null) {
+                        prefsDataStore.setSubscriptionUsageBlocked(shortUuid, profile.isUsageBlocked)
+                        prefsDataStore.setUpdateRequired(profile.isUpdateRequired)
+                        profile.trafficLimitBytes?.let { trafficLimitBytes ->
+                            usageRepository.updateLimits(trafficLimitBytes, 0)
+                        }
+                        profileTrafficUsedBytes = profile.trafficUsedBytes
+                        if (profile.links.isNotEmpty()) {
+                            subscriptionInfoProvider.invalidate(shortUuid)
+                            vpnRepository.updateServersFromLinks(shortUuid, profile.links)
+                        } else if (profile.isSuccessful || profile.isUsageBlocked) {
+                            vpnRepository.updateServersFromLinks(shortUuid, emptyList())
+                        }
+                    }
+                    profile?.intervalMs
+                }.onFailure { error ->
+                    SafeDiagnostics.warn(TAG, "Subscription profile refresh failed: ${SafeDiagnostics.failureCategory(error)}")
                 }.getOrNull()
             } else {
                 null
             }
             persistSyncState(intervalMs)
-            if (subInfo != null) {
-                vpnRepository.updateServersFromSubscription(shortUuid, subInfo)
+            if (effectiveUrl.isNullOrBlank() && legacySubInfo != null) {
+                vpnRepository.updateServersFromSubscription(shortUuid, legacySubInfo)
             }
 
-            val sub = subInfo?.user
-            if (overwriteUsage && sub != null) {
+            val legacySub = legacySubInfo?.user
+            if (overwriteUsage && (profileTrafficUsedBytes != null || legacySub != null)) {
                 val keepDeviceScopedUsage = session.authState != "AUTHENTICATED" || session.userPlan == "FREE_TRIAL"
-                val subscriptionTrafficUsedBytes = sub.trafficUsedBytes.toLongOrNull() ?: 0
+                val subscriptionTrafficUsedBytes = profileTrafficUsedBytes
+                    ?: legacySub?.trafficUsedBytes?.toLongOrNull()
+                    ?: 0
                 val trafficUsedBytes = if (keepDeviceScopedUsage) {
                     try {
                         val resp = botApi.getDeviceTraffic()
@@ -781,12 +856,9 @@ class AuthRepository @Inject constructor(
 
     /**
      * Bare HWID-marker ping — used by the connect path so the subscription
-     * service registers the device on every VPN start. Skips the JSON
-     * `getSubscriptionInfo` call entirely; reads the subscription URL
-     * from the encrypted session row populated by the most recent
-     * [syncSubscription]. If it's empty (very first connect on a fresh
-     * install before any sync has completed) we silently no-op — the
-     * next ambient sync will populate it.
+     * service registers the device on every VPN start. Reads the subscription
+     * URL from the session first and falls back to the legacy info endpoint
+     * only for older/anonymous sessions that have not stored the URL yet.
      */
     suspend fun pingHwidOnly(): Boolean {
         val session = try {
@@ -799,7 +871,12 @@ class AuthRepository @Inject constructor(
             prefsDataStore.isSubscriptionUsageBlocked(shortUuid)
         }.getOrDefault(false)
         return try {
-            val url = session.subscriptionUrl ?: return wasBlocked
+            val url = session.subscriptionUrl ?: run {
+                val subInfo = subscriptionInfoProvider.get(shortUuid)
+                subInfo.subscriptionUrl?.also { resolvedUrl ->
+                    sessionStore.update { it.copy(subscriptionUrl = resolvedUrl) }
+                }
+            } ?: return wasBlocked
             val result = subscriptionPinger.ping(url) ?: return wasBlocked
             prefsDataStore.setSubscriptionUsageBlocked(shortUuid, result.isUsageBlocked)
             prefsDataStore.setUpdateRequired(result.isUpdateRequired)
