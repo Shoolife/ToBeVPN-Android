@@ -47,8 +47,8 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = versionCodeOverride ?: 39
-        versionName = "1.0.38"
+        versionCode = versionCodeOverride ?: 40
+        versionName = "1.0.39"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

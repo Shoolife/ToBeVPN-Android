@@ -8,6 +8,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
@@ -69,6 +70,7 @@ class FallbackInterceptor : Interceptor {
                 primaryResponse
             } else {
                 SafeDiagnostics.warn(TAG, "Primary API route rejected request; retrying via fallback")
+                val primarySnapshot = primaryResponse.snapshotAndClose()
                 val fallbackResponse = try {
                     proceedFallback(chain, fallbackRequest)
                 } catch (fallbackError: IOException) {
@@ -76,13 +78,12 @@ class FallbackInterceptor : Interceptor {
                         TAG,
                         "Fallback API request failed: ${SafeDiagnostics.failureCategory(fallbackError)}",
                     )
-                    return primaryResponse
+                    return primarySnapshot
                 }
                 if (isGatewayAuthError(fallbackResponse)) {
                     fallbackResponse.close()
-                    primaryResponse
+                    primarySnapshot
                 } else {
-                    primaryResponse.close()
                     fallbackResponse
                 }
             }
@@ -160,6 +161,21 @@ class FallbackInterceptor : Interceptor {
         return body.contains("\"errorCode\":403") &&
             body.contains("Forbidden: Not authorized", ignoreCase = true) &&
             body.contains("ClientError", ignoreCase = true)
+    }
+
+    private fun Response.snapshotAndClose(): Response {
+        val contentType = body.contentType()
+        val snapshotBody = runCatching {
+            peekBody(MAX_RESPONSE_SNAPSHOT_BYTES)
+                .bytes()
+                .toResponseBody(contentType)
+        }.getOrNull()
+        val builder = newBuilder()
+        if (snapshotBody != null) {
+            builder.body(snapshotBody)
+        }
+        return builder.build()
+            .also { close() }
     }
 
     /**
@@ -241,6 +257,7 @@ class FallbackInterceptor : Interceptor {
         const val FAST_PRIMARY_TIMEOUT_MS = 1_200
         const val PRIMARY_FAILURE_COOLDOWN_MS = 2L * 60L * 1000L
         const val MAX_GATEWAY_BODY_BYTES = 1_024L
+        const val MAX_RESPONSE_SNAPSHOT_BYTES = 64L * 1024L
 
         @Volatile
         var primaryUnavailableUntilMs = 0L
