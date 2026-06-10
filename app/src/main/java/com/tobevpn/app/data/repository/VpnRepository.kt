@@ -4,10 +4,8 @@ import com.tobevpn.app.data.local.dao.ServerDao
 import com.tobevpn.app.data.local.dao.SessionDao
 import com.tobevpn.app.data.local.entity.ServerEntity
 import com.tobevpn.app.data.local.PrefsDataStore
-import com.tobevpn.app.data.local.SessionStore
 import com.tobevpn.app.data.remote.SubscriptionPinger
 import com.tobevpn.app.data.remote.BotApi
-import com.tobevpn.app.data.remote.dto.PanelSubInfoDto
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.vpn.VlessUrlParser
@@ -30,11 +28,9 @@ import javax.inject.Singleton
 class VpnRepository @Inject constructor(
     private val serverDao: ServerDao,
     private val sessionDao: SessionDao,
-    private val sessionStore: SessionStore,
     private val prefsDataStore: PrefsDataStore,
     private val botApi: BotApi,
     private val subscriptionPinger: SubscriptionPinger,
-    private val subscriptionInfoProvider: SubscriptionInfoProvider,
 ) {
     private val enrichmentScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val refreshGeneration = AtomicLong(0L)
@@ -58,25 +54,17 @@ class VpnRepository @Inject constructor(
         }
 
         return try {
-            val subscriptionUrl = session.subscriptionUrl
-            if (!subscriptionUrl.isNullOrBlank()) {
-                val profile = subscriptionPinger.fetchProfile(subscriptionUrl)
-                    ?: throw IOException("Subscription profile unavailable")
-                prefsDataStore.setSubscriptionUsageBlocked(shortUuid, profile.isUsageBlocked)
-                prefsDataStore.setUpdateRequired(profile.isUpdateRequired)
-                if (profile.links.isEmpty() && !profile.isSuccessful && !profile.isUsageBlocked) {
-                    throw IOException("Subscription profile unavailable")
-                }
-                updateServersFromLinks(shortUuid, profile.links)
-            } else {
-                // Legacy fallback for old backend payloads that do not expose
-                // subscription_url yet (notably anonymous/trial ensure-user).
-                val subInfo = subscriptionInfoProvider.get(shortUuid, forceRefresh)
-                subInfo.subscriptionUrl?.takeIf { it.isNotBlank() }?.let { resolvedUrl ->
-                    sessionStore.update { it.copy(subscriptionUrl = resolvedUrl) }
-                }
-                updateServersFromSubscription(shortUuid, subInfo)
+            val profile = subscriptionPinger.fetchProfile(
+                subscriptionUrl = session.subscriptionUrl,
+                subscriptionKey = shortUuid,
+            )
+                ?: throw IOException("Subscription profile unavailable")
+            prefsDataStore.setSubscriptionUsageBlocked(shortUuid, profile.isUsageBlocked)
+            prefsDataStore.setUpdateRequired(profile.isUpdateRequired)
+            if (profile.links.isEmpty() && !profile.isSuccessful && !profile.isUsageBlocked) {
+                throw IOException("Subscription profile unavailable")
             }
+            updateServersFromLinks(shortUuid, profile.links)
         } catch (e: Exception) {
             SafeDiagnostics.warn(TAG, "Server refresh failed; checking local cache: ${SafeDiagnostics.failureCategory(e)}")
             val cached = if (prefsDataStore.isServerCacheOwner(shortUuid)) {
@@ -91,18 +79,6 @@ class VpnRepository @Inject constructor(
                 Result.failure(e)
             }
         }
-    }
-
-    suspend fun updateServersFromSubscription(
-        shortUuid: String,
-        subInfo: PanelSubInfoDto,
-    ): Result<List<Server>> {
-        if (!subInfo.isFound || subInfo.links.isNullOrEmpty()) {
-            clearServerCache()
-            return Result.failure(Exception("Подписка не найдена"))
-        }
-
-        return updateServersFromLinks(shortUuid, subInfo.links)
     }
 
     suspend fun updateServersFromLinks(

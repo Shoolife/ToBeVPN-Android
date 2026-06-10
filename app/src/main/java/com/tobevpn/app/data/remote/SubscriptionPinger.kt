@@ -72,10 +72,27 @@ class SubscriptionPinger @Inject constructor(
      * cadence header is represented inside the result so access status can
      * still be processed.
      */
-    suspend fun ping(subscriptionUrl: String?): SubscriptionPingResult? = withContext(Dispatchers.IO) {
-        if (subscriptionUrl.isNullOrBlank()) return@withContext null
-        val baseRequest = buildBaseRequest(subscriptionUrl) ?: return@withContext null
-        val fallbackRequest = buildFallbackRequest(subscriptionUrl, baseRequest)
+    suspend fun ping(
+        subscriptionUrl: String?,
+        subscriptionKey: String? = null,
+    ): SubscriptionPingResult? = withContext(Dispatchers.IO) {
+        val baseRequest = subscriptionUrl
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::buildBaseRequest)
+        val fallbackRequest = when {
+            baseRequest != null -> buildFallbackRequest(subscriptionUrl.orEmpty(), baseRequest)
+            else -> buildFallbackRequestByKey(subscriptionKey)
+        }
+
+        if (baseRequest == null) {
+            if (fallbackRequest == null) return@withContext null
+            return@withContext try {
+                client.newCall(fallbackRequest).execute().use(::readFallbackResult)
+            } catch (fallbackError: IOException) {
+                logFailure("fallback", fallbackError)
+                null
+            }
+        }
 
         if (fallbackRequest != null && SystemClock.elapsedRealtime() < primaryUnavailableUntilMs) {
             try {
@@ -140,13 +157,29 @@ class SubscriptionPinger @Inject constructor(
 
     /**
      * Fetches the standard subscription profile body and parses VLESS links.
-     * This is the v2ray-compatible path used for server lists; panel-sub info
-     * remains only as a legacy fallback while older backend responses are in use.
+     * This is the v2ray-compatible path used for server lists.
      */
-    suspend fun fetchProfile(subscriptionUrl: String?): SubscriptionProfileResult? = withContext(Dispatchers.IO) {
-        if (subscriptionUrl.isNullOrBlank()) return@withContext null
-        val baseRequest = buildBaseRequest(subscriptionUrl) ?: return@withContext null
-        val fallbackRequest = buildFallbackRequest(subscriptionUrl, baseRequest)
+    suspend fun fetchProfile(
+        subscriptionUrl: String?,
+        subscriptionKey: String? = null,
+    ): SubscriptionProfileResult? = withContext(Dispatchers.IO) {
+        val baseRequest = subscriptionUrl
+            ?.takeIf { it.isNotBlank() }
+            ?.let(::buildBaseRequest)
+        val fallbackRequest = when {
+            baseRequest != null -> buildFallbackRequest(subscriptionUrl.orEmpty(), baseRequest)
+            else -> buildFallbackRequestByKey(subscriptionKey)
+        }
+
+        if (baseRequest == null) {
+            if (fallbackRequest == null) return@withContext null
+            return@withContext try {
+                client.newCall(fallbackRequest).execute().use(::readFallbackProfileResult)
+            } catch (fallbackError: IOException) {
+                logFailure("fallback", fallbackError)
+                null
+            }
+        }
 
         if (fallbackRequest != null && SystemClock.elapsedRealtime() < primaryUnavailableUntilMs) {
             try {
@@ -229,7 +262,7 @@ class SubscriptionPinger @Inject constructor(
 
     private fun readProfileResult(response: Response): SubscriptionProfileResult {
         val userInfo = readUserInfo(response.header(SUBSCRIPTION_USERINFO_HEADER))
-        val body = response.body?.string().orEmpty()
+        val body = response.body.string()
         return SubscriptionProfileResult(
             intervalMs = readIntervalMs(response.header("profile-update-interval")),
             isUsageBlocked = response.header(BLOCK_HEADER)?.trim() == BLOCK_VALUE,
@@ -348,15 +381,36 @@ class SubscriptionPinger @Inject constructor(
      * contain the expected key segment.
      */
     private fun buildFallbackRequest(subscriptionUrl: String, base: Request): Request? {
-        val fallbackBase = BuildConfig.FALLBACK_SUBS_DOMAIN
-        if (fallbackBase.isBlank()) return null
         val key = try {
             subscriptionUrl.toHttpUrl().pathSegments.lastOrNull { it.isNotBlank() }
         } catch (_: IllegalArgumentException) {
             null
         } ?: return null
-        val rebuilt = (fallbackBase + key).toHttpUrl()
-        return base.newBuilder().url(rebuilt).build()
+        return buildFallbackRequestByKey(key, base)
+    }
+
+    /**
+     * Anonymous sessions receive only a subscription key from ensure-user.
+     * They therefore use the configured subscription fallback directly
+     * instead of calling an authenticated panel proxy just to discover a URL.
+     */
+    private fun buildFallbackRequestByKey(
+        rawKey: String?,
+        template: Request? = null,
+    ): Request? {
+        val fallbackBase = BuildConfig.FALLBACK_SUBS_DOMAIN
+        val key = rawKey?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        if (fallbackBase.isBlank()) return null
+        val rebuilt = try {
+            (fallbackBase + key).toHttpUrl()
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        return template
+            ?.newBuilder()
+            ?.url(rebuilt)
+            ?.build()
+            ?: buildBaseRequest(rebuilt.toString())
     }
 
     private fun logFailure(stage: String, e: IOException) {

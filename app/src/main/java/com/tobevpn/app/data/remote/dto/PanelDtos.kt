@@ -50,27 +50,3 @@ data class PanelUserTrafficDto(
     @SerializedName("online_at") val onlineAt: String?,
     @SerializedName("last_connected_node_uuid") val lastConnectedNodeUuid: String?,
 )
-
-// --- Subscription info ---
-
-data class PanelSubInfoDto(
-    @SerializedName("is_found") val isFound: Boolean,
-    val user: PanelSubUserDto?,
-    val links: List<String>?,
-    @SerializedName("subscription_url") val subscriptionUrl: String?,
-)
-
-data class PanelSubUserDto(
-    @SerializedName("short_uuid") val shortUuid: String,
-    @SerializedName("days_left") val daysLeft: Double,
-    @SerializedName("traffic_used") val trafficUsed: String,
-    @SerializedName("traffic_limit") val trafficLimit: String,
-    @SerializedName("traffic_used_bytes") val trafficUsedBytes: String,
-    @SerializedName("traffic_limit_bytes") val trafficLimitBytes: String,
-    @SerializedName("lifetime_traffic_used_bytes") val lifetimeTrafficUsedBytes: String,
-    val username: String,
-    @SerializedName("expires_at") val expiresAt: String?,
-    @SerializedName("is_active") val isActive: Boolean,
-    @SerializedName("user_status") val userStatus: String,
-    @SerializedName("traffic_limit_strategy") val trafficLimitStrategy: String,
-)
