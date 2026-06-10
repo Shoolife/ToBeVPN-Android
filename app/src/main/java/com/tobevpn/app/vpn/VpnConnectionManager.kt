@@ -21,6 +21,7 @@ import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.presentation.servers.serverSelectionKey
 import com.tobevpn.app.presentation.servers.stableServerId
 import com.tobevpn.app.domain.model.UsageInfo
+import com.tobevpn.app.util.SafeDiagnostics
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -102,8 +103,20 @@ class VpnConnectionManager @Inject constructor(
         .build()
 
     init {
-        scope.launch { usageRepository.ensureInitialized() }
-        scope.launch { observeAppFilterAndReconnect() }
+        scope.launch {
+            try {
+                usageRepository.ensureInitialized()
+            } catch (error: Exception) {
+                SafeDiagnostics.warn(TAG, "Usage init failed: ${SafeDiagnostics.failureCategory(error)}")
+            }
+        }
+        scope.launch {
+            try {
+                observeAppFilterAndReconnect()
+            } catch (error: Exception) {
+                SafeDiagnostics.warn(TAG, "App filter observer failed: ${SafeDiagnostics.failureCategory(error)}")
+            }
+        }
     }
 
     /**
@@ -952,6 +965,7 @@ class VpnConnectionManager @Inject constructor(
     }
 
     companion object {
+        private const val TAG = "VpnConnectionManager"
         private const val HEARTBEAT_TICKS = 60
         private const val TUNNEL_HEALTH_INITIAL_DELAY_MS = 2_500L
         private const val TUNNEL_HEALTH_INTERVAL_MS = 30_000L

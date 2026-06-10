@@ -18,10 +18,13 @@ import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.util.DeepLinkBus
 import com.tobevpn.app.util.LocaleManager
+import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.vpn.VpnConnectionManager
 import com.tobevpn.app.vpn.XRayCore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -71,14 +74,31 @@ class SettingsViewModel @Inject constructor(
     private val _linkedDevicesState = MutableStateFlow(LinkedDevicesUiState())
     val linkedDevicesState: StateFlow<LinkedDevicesUiState> = _linkedDevicesState.asStateFlow()
 
+    private companion object {
+        const val TAG = "SettingsViewModel"
+    }
+
+    private fun launchGuarded(
+        operation: String,
+        block: suspend () -> Unit,
+    ): Job = viewModelScope.launch {
+        try {
+            block()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            SafeDiagnostics.warn(TAG, "$operation failed: ${SafeDiagnostics.failureCategory(error)}")
+        }
+    }
+
     init {
-        viewModelScope.launch {
+        launchGuarded("Settings subscription sync") {
             // Don't clobber the live local usage counter while a VPN session is
             // active — sync only the plan/limits, not the traffic number.
             val isConnected = connectionManager.connectionState.value is ConnectionState.Connected
             authRepository.syncSubscription(overwriteUsage = !isConnected)
         }
-        viewModelScope.launch {
+        launchGuarded("Settings auth observer") {
             authState.collectLatest { state ->
                 if (state is AuthState.Authenticated) {
                     authRepository.registerCurrentDevice()
@@ -87,7 +107,7 @@ class SettingsViewModel @Inject constructor(
                 }
             }
         }
-        viewModelScope.launch {
+        launchGuarded("Settings pairing observer") {
             deepLinkBus.devicePairingCodes.collectLatest { code ->
                 requestTvPairConfirmation(code)
             }
@@ -95,7 +115,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun logout() {
-        viewModelScope.launch {
+        launchGuarded("Logout") {
             // Tear down any active VPN session before flipping identity.
             // Without this the existing tunnel keeps running with the previous
             // panel user's VLESS UUID — by the time the user signs out, that

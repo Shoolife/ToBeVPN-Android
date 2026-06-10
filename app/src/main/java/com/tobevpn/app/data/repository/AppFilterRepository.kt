@@ -4,6 +4,7 @@ import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.local.dao.AppFilterDao
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
+import com.tobevpn.app.util.SafeDiagnostics
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -33,8 +34,16 @@ class AppFilterRepository @Inject constructor(
 
     init {
         writeScope.launch {
-            writeMutex.withLock { getSelectedPackagesLocked() }
+            try {
+                writeMutex.withLock { getSelectedPackagesLocked() }
+            } catch (error: Exception) {
+                SafeDiagnostics.warn(TAG, "App filter migration failed: ${SafeDiagnostics.failureCategory(error)}")
+            }
         }
+    }
+
+    private companion object {
+        const val TAG = "AppFilterRepository"
     }
 
     fun observeMode(): Flow<AppFilterMode> = prefs.appFilterMode.map { parseMode(it) }

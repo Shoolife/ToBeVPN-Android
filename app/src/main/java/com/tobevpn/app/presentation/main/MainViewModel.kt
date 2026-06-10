@@ -198,8 +198,21 @@ class MainViewModel @Inject constructor(
         const val PURCHASE_PENDING_MAX_AGE_MS = 30L * 60L * 1000L
     }
 
+    private fun launchGuarded(
+        operation: String,
+        block: suspend () -> Unit,
+    ): Job = viewModelScope.launch {
+        try {
+            block()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            SafeDiagnostics.warn(TAG, "$operation failed: ${SafeDiagnostics.failureCategory(error)}")
+        }
+    }
+
     init {
-        viewModelScope.launch {
+        launchGuarded("Initial sync") {
             authRepository.fetchRemoteConfig()
             authRepository.getOrCreateDeviceId()
             authRepository.ensurePanelUser()
@@ -216,16 +229,16 @@ class MainViewModel @Inject constructor(
             initialized = true
             startPendingPurchaseRefreshIfNeeded()
         }
-        viewModelScope.launch {
+        launchGuarded("Currency refresh") {
             _rubToUsdRate.value = currencyRepository.getRubToUsdRate()
         }
-        viewModelScope.launch {
+        launchGuarded("Payment callback observer") {
             deepLinkBus.paymentCallbacks.collect {
                 pendingPurchaseRefreshSignal.trySend(Unit)
                 startPendingPurchaseRefreshIfNeeded()
             }
         }
-        viewModelScope.launch {
+        launchGuarded("Connection state observer") {
             connectionState.collect { state ->
                 if (state is ConnectionState.Connecting ||
                     state is ConnectionState.Connected ||
@@ -239,7 +252,7 @@ class MainViewModel @Inject constructor(
         // Measure ping immediately when server appears/changes, then every 5s.
         // If VPN is currently active and the selected server changes,
         // automatically reconnect to the new server.
-        viewModelScope.launch {
+        launchGuarded("Selected server observer") {
             var lastSnapshot: SelectedServerSnapshot? = null
             selectedServerSnapshot.collect { snapshot ->
                 val server = snapshot.server
@@ -286,7 +299,7 @@ class MainViewModel @Inject constructor(
         // told us we're expired but xray keeps the tunnel up locally),
         // and the next user action — picking a server — would drag the
         // expired sentinel through the auto-reconnect path.
-        viewModelScope.launch {
+        launchGuarded("Auth state observer") {
             authRepository.observeAuthState().collect { state ->
                 if (!purchaseStateOwnerInitialized) {
                     purchaseStateOwner = state
@@ -307,7 +320,7 @@ class MainViewModel @Inject constructor(
                 }
             }
         }
-        viewModelScope.launch {
+        launchGuarded("Subscription block observer") {
             subscriptionUsageBlocked.collect { blocked ->
                 if (blocked) {
                     clearPurchaseState()
@@ -315,7 +328,7 @@ class MainViewModel @Inject constructor(
                 }
             }
         }
-        viewModelScope.launch {
+        launchGuarded("Periodic ping refresh") {
             while (true) {
                 delay(5000)
                 val server = currentServer.value ?: continue
@@ -466,14 +479,14 @@ class MainViewModel @Inject constructor(
     /** Re-sync subscription & servers when app returns to foreground (throttled to 5s). */
     fun onResume() {
         if (!initialized) return
-        viewModelScope.launch {
+        launchGuarded("Resume sync") resume@{
             if (prefsDataStore.getPendingPurchaseState() != null) {
                 startPendingPurchaseRefreshIfNeeded()
-                return@launch
+                return@resume
             }
 
             val now = System.currentTimeMillis()
-            if (now - lastSyncTime < RESUME_SYNC_THROTTLE_MS) return@launch
+            if (now - lastSyncTime < RESUME_SYNC_THROTTLE_MS) return@resume
             lastSyncTime = now
             // If VPN is currently active, don't let panel overwrite the
             // live local usage counter — it lags behind and causes the UI
@@ -482,7 +495,7 @@ class MainViewModel @Inject constructor(
                 connectionState.value is ConnectionState.Connecting ||
                 _connectionPreparation.value
             authRepository.syncSubscription(overwriteUsage = !isActive)
-            if (isActive) return@launch
+            if (isActive) return@resume
             val servers = vpnRepository.refreshServers().getOrNull().orEmpty()
             ensureAutomaticServerSelected(servers)
         }
@@ -500,7 +513,7 @@ class MainViewModel @Inject constructor(
     fun loadPurchasePlans() {
         if (subscriptionUsageBlocked.value || _purchasePlansLoading.value) return
         val request = beginPurchaseRefresh()
-        viewModelScope.launch {
+        launchGuarded("Purchase plans refresh") {
             refreshPurchasePlansAndLimits(request)
         }
     }
@@ -512,7 +525,7 @@ class MainViewModel @Inject constructor(
             onAllowed()
             return
         }
-        viewModelScope.launch {
+        launchGuarded("Subscription sheet guard") {
             if (!authRepository.pingHwidOnly()) {
                 onAllowed()
             }
@@ -521,17 +534,17 @@ class MainViewModel @Inject constructor(
 
     fun openPurchaseUrl(context: Context, paymentUrl: String?) {
         if (subscriptionUsageBlocked.value || paymentUrl.isNullOrBlank()) return
-        viewModelScope.launch {
+        launchGuarded("Open purchase URL") purchase@{
             if (authRepository.pingHwidOnly()) {
                 clearPurchaseState()
                 prefsDataStore.clearPendingPurchase()
-                return@launch
+                return@purchase
             }
             val baseline = authRepository.getAuthStateSnapshot() as? AuthState.Authenticated
                 ?: run {
                     clearPurchaseState()
                     prefsDataStore.clearPendingPurchase()
-                    return@launch
+                    return@purchase
                 }
             paymentFeedbackSent = false
             _paymentSuccessVisible.value = false
@@ -619,13 +632,13 @@ class MainViewModel @Inject constructor(
 
     private fun startPendingPurchaseRefreshIfNeeded() {
         if (pendingPurchaseRefreshJob?.isActive == true) return
-        pendingPurchaseRefreshJob = viewModelScope.launch {
-            val pending = prefsDataStore.getPendingPurchaseState() ?: return@launch
+        pendingPurchaseRefreshJob = launchGuarded("Pending purchase refresh") pendingRefresh@{
+            val pending = prefsDataStore.getPendingPurchaseState() ?: return@pendingRefresh
             val maxDeadline = pending.startedAt + PURCHASE_PENDING_MAX_AGE_MS
             val now = System.currentTimeMillis()
             if (now > maxDeadline) {
                 expirePendingPurchase()
-                return@launch
+                return@pendingRefresh
             }
 
             val activeDeadline = minOf(now + PURCHASE_REFRESH_ACTIVE_WINDOW_MS, maxDeadline)
@@ -633,7 +646,7 @@ class MainViewModel @Inject constructor(
                 refreshSubscriptionAfterPurchase()
                 if (paymentLooksApplied(pending, authRepository.getAuthStateSnapshot())) {
                     completeSuccessfulPayment()
-                    return@launch
+                    return@pendingRefresh
                 }
                 awaitPurchaseRefreshSignal(PURCHASE_REFRESH_INTERVAL_MS)
             }
@@ -644,7 +657,7 @@ class MainViewModel @Inject constructor(
                 refreshSubscriptionAfterPurchase()
                 if (paymentLooksApplied(pending, authRepository.getAuthStateSnapshot())) {
                     completeSuccessfulPayment()
-                    return@launch
+                    return@pendingRefresh
                 }
             }
 

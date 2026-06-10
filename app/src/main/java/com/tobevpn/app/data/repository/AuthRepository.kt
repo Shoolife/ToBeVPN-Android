@@ -313,18 +313,23 @@ class AuthRepository @Inject constructor(
     }
 
     private suspend fun applyPanelUserSessionData(data: EnsureUserResponseDto) {
+        val isAuthenticated = !data.isAnonymous && data.telegramId != null
         sessionStore.update { current ->
             current.copy(
                 shortUuid = data.shortUuid,
                 panelUserUuid = data.panelUserUuid,
-                subscriptionUrl = data.subscriptionUrl ?: current.subscriptionUrl,
+                subscriptionUrl = if (isAuthenticated) {
+                    data.subscriptionUrl ?: current.subscriptionUrl
+                } else {
+                    data.subscriptionUrl
+                },
                 telegramId = data.telegramId ?: current.telegramId,
-                authState = if (!data.isAnonymous && data.telegramId != null) {
+                authState = if (isAuthenticated) {
                     "AUTHENTICATED"
                 } else {
                     current.authState
                 },
-                isLinked = if (!data.isAnonymous && data.telegramId != null) true else current.isLinked,
+                isLinked = if (isAuthenticated) true else current.isLinked,
             )
         }
         usageRepository.updateLimits(data.trafficLimitBytes, 0)
@@ -378,7 +383,11 @@ class AuthRepository @Inject constructor(
                     pendingAuthToken = if (isAuthenticated) null else current.pendingAuthToken,
                     userPlan = if (isAuthenticated) current.userPlan else "FREE_TRIAL",
                     planExpiresAt = if (isAuthenticated) current.planExpiresAt else null,
-                    subscriptionUrl = data.subscriptionUrl ?: current.subscriptionUrl,
+                    subscriptionUrl = if (isAuthenticated) {
+                        data.subscriptionUrl ?: current.subscriptionUrl
+                    } else {
+                        data.subscriptionUrl
+                    },
                 )
             }
 
@@ -945,6 +954,8 @@ class AuthRepository @Inject constructor(
                 userPlan = "FREE_TRIAL",
                 planDisplayName = null,
                 email = null,
+                pendingAuthToken = null,
+                subscriptionUrl = null,
             )
         }
         val wasUnlimited = session.userPlan == "PAID" || session.userPlan == "ADMIN"
@@ -956,6 +967,8 @@ class AuthRepository @Inject constructor(
             usageRepository.resetSession()
         }
         prefsDataStore.clearPendingPurchase()
+        prefsDataStore.clearSubscriptionSyncTimestamp()
+        vpnRepository.clearCachedServers()
         bootstrapManager.clear()
         // Restore an anonymous device-session immediately so the UI can fetch
         // anon traffic/limits and server list without requiring an app restart.
