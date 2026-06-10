@@ -14,11 +14,6 @@ data class BootstrapRequestDto(
     @SerializedName("device_id") val deviceId: String,
     val platform: String,
     @SerializedName("integrity_token") val integrityToken: String? = null,
-    val hwid: String? = null,
-    @SerializedName("device_os") val deviceOs: String? = null,
-    @SerializedName("ver_os") val osVersion: String? = null,
-    @SerializedName("device_model") val deviceModel: String? = null,
-    @SerializedName("user_agent") val userAgent: String? = null,
 )
 
 data class RefreshRequestDto(
@@ -196,11 +191,7 @@ data class ServerDto(
 
 // Ensure user (anonymous panel user creation/lookup) — server uses session to identify the device.
 data class EnsureUserRequestDto(
-    val hwid: String? = null,
-    @SerializedName("device_os") val deviceOs: String? = null,
-    @SerializedName("ver_os") val osVersion: String? = null,
-    @SerializedName("device_model") val deviceModel: String? = null,
-    @SerializedName("user_agent") val userAgent: String? = null,
+    @SerializedName("device_id") val deviceId: String? = null,
 )
 
 data class EnsureUserResponseDto(

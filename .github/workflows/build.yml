@@ -63,6 +63,7 @@ jobs:
         # produce many). Build them separately.
         env:
           BOT_API_URL: ${{ secrets.BOT_API_URL }}
+          SUBSCRIPTION_URL: ${{ secrets.SUBSCRIPTION_URL }}
           # Production API and subscription fallback endpoints are required.
           # Gradle rejects blank/placeholder values so a release cannot ship
           # with an unusable subscription refresh path.
@@ -76,6 +77,7 @@ jobs:
         # to flip splits.abi.isEnable to false for this run.
         env:
           BOT_API_URL: ${{ secrets.BOT_API_URL }}
+          SUBSCRIPTION_URL: ${{ secrets.SUBSCRIPTION_URL }}
           FALLBACK_BOT_DOMAIN: ${{ secrets.FALLBACK_BOT_DOMAIN }}
           FALLBACK_SUBS_DOMAIN: ${{ secrets.FALLBACK_SUBS_DOMAIN }}
         run: ./gradlew bundleRelease -PdisableAbiSplits --no-daemon

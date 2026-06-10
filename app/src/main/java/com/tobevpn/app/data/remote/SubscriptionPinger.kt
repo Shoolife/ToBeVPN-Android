@@ -3,6 +3,7 @@ package com.tobevpn.app.data.remote
 import android.os.SystemClock
 import android.util.Base64
 import com.tobevpn.app.BuildConfig
+import com.tobevpn.app.data.device.DeviceIdProvider
 import com.tobevpn.app.data.device.DeviceFingerprintProvider
 import com.tobevpn.app.util.SafeDiagnostics
 import kotlinx.coroutines.Dispatchers
@@ -41,15 +42,13 @@ data class SubscriptionProfileResult(
 // endpoints don't expose the same device-binding path.
 // We hit the URL (a) before each VPN connect, (b) on subscription refresh.
 //
-// Resiliency: if the subscription host is unreachable or a restricted network
-// rejects the route with an HTTP response, and the operator has
-// configured FALLBACK_SUBS_DOMAIN, we transparently retry against the
-// fallback — same HWID headers, same effective subscription key. HWID
-// still lands so the user keeps a working subscription record even when
-// the original subscription proxy is gone.
+// When only a subscription key is available, the configured primary base is
+// used to restore the direct HWID-tagged request. The fallback remains a
+// best-effort profile delivery route when the primary host is unreachable.
 @Singleton
 class SubscriptionPinger @Inject constructor(
     private val fingerprintProvider: DeviceFingerprintProvider,
+    private val deviceIdProvider: DeviceIdProvider,
 ) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
@@ -76,12 +75,18 @@ class SubscriptionPinger @Inject constructor(
         subscriptionUrl: String?,
         subscriptionKey: String? = null,
     ): SubscriptionPingResult? = withContext(Dispatchers.IO) {
+        val deviceId = deviceIdProvider.getOrCreate()
         val baseRequest = subscriptionUrl
             ?.takeIf { it.isNotBlank() }
-            ?.let(::buildBaseRequest)
+            ?.let { buildBaseRequest(it, deviceId) }
+            ?: buildPrimaryRequestByKey(subscriptionKey, deviceId)
         val fallbackRequest = when {
-            baseRequest != null -> buildFallbackRequest(subscriptionUrl.orEmpty(), baseRequest)
-            else -> buildFallbackRequestByKey(subscriptionKey)
+            baseRequest != null -> buildFallbackRequestByKey(
+                subscriptionKey ?: extractSubscriptionKey(baseRequest.url.toString()),
+                baseRequest,
+                deviceId,
+            )
+            else -> buildFallbackRequestByKey(subscriptionKey, deviceId = deviceId)
         }
 
         if (baseRequest == null) {
@@ -163,12 +168,18 @@ class SubscriptionPinger @Inject constructor(
         subscriptionUrl: String?,
         subscriptionKey: String? = null,
     ): SubscriptionProfileResult? = withContext(Dispatchers.IO) {
+        val deviceId = deviceIdProvider.getOrCreate()
         val baseRequest = subscriptionUrl
             ?.takeIf { it.isNotBlank() }
-            ?.let(::buildBaseRequest)
+            ?.let { buildBaseRequest(it, deviceId) }
+            ?: buildPrimaryRequestByKey(subscriptionKey, deviceId)
         val fallbackRequest = when {
-            baseRequest != null -> buildFallbackRequest(subscriptionUrl.orEmpty(), baseRequest)
-            else -> buildFallbackRequestByKey(subscriptionKey)
+            baseRequest != null -> buildFallbackRequestByKey(
+                subscriptionKey ?: extractSubscriptionKey(baseRequest.url.toString()),
+                baseRequest,
+                deviceId,
+            )
+            else -> buildFallbackRequestByKey(subscriptionKey, deviceId = deviceId)
         }
 
         if (baseRequest == null) {
@@ -297,13 +308,13 @@ class SubscriptionPinger @Inject constructor(
         return (hours * 60.0 * 60.0 * 1000.0).toLong()
     }
 
-    private fun buildBaseRequest(subscriptionUrl: String): Request? {
+    private fun buildBaseRequest(subscriptionUrl: String, deviceId: String): Request? {
         val fp = fingerprintProvider.get()
         return try {
             Request.Builder()
                 .url(subscriptionUrl)
                 .get()
-                .header("x-hwid", fp.hwid)
+                .header("x-hwid", deviceId)
                 .header("x-device-os", fp.platform)
                 .header("x-ver-os", fp.osVersion)
                 .header("x-device-model", fp.model)
@@ -375,18 +386,26 @@ class SubscriptionPinger @Inject constructor(
         }
     }
 
-    /**
-     * Builds the operator fallback request from the cached subscription URL.
-     * Returns null when the fallback isn't configured or the URL doesn't
-     * contain the expected key segment.
-     */
-    private fun buildFallbackRequest(subscriptionUrl: String, base: Request): Request? {
-        val key = try {
+    private fun buildPrimaryRequestByKey(rawKey: String?, deviceId: String): Request? {
+        val base = BuildConfig.SUBSCRIPTION_BASE_URL.trim()
+        val key = rawKey?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        if (base.isBlank()) return null
+        val url = try {
+            base.toHttpUrl().newBuilder()
+                .addPathSegment(key)
+                .build()
+        } catch (_: IllegalArgumentException) {
+            return null
+        }
+        return buildBaseRequest(url.toString(), deviceId)
+    }
+
+    private fun extractSubscriptionKey(subscriptionUrl: String): String? {
+        return try {
             subscriptionUrl.toHttpUrl().pathSegments.lastOrNull { it.isNotBlank() }
         } catch (_: IllegalArgumentException) {
             null
-        } ?: return null
-        return buildFallbackRequestByKey(key, base)
+        }
     }
 
     /**
@@ -397,6 +416,7 @@ class SubscriptionPinger @Inject constructor(
     private fun buildFallbackRequestByKey(
         rawKey: String?,
         template: Request? = null,
+        deviceId: String,
     ): Request? {
         val fallbackBase = BuildConfig.FALLBACK_SUBS_DOMAIN
         val key = rawKey?.trim()?.takeIf { it.isNotBlank() } ?: return null
@@ -410,7 +430,7 @@ class SubscriptionPinger @Inject constructor(
             ?.newBuilder()
             ?.url(rebuilt)
             ?.build()
-            ?: buildBaseRequest(rebuilt.toString())
+            ?: buildBaseRequest(rebuilt.toString(), deviceId)
     }
 
     private fun logFailure(stage: String, e: IOException) {

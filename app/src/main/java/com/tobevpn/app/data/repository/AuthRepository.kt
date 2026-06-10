@@ -354,15 +354,10 @@ class AuthRepository @Inject constructor(
         return try {
             val deviceId = getOrCreateDeviceId()
 
-            val fingerprint = fingerprintProvider.get()
             val response = withFreshDeviceSessionRetry {
                 botApi.ensureUser(
                     EnsureUserRequestDto(
-                        hwid = fingerprint.hwid,
-                        deviceOs = fingerprint.platform,
-                        osVersion = fingerprint.osVersion,
-                        deviceModel = fingerprint.model,
-                        userAgent = fingerprint.userAgent,
+                        deviceId = deviceId,
                     )
                 )
             }
@@ -904,12 +899,10 @@ class AuthRepository @Inject constructor(
         // access/refresh session. If we only call logout, the next bootstrap for
         // the same device_id comes back already linked and the app logs in again.
         // Unlink this device first, then terminate the current session.
-        for (deviceId in getCurrentDeviceAliases()) {
-            try {
-                botApi.unlinkDevice(DeviceUnlinkRequestDto(deviceId = deviceId))
-            } catch (_: Exception) {
-                // Best effort — still attempt to terminate the session below.
-            }
+        try {
+            botApi.unlinkDevice(DeviceUnlinkRequestDto(deviceId = session.deviceId))
+        } catch (_: Exception) {
+            // Best effort — still attempt to terminate the session below.
         }
         try {
             botApi.logoutDevice()

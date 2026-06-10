@@ -47,8 +47,8 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = versionCodeOverride ?: 40
-        versionName = "1.0.39"
+        versionCode = versionCodeOverride ?: 41
+        versionName = "1.0.40"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -82,10 +82,16 @@ android {
             ?.takeIf { it.isNotBlank() }
             ?: localProperties.getProperty("fallback.subs.domain")
             ?: ""
+        val subscriptionUrl = System.getenv("SUBSCRIPTION_URL")
+            ?.takeIf { it.isNotBlank() }
+            ?: localProperties.getProperty("subscription.url")
+            ?: ""
         requireConfiguredReleaseFallback("FALLBACK_BOT_DOMAIN", fallbackBotDomain)
         requireConfiguredReleaseFallback("FALLBACK_SUBS_DOMAIN", fallbackSubsDomain)
+        requireConfiguredReleaseFallback("SUBSCRIPTION_URL", subscriptionUrl)
         buildConfigField("String", "FALLBACK_BOT_DOMAIN", "\"$fallbackBotDomain\"")
         buildConfigField("String", "FALLBACK_SUBS_DOMAIN", "\"$fallbackSubsDomain\"")
+        buildConfigField("String", "SUBSCRIPTION_BASE_URL", "\"$subscriptionUrl\"")
     }
 
     // Release signing is opt-in — credentials live in local.properties (gitignored).

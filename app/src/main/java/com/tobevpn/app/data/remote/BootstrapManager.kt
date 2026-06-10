@@ -1,7 +1,6 @@
 package com.tobevpn.app.data.remote
 
 import com.tobevpn.app.data.device.DeviceIdProvider
-import com.tobevpn.app.data.device.DeviceFingerprintProvider
 import com.tobevpn.app.data.local.SessionStore
 import com.tobevpn.app.data.local.dao.SessionDao
 import com.tobevpn.app.data.local.entity.SessionEntity
@@ -26,7 +25,6 @@ class BootstrapManager @Inject constructor(
     private val sessionDao: SessionDao,
     private val sessionStore: SessionStore,
     private val deviceIdProvider: DeviceIdProvider,
-    private val fingerprintProvider: DeviceFingerprintProvider,
 ) {
     private val mutex = Mutex()
     private val tokensRef = AtomicReference<StoredTokens?>(null)
@@ -97,16 +95,10 @@ class BootstrapManager @Inject constructor(
 
     suspend fun bootstrap(): StoredTokens = mutex.withLock {
         val deviceId = deviceIdProvider.getOrCreate()
-        val fingerprint = fingerprintProvider.get()
         val response = bootstrapApi.bootstrap(
             BootstrapRequestDto(
                 deviceId = deviceId,
                 platform = "android",
-                hwid = fingerprint.hwid,
-                deviceOs = fingerprint.platform,
-                osVersion = fingerprint.osVersion,
-                deviceModel = fingerprint.model,
-                userAgent = fingerprint.userAgent,
             )
         )
         val data = response.data
