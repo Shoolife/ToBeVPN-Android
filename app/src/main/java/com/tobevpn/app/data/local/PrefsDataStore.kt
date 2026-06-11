@@ -9,6 +9,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.tobevpn.app.BuildConfig
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -64,7 +65,12 @@ class PrefsDataStore @Inject constructor(
         val PENDING_PURCHASE_BASELINE_EXPIRES_AT = longPreferencesKey("pending_purchase_baseline_expires_at")
         val SERVER_CACHE_OWNER = stringPreferencesKey("server_cache_owner")
         val BLOCKED_SUBSCRIPTION_OWNER = stringPreferencesKey("blocked_subscription_owner")
-        val UPDATE_REQUIRED = booleanPreferencesKey("update_required")
+        // Scope the persisted block to the installed build. After an update,
+        // a block recorded by the previous version must not lock the new
+        // version before it can read the current minimum-version header.
+        val UPDATE_REQUIRED = booleanPreferencesKey(
+            "minimum_version_update_required_${BuildConfig.VERSION_NAME}",
+        )
         // Per-app VPN filter state. The selected package set is kept here as
         // the source of truth so it survives DB resets/destructive migrations
         // during app updates; the Room app_filter table is only a legacy mirror.

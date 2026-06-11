@@ -14,8 +14,8 @@ import com.tobevpn.app.data.remote.dto.AuthRequestDto
 import com.tobevpn.app.data.remote.dto.CurrentPlanDto
 import com.tobevpn.app.data.remote.dto.DeviceRegisterRequestDto
 import com.tobevpn.app.data.remote.dto.DeviceUnlinkRequestDto
+import com.tobevpn.app.data.remote.dto.DeviceUnlinkResponseDto
 import com.tobevpn.app.data.remote.dto.EnsureUserRequestDto
-import com.tobevpn.app.data.remote.dto.EnsureUserResponseDto
 import com.tobevpn.app.data.remote.dto.SaveEmailRequestDto
 import com.tobevpn.app.data.remote.dto.TvPairCreateResponseDto
 import com.tobevpn.app.data.remote.dto.TvPairCreateRequestDto
@@ -267,7 +267,6 @@ class AuthRepository @Inject constructor(
 
     suspend fun unlinkDevice(deviceId: String): Result<Unit> {
         return try {
-            val sessionBefore = sessionDao.getSession()
             val currentDeviceAliases = getCurrentDeviceAliases()
             val response = withFreshDeviceSessionRetry {
                 botApi.unlinkDevice(DeviceUnlinkRequestDto(deviceId = deviceId))
@@ -276,8 +275,10 @@ class AuthRepository @Inject constructor(
                 Result.failure(IllegalStateException(response.message ?: "Could not unlink device"))
             } else {
                 val isCurrentDevice = currentDeviceAliases.any { it.equals(deviceId, ignoreCase = true) }
-                if (!isCurrentDevice) {
-                    resetSubscriptionAfterDeviceUnlink(sessionBefore).getOrThrow()
+                if (isCurrentDevice) {
+                    clearLinkedIdentity()
+                } else {
+                    refreshAfterDeviceUnlink(response.data)
                 }
                 Result.success(Unit)
             }
@@ -286,59 +287,157 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    private suspend fun resetSubscriptionAfterDeviceUnlink(sessionBefore: SessionEntity?): Result<Unit> {
-        val oldShortUuid = sessionBefore?.shortUuid?.takeIf { it.isNotBlank() }
-            ?: return Result.success(Unit)
-        return try {
-            val response = withFreshDeviceSessionRetry {
-                botApi.resetSubscription(oldShortUuid)
+    private suspend fun refreshAfterDeviceUnlink(data: DeviceUnlinkResponseDto?) {
+        val oldShortUuid = sessionDao.getSession()?.shortUuid
+        runCatching { bootstrapManager.bootstrap() }
+
+        val planInfo = data
+            ?.takeIf { it.currentPlan != null || it.subscription != null }
+            ?.let {
+                CurrentPlanDto(
+                    currentPlan = it.currentPlan,
+                    subscription = it.subscription,
+                ).toCurrentSubscriptionPlanInfo()
             }
-            val data = response.data
-            if (!response.success || data == null) {
-                return Result.failure(
-                    IllegalStateException(response.message ?: "Could not reset subscription link"),
+        sessionStore.update { current ->
+            val resolvedPlan = planInfo?.let {
+                resolvePlanFromCurrentPlan(current.userPlan, it)
+            }
+            current.copy(
+                subscriptionUrl = data?.subscriptionUrl
+                    ?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: planInfo?.subscriptionUrl
+                    ?: current.subscriptionUrl,
+                userPlan = resolvedPlan ?: current.userPlan,
+                planDisplayName = planInfo?.displayName ?: current.planDisplayName,
+                planExpiresAt = planInfo?.expiresAtMillis ?: current.planExpiresAt,
+            )
+        }
+        planInfo?.trafficLimitBytes?.let { usageRepository.updateLimits(it, 0) }
+
+        val newShortUuid = sessionDao.getSession()?.shortUuid
+        if (oldShortUuid != newShortUuid || !newShortUuid.isNullOrBlank()) {
+            vpnRepository.clearCachedServers()
+        }
+        prefsDataStore.clearSubscriptionSyncTimestamp()
+        runCatching { syncSubscription(force = true) }
+        runCatching { vpnRepository.refreshServers(forceRefresh = true) }
+    }
+
+    suspend fun syncDeviceSessionState(): Result<Boolean> {
+        val session = sessionDao.getSession()
+        val hadLinkedIdentity = session?.authState == "AUTHENTICATED" &&
+            session.telegramId != null &&
+            session.isLinked
+        if (!hadLinkedIdentity) return Result.success(false)
+
+        return try {
+            val response = botApi.getCurrentPlan()
+            if (response.success) {
+                runCatching { applyCurrentPlanHeartbeat(response.data) }
+                Result.success(true)
+            } else {
+                Result.failure(
+                    IllegalStateException(response.message ?: "Could not verify device session"),
                 )
             }
-            applyPanelUserSessionData(data)
-            prefsDataStore.clearSubscriptionSyncTimestamp()
-            vpnRepository.clearCachedServers()
-            vpnRepository.refreshServers(forceRefresh = true)
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
+        } catch (error: Exception) {
+            if (error.isRemoteDeviceUnlinkedError()) {
+                Result.success(false)
+            } else {
+                Result.failure(error)
+            }
         }
     }
 
-    private suspend fun applyPanelUserSessionData(data: EnsureUserResponseDto) {
-        val isAuthenticated = !data.isAnonymous && data.telegramId != null
+    private suspend fun applyCurrentPlanHeartbeat(data: CurrentPlanDto?) {
+        val planInfo = data?.toCurrentSubscriptionPlanInfo() ?: return
+        val sessionBefore = sessionDao.getSession() ?: return
+        val nextUrl = planInfo.subscriptionUrl
+        val subscriptionUrlChanged = !nextUrl.isNullOrBlank() &&
+            nextUrl != sessionBefore.subscriptionUrl
+
+        if (subscriptionUrlChanged) {
+            runCatching { bootstrapManager.bootstrap() }
+        }
         sessionStore.update { current ->
+            val resolvedPlan = resolvePlanFromCurrentPlan(current.userPlan, planInfo)
             current.copy(
-                shortUuid = data.shortUuid,
-                panelUserUuid = data.panelUserUuid,
-                subscriptionUrl = if (isAuthenticated) {
-                    data.subscriptionUrl ?: current.subscriptionUrl
+                userPlan = resolvedPlan,
+                planDisplayName = if (resolvedPlan == "EXPIRED") {
+                    null
                 } else {
-                    data.subscriptionUrl
+                    planInfo.displayName ?: current.planDisplayName
                 },
-                telegramId = data.telegramId ?: current.telegramId,
-                authState = if (isAuthenticated) {
-                    "AUTHENTICATED"
-                } else {
-                    current.authState
-                },
-                isLinked = if (isAuthenticated) true else current.isLinked,
+                planExpiresAt = planInfo.expiresAtMillis,
+                subscriptionUrl = nextUrl ?: current.subscriptionUrl,
             )
         }
-        usageRepository.updateLimits(data.trafficLimitBytes, 0)
-        val trafficUsedBytes = if (data.isAnonymous) {
-            data.anonTrafficBytes ?: data.trafficUsedBytes
-        } else {
-            data.trafficUsedBytes
+        planInfo.trafficLimitBytes?.let { usageRepository.updateLimits(it, 0) }
+
+        if (subscriptionUrlChanged) {
+            prefsDataStore.clearSubscriptionSyncTimestamp()
+            vpnRepository.clearCachedServers()
+            runCatching { syncSubscription(force = true) }
+            runCatching { vpnRepository.refreshServers(forceRefresh = true) }
         }
-        syncUsageFromServer(
-            serverBytesUsed = trafficUsedBytes,
-            isAnonymous = data.isAnonymous,
-        )
+    }
+
+    suspend fun clearRemoteUnlinkedSession() {
+        clearLinkedIdentity()
+    }
+
+    private fun Throwable.isRemoteDeviceUnlinkedError(): Boolean {
+        if (this is HttpException && code() == 401) return true
+        if (this is HttpException && code() !in setOf(400, 403)) return false
+        val body = if (this is HttpException) {
+            runCatching { response()?.errorBody()?.string() }.getOrDefault("")
+        } else {
+            ""
+        }
+        val text = listOfNotNull(message, body)
+            .joinToString("\n")
+            .lowercase(Locale.US)
+        return (text.contains("current device") && text.contains("not linked")) ||
+            (text.contains("telegram_id") && text.contains("not authenticated")) ||
+            (text.contains("telegram_id") && text.contains("required")) ||
+            (text.contains("invalid or expired") && text.contains("access token"))
+    }
+
+    private suspend fun clearLinkedIdentity() {
+        val session = sessionDao.getSession() ?: return
+        val hadAccountUsage = session.userPlan == "PAID" || session.userPlan == "ADMIN"
+        sessionStore.update { current ->
+            current.copy(
+                authState = "ANONYMOUS",
+                telegramId = null,
+                planExpiresAt = null,
+                accessToken = null,
+                refreshToken = null,
+                accessExpiresAt = null,
+                refreshExpiresAt = null,
+                isLinked = false,
+                shortUuid = null,
+                panelUserUuid = null,
+                userPlan = "FREE_TRIAL",
+                planDisplayName = null,
+                email = null,
+                pendingAuthToken = null,
+                subscriptionUrl = null,
+            )
+        }
+        if (hadAccountUsage) {
+            prefsDataStore.clearAnonymousUsageState()
+            usageRepository.resetSession()
+        }
+        prefsDataStore.clearPendingPurchase()
+        prefsDataStore.clearSubscriptionSyncTimestamp()
+        vpnRepository.clearCachedServers()
+        bootstrapManager.clear()
+        runCatching { bootstrapManager.ensureBootstrapped() }
+        runCatching { ensurePanelUser() }
+        runCatching { syncSubscription(overwriteUsage = true, force = true) }
     }
 
     /**

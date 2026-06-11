@@ -9,6 +9,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.tobevpn.app.presentation.appfilter.AppFilterScreen
 import com.tobevpn.app.presentation.auth.AuthScreen
 import com.tobevpn.app.presentation.main.MainScreen
@@ -28,6 +29,7 @@ fun AppNavHost(
     deepLinkBus: DeepLinkBus,
     modifier: Modifier = Modifier,
 ) {
+    hiltViewModel<AppSessionViewModel>()
     val startDestination: Any = if (startFromOnboarding) OnboardingRoute else MainRoute
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
 

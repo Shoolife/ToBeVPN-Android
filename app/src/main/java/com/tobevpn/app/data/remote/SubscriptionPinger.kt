@@ -262,7 +262,7 @@ class SubscriptionPinger @Inject constructor(
     private fun readResult(response: Response) = SubscriptionPingResult(
         intervalMs = readIntervalMs(response.header("profile-update-interval")),
         isUsageBlocked = response.header(BLOCK_HEADER)?.trim() == BLOCK_VALUE,
-        isUpdateRequired = response.header(UPDATE_REQUIRED_HEADER)?.trim()?.lowercase() == BLOCK_VALUE,
+        isUpdateRequired = isVersionBelowMinimum(response.header(MIN_VERSION_HEADER)),
     )
 
     private fun readFallbackProfileResult(response: Response): SubscriptionProfileResult? {
@@ -277,12 +277,36 @@ class SubscriptionPinger @Inject constructor(
         return SubscriptionProfileResult(
             intervalMs = readIntervalMs(response.header("profile-update-interval")),
             isUsageBlocked = response.header(BLOCK_HEADER)?.trim() == BLOCK_VALUE,
-            isUpdateRequired = response.header(UPDATE_REQUIRED_HEADER)?.trim()?.lowercase() == BLOCK_VALUE,
+            isUpdateRequired = isVersionBelowMinimum(response.header(MIN_VERSION_HEADER)),
             links = parseProfileLinks(body),
             trafficUsedBytes = userInfo?.usedBytes,
             trafficLimitBytes = userInfo?.totalBytes,
             isSuccessful = response.isSuccessful,
         )
+    }
+
+    private fun isVersionBelowMinimum(rawMinimum: String?): Boolean {
+        val minimum = parseVersion(rawMinimum) ?: return false
+        val current = parseVersion(BuildConfig.VERSION_NAME) ?: return false
+        val size = maxOf(minimum.size, current.size)
+        for (index in 0 until size) {
+            val currentPart = current.getOrElse(index) { 0L }
+            val minimumPart = minimum.getOrElse(index) { 0L }
+            if (currentPart != minimumPart) return currentPart < minimumPart
+        }
+        return false
+    }
+
+    private fun parseVersion(raw: String?): List<Long>? {
+        val normalized = raw
+            ?.trim()
+            ?.removePrefix("v")
+            ?.removePrefix("V")
+            ?.substringBefore('-')
+            ?.substringBefore('+')
+            ?.takeIf { it.matches(VERSION_REGEX) }
+            ?: return null
+        return normalized.split('.').map { it.toLongOrNull() ?: return null }
     }
 
     private fun isGatewayAuthError(response: Response): Boolean {
@@ -445,7 +469,7 @@ class SubscriptionPinger @Inject constructor(
         const val TAG = "SubscriptionPinger"
         const val FALLBACK_HTTP_STATUS = 403
         const val BLOCK_HEADER = "is-hack"
-        const val UPDATE_REQUIRED_HEADER = "update-required"
+        const val MIN_VERSION_HEADER = "min-android"
         const val SUBSCRIPTION_USERINFO_HEADER = "subscription-userinfo"
         const val BLOCK_VALUE = "yes"
         // Floor at 1h so a misconfigured service can't cause the client to
@@ -456,6 +480,7 @@ class SubscriptionPinger @Inject constructor(
         const val FAST_PRIMARY_TIMEOUT_MS = 1_200L
         const val PRIMARY_FAILURE_COOLDOWN_MS = 2L * 60L * 1000L
         const val MAX_GATEWAY_BODY_BYTES = 1_024L
+        val VERSION_REGEX = Regex("""\d+(?:\.\d+)*""")
         val VLESS_REGEX = Regex("""vless://[^\s<>"']+""")
     }
 

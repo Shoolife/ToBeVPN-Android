@@ -17,7 +17,7 @@
     <!-- Onboarding -->
     <string name="onboarding_subtitle">Пробный тариф для первого подключения</string>
     <string name="onboarding_feature_trial">%1$s трафика до входа</string>
-    <string name="onboarding_feature_device">Войдите через Telegram — ещё %1$s на %2$s</string>
+    <string name="onboarding_feature_device">Войдите через Telegram — ещё 3 ГБ на 3 дня</string>
     <string name="onboarding_feature_auth">Вход без логина и пароля — только через Telegram</string>
     <string name="onboarding_feature_tools">Серверы, статистика и тест скорости встроены</string>
     <string name="onboarding_start">Продолжить</string>

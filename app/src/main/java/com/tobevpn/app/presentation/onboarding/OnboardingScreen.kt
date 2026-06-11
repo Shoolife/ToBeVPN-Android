@@ -19,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -41,10 +40,6 @@ fun OnboardingScreen(
     val locale = LocalConfiguration.current.locales[0] ?: Locale.getDefault()
     val unitGb = stringResource(R.string.unit_gb)
     val anonTraffic = formatTrafficLimit(bytes = trialTerms.anonBytes, unit = unitGb, locale = locale)
-    val bonusTraffic = formatTrafficLimit(bytes = trialTerms.bonusBytes, unit = unitGb, locale = locale)
-    val trialDays = pluralStringResource(
-        R.plurals.onboarding_trial_days, trialTerms.trialDays, trialTerms.trialDays,
-    )
 
     Column(
         modifier = Modifier
@@ -79,7 +74,7 @@ fun OnboardingScreen(
 
         FeatureItem(stringResource(R.string.onboarding_feature_trial, anonTraffic))
         Spacer(modifier = Modifier.height(12.dp))
-        FeatureItem(stringResource(R.string.onboarding_feature_device, bonusTraffic, trialDays))
+        FeatureItem(stringResource(R.string.onboarding_feature_device))
         Spacer(modifier = Modifier.height(12.dp))
         FeatureItem(stringResource(R.string.onboarding_feature_auth))
         Spacer(modifier = Modifier.height(12.dp))

@@ -110,6 +110,16 @@ data class DeviceUnlinkRequestDto(
     @SerializedName("device_id") val deviceId: String,
 )
 
+data class DeviceUnlinkResponseDto(
+    @SerializedName("remaining_devices") val remainingDevices: Int? = null,
+    @SerializedName("subscription_url") val subscriptionUrl: String? = null,
+    @SerializedName("bot_subscription_updated") val botSubscriptionUpdated: Boolean? = null,
+    @SerializedName("bot_subscription_changed") val botSubscriptionChanged: Boolean? = null,
+    @SerializedName("linked_devices_updated") val linkedDevicesUpdated: Int? = null,
+    @SerializedName("current_plan") val currentPlan: CurrentPlanSnapshotDto? = null,
+    val subscription: CurrentPlanSubscriptionDto? = null,
+)
+
 data class LinkedDeviceDto(
     @SerializedName("device_id") val deviceId: String,
     val hwid: String? = null,

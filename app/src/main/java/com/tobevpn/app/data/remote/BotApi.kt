@@ -8,6 +8,7 @@ import com.tobevpn.app.data.remote.dto.CurrentPlanDto
 import com.tobevpn.app.data.remote.dto.DeviceTrafficDto
 import com.tobevpn.app.data.remote.dto.DeviceRegisterRequestDto
 import com.tobevpn.app.data.remote.dto.DeviceUnlinkRequestDto
+import com.tobevpn.app.data.remote.dto.DeviceUnlinkResponseDto
 import com.tobevpn.app.data.remote.dto.EnsureUserRequestDto
 import com.tobevpn.app.data.remote.dto.EnsureUserResponseDto
 import com.tobevpn.app.data.remote.dto.LinkedDevicesDto
@@ -56,7 +57,7 @@ interface BotApi {
     @POST("api/device/unlink")
     suspend fun unlinkDevice(
         @Body request: DeviceUnlinkRequestDto,
-    ): ApiResponse<Unit>
+    ): ApiResponse<DeviceUnlinkResponseDto>
 
     @POST("api/device/logout")
     suspend fun logoutDevice(): ApiResponse<Unit>
@@ -100,11 +101,6 @@ interface BotApi {
 
     @GET("api/panel/nodes")
     suspend fun getNodes(): PanelResponse<List<PanelNodeDto>>
-
-    @POST("api/panel/sub/{shortUuid}/reset")
-    suspend fun resetSubscription(
-        @Path("shortUuid") shortUuid: String,
-    ): ApiResponse<EnsureUserResponseDto>
 
     // Purchase / tariff plans — server uses session identity.
 

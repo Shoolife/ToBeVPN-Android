@@ -17,7 +17,7 @@
     <!-- Onboarding -->
     <string name="onboarding_subtitle">Trial plan for your first connection</string>
     <string name="onboarding_feature_trial">%1$s of free traffic before signing in</string>
-    <string name="onboarding_feature_device">Sign in via Telegram — %1$s more for %2$s</string>
+    <string name="onboarding_feature_device">Sign in via Telegram — 3 GB more for 3 days</string>
     <string name="onboarding_feature_auth">No login or password — just Telegram</string>
     <string name="onboarding_feature_tools">Servers, statistics, and speed test are built in</string>
     <string name="onboarding_start">Continue</string>
