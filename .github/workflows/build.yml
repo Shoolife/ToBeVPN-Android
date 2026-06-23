@@ -1,6 +1,6 @@
 name: build
 run-name: >-
-  ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && github.ref_name || github.event_name == 'pull_request' && format('PR #{0}: {1}', github.event.pull_request.number, github.event.pull_request.title) || github.event.head_commit.message || format('Build {0}', github.ref_name) }}
+  ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && format('{0}: {1}', github.ref_name, github.event.head_commit.message) || github.event_name == 'pull_request' && format('PR #{0}: {1}', github.event.pull_request.number, github.event.pull_request.title) || github.event.head_commit.message || format('Build {0}', github.ref_name) }}
 
 on:
   # Direct pushes to main don't ship anything — releases live on tags. PRs
