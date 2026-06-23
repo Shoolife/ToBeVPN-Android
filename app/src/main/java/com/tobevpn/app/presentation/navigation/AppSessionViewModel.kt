@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tobevpn.app.data.repository.AuthRepository
 import com.tobevpn.app.domain.model.AuthState
+import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.vpn.VpnConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.NonCancellable
@@ -23,6 +24,21 @@ class AppSessionViewModel @Inject constructor(
 ) : ViewModel() {
 
     init {
+        viewModelScope.launch {
+            authRepository.subscriptionResetEvents.collectLatest {
+                val state = connectionManager.connectionState.value
+                if (state !is ConnectionState.Connected && state !is ConnectionState.Connecting) {
+                    return@collectLatest
+                }
+                val server = connectionManager.currentServer.value
+                if (server == null) {
+                    connectionManager.stopVpn()
+                    return@collectLatest
+                }
+                connectionManager.switchServer(server)
+            }
+        }
+
         viewModelScope.launch {
             authRepository.observeAuthState()
                 .map { state -> state is AuthState.Authenticated }

@@ -24,6 +24,9 @@ import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.util.SafeDiagnostics
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -72,6 +75,9 @@ class AuthRepository @Inject constructor(
     companion object {
         private const val TAG = "AuthRepository"
     }
+
+    private val _subscriptionResetEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val subscriptionResetEvents: SharedFlow<Unit> = _subscriptionResetEvents.asSharedFlow()
 
     // Serialises concurrent syncSubscription() callers (MainViewModel.init,
     // ServerListViewModel.init and onResume() can fire near-simultaneously
@@ -323,6 +329,7 @@ class AuthRepository @Inject constructor(
         prefsDataStore.clearSubscriptionSyncTimestamp()
         runCatching { syncSubscription(force = true) }
         runCatching { vpnRepository.refreshServers(forceRefresh = true) }
+        _subscriptionResetEvents.tryEmit(Unit)
     }
 
     suspend fun syncDeviceSessionState(): Result<Boolean> {
@@ -381,6 +388,7 @@ class AuthRepository @Inject constructor(
             vpnRepository.clearCachedServers()
             runCatching { syncSubscription(force = true) }
             runCatching { vpnRepository.refreshServers(forceRefresh = true) }
+            _subscriptionResetEvents.tryEmit(Unit)
         }
     }
 
