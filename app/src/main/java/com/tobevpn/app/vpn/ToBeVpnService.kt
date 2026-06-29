@@ -19,6 +19,7 @@ import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.ConnectionState
+import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -60,9 +61,11 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                 val config = intent.getStringExtra(EXTRA_SERVER_CONFIG) ?: return START_NOT_STICKY
                 val generation = intent.getIntExtra(EXTRA_GENERATION, -1)
                 if (!connectionManager.mayServiceStart(generation)) return START_NOT_STICKY
+                val serverName = intent.getStringExtra(EXTRA_SERVER_NAME).orEmpty()
+                val serverCountry = intent.getStringExtra(EXTRA_SERVER_COUNTRY).orEmpty()
                 cleanedUp = false
                 activeConnectionGeneration = generation
-                startVpn(config, generation)
+                startVpn(config, generation, serverName, serverCountry)
             }
             ACTION_STOP -> {
                 // From manager — state already handled, just clean up resources
@@ -79,17 +82,21 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                     stopSelf(startId)
                 }
             }
-            ACTION_DISCONNECT -> {
-                cleanupVpn()
-                // From notification button — route through manager for proper state handling.
-                connectionManager.stopVpn()
-            }
         }
         return START_NOT_STICKY
     }
 
-    private fun startVpn(configJson: String, generation: Int) {
-        startForeground(NOTIFICATION_ID, createNotification(getString(R.string.state_connecting)))
+    private fun startVpn(
+        configJson: String,
+        generation: Int,
+        serverName: String,
+        serverCountry: String,
+    ) {
+        val serverLocation = serverLocationLabel(serverName, serverCountry)
+        startForeground(
+            NOTIFICATION_ID,
+            createNotification(getString(R.string.vpn_notification_connecting_to, serverLocation)),
+        )
 
         serviceScope.launch {
             try {
@@ -118,7 +125,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                 }
 
                 connectionManager.updateState(ConnectionState.Connected, generation)
-                updateNotification(getString(R.string.state_connected))
+                updateNotification(getString(R.string.vpn_notification_connected_to, serverLocation))
                 registerNetworkCallback()
             } catch (e: CancellationException) {
                 throw e
@@ -265,7 +272,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         }
     }
 
-    private fun createNotification(status: String): Notification {
+    private fun createNotification(text: String): Notification {
         createNotificationChannel()
 
         val contentIntent = PendingIntent.getActivity(
@@ -274,30 +281,43 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        // Notification button routes through manager (ACTION_DISCONNECT, not ACTION_STOP)
-        val disconnectIntent = PendingIntent.getService(
-            this, 1,
-            Intent(this, ToBeVpnService::class.java).apply { action = ACTION_DISCONNECT },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
-        val stopAction = Notification.Action.Builder(
-            null, getString(R.string.devices_disconnect), disconnectIntent,
-        ).build()
-
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(status)
+            .setContentText(text)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentIntent(contentIntent)
-            .addAction(stopAction)
             .setOngoing(true)
             .build()
     }
 
-    private fun updateNotification(status: String) {
+    private fun updateNotification(text: String) {
         val nm = getSystemService(NotificationManager::class.java)
-        nm.notify(NOTIFICATION_ID, createNotification(status))
+        nm.notify(NOTIFICATION_ID, createNotification(text))
+    }
+
+    private fun serverLocationLabel(serverName: String, serverCountry: String): String {
+        val code = serverCountryCodeForUi(serverCountry, serverName)
+        countryNameForNotification(code)?.let { return it }
+        return serverName
+            .trim()
+            .takeIf { it.isNotBlank() }
+            ?: getString(R.string.app_name)
+    }
+
+    private fun countryNameForNotification(code: String): String? = when (code.uppercase()) {
+        "NL" -> getString(R.string.country_to_NL)
+        "DE" -> getString(R.string.country_to_DE)
+        "US" -> getString(R.string.country_to_US)
+        "GB" -> getString(R.string.country_to_GB)
+        "FI" -> getString(R.string.country_to_FI)
+        "SE" -> getString(R.string.country_to_SE)
+        "FR" -> getString(R.string.country_to_FR)
+        "JP" -> getString(R.string.country_to_JP)
+        "SG" -> getString(R.string.country_to_SG)
+        "CA" -> getString(R.string.country_to_CA)
+        "AU" -> getString(R.string.country_to_AU)
+        "TR" -> getString(R.string.country_to_TR)
+        else -> null
     }
 
     private fun createNotificationChannel() {
@@ -336,8 +356,9 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     companion object {
         const val ACTION_START = "com.tobevpn.START"
         const val ACTION_STOP = "com.tobevpn.STOP"
-        const val ACTION_DISCONNECT = "com.tobevpn.DISCONNECT"
         const val EXTRA_SERVER_CONFIG = "server_config"
+        const val EXTRA_SERVER_NAME = "server_name"
+        const val EXTRA_SERVER_COUNTRY = "server_country"
         const val EXTRA_GENERATION = "connection_generation"
         const val EXTRA_STOP_BEFORE_GENERATION = "stop_before_generation"
         const val EXTRA_FORCE_STOP = "force_stop"

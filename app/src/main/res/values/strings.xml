@@ -13,6 +13,7 @@
     <string name="continue_btn">Continue</string>
     <string name="refresh">Refresh</string>
     <string name="loading_data">Loading…</string>
+    <string name="qs_tile_label">ToBeVPN</string>
 
     <!-- Onboarding -->
     <string name="onboarding_subtitle">Trial plan for your first connection</string>
@@ -119,6 +120,7 @@
     <string name="login_required_for_purchase">You need to sign in before purchasing a subscription</string>
     <string name="buy_plan">Buy "%1$s" for %2$s</string>
     <string name="renew_plan">Renew "%1$s" for %2$s</string>
+    <string name="change_plan">Switch to "%1$s" for %2$s</string>
     <string name="price_rub">%1$s\u20BD</string>
     <string name="price_usd">$%1$s</string>
     <string name="plan_day">1 day</string>
@@ -270,7 +272,21 @@
     <string name="country_CA">Canada</string>
     <string name="country_AU">Australia</string>
     <string name="country_TR">Turkey</string>
+    <string name="country_to_NL">the Netherlands</string>
+    <string name="country_to_DE">Germany</string>
+    <string name="country_to_US">the USA</string>
+    <string name="country_to_GB">the United Kingdom</string>
+    <string name="country_to_FI">Finland</string>
+    <string name="country_to_SE">Sweden</string>
+    <string name="country_to_FR">France</string>
+    <string name="country_to_JP">Japan</string>
+    <string name="country_to_SG">Singapore</string>
+    <string name="country_to_CA">Canada</string>
+    <string name="country_to_AU">Australia</string>
+    <string name="country_to_TR">Turkey</string>
     <string name="vpn_notification_channel">VPN Service</string>
+    <string name="vpn_notification_connecting_to">Connecting to %1$s…</string>
+    <string name="vpn_notification_connected_to">Connected to %1$s</string>
 
     <!-- In-app updater -->
     <string name="update_banner_title">v%1$s available</string>

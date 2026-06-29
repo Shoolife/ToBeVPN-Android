@@ -7,6 +7,7 @@ import android.net.Uri
 import android.net.VpnService
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.gson.Gson
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.PendingPurchaseState
 import com.tobevpn.app.data.local.PrefsDataStore
@@ -24,12 +25,11 @@ import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.presentation.servers.resolveSelectedServer
-import com.tobevpn.app.presentation.servers.serverSelectionKey
-import com.tobevpn.app.presentation.servers.stableServerId
 import com.tobevpn.app.util.DeepLinkBus
 import com.tobevpn.app.util.PaymentNotifications
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.vpn.VpnConnectionManager
+import com.tobevpn.app.vpn.VpnToggleController
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -49,6 +49,7 @@ import javax.inject.Inject
 data class CurrentPlanLimits(
     val trafficLimitBytes: Long?,
     val deviceLimit: Int?,
+    val renewalUrl: String?,
 )
 
 private data class SelectedServerSnapshot(
@@ -66,6 +67,7 @@ private data class SelectedServerSnapshot(
 @HiltViewModel
 class MainViewModel @Inject constructor(
     private val connectionManager: VpnConnectionManager,
+    private val vpnToggleController: VpnToggleController,
     private val vpnRepository: VpnRepository,
     private val authRepository: AuthRepository,
     private val prefsDataStore: PrefsDataStore,
@@ -83,6 +85,9 @@ class MainViewModel @Inject constructor(
 
     private val _purchasePlans = MutableStateFlow<PurchasePlansDto?>(null)
     val purchasePlans: StateFlow<PurchasePlansDto?> = _purchasePlans
+
+    private val _purchasePlansFromCache = MutableStateFlow(false)
+    val purchasePlansFromCache: StateFlow<Boolean> = _purchasePlansFromCache
 
     private val _purchasePlansLoading = MutableStateFlow(false)
     val purchasePlansLoading: StateFlow<Boolean> = _purchasePlansLoading
@@ -187,6 +192,7 @@ class MainViewModel @Inject constructor(
     private var purchaseLoadRequest = 0
     private var purchaseStateOwner: AuthState? = null
     private var purchaseStateOwnerInitialized = false
+    private val purchasePlansGson = Gson()
 
     private companion object {
         const val TAG = "MainViewModel"
@@ -224,7 +230,7 @@ class MainViewModel @Inject constructor(
             // sticks for up to 12h until the next force-refresh.
             authRepository.syncSubscription(force = true)
             val servers = vpnRepository.refreshServers().getOrNull().orEmpty()
-            ensureAutomaticServerSelected(servers, forceSelection = true)
+            vpnToggleController.ensureAutomaticServerSelected(servers, forceSelection = true)
             lastSyncTime = System.currentTimeMillis()
             initialized = true
             startPendingPurchaseRefreshIfNeeded()
@@ -338,66 +344,9 @@ class MainViewModel @Inject constructor(
         }
     }
 
-    private suspend fun ensureAutomaticServerSelected(
-        servers: List<Server>,
-        forceSelection: Boolean = false,
-    ) {
-        if (!prefsDataStore.isAutomaticServerSelection()) return
-        val selectedId = prefsDataStore.getSelectedServerId()
-        if (!forceSelection && selectedId != null && servers.any { it.id == selectedId && it.isAvailable }) return
-        val best = serverQualityRepository.selectBestServer(servers) ?: return
-        prefsDataStore.setAutomaticSelectedServer(
-            id = stableServerId(best),
-            key = serverSelectionKey(best),
-        )
-    }
-
-    private suspend fun selectAutomaticServer(excludeServerId: String? = null): Server? {
-        if (!prefsDataStore.isAutomaticServerSelection()) return null
-        val best = serverQualityRepository.selectBestServer(
-            servers = vpnRepository.getServers(),
-            excludeServerId = excludeServerId,
-            forceProbe = true,
-        ) ?: return null
-        prefsDataStore.setAutomaticSelectedServer(
-            id = stableServerId(best),
-            key = serverSelectionKey(best),
-        )
-        return best
-    }
-
     private fun isExpired(): Boolean {
         val state = authState.value
         return state is AuthState.Authenticated && state.plan == UserPlan.EXPIRED
-    }
-
-    private suspend fun prepareServerForConnect(server: Server): Server? {
-        val automatic = prefsDataStore.isAutomaticServerSelection()
-        if (!automatic && !server.isAvailable) return null
-
-        authRepository.ensurePanelUser()
-        authRepository.syncSubscription(
-            overwriteUsage = true,
-            force = true,
-        )
-
-        val availableServers = vpnRepository.refreshServers()
-            .getOrNull()
-            .orEmpty()
-            .filter { it.isAvailable }
-        val resolved = if (automatic) {
-            serverQualityRepository.selectBestServer(availableServers, forceProbe = true)
-        } else {
-            availableServers.firstOrNull { it.id == server.id }
-                ?: availableServers.firstOrNull { it.name == server.name }
-        }
-        if (automatic && resolved != null) {
-            prefsDataStore.setAutomaticSelectedServer(
-                id = stableServerId(resolved),
-                key = serverSelectionKey(resolved),
-            )
-        }
-        return resolved
     }
 
     fun toggleConnection() {
@@ -436,7 +385,7 @@ class MainViewModel @Inject constructor(
                     connectionManager.showError(context.getString(R.string.error_no_servers))
                     return@launch
                 }
-                val server = prepareServerForConnect(selectedServer) ?: run {
+                val server = vpnToggleController.prepareServerForConnect(selectedServer) ?: run {
                     connectionManager.showError(context.getString(R.string.error_no_servers))
                     return@launch
                 }
@@ -446,7 +395,7 @@ class MainViewModel @Inject constructor(
                 // VpnConnectionManager performs the final guard against expired
                 // or placeholder subscriptions and publishes the resulting error.
                 submittedToManager = true
-                connectionManager.startVpn(server) {
+                vpnToggleController.startVpn(server) {
                     viewModelScope.launch {
                         if (request == connectionPreparationRequest) {
                             _connectionPreparation.value = false
@@ -497,7 +446,7 @@ class MainViewModel @Inject constructor(
             authRepository.syncSubscription(overwriteUsage = !isActive)
             if (isActive) return@resume
             val servers = vpnRepository.refreshServers().getOrNull().orEmpty()
-            ensureAutomaticServerSelected(servers)
+            vpnToggleController.ensureAutomaticServerSelected(servers)
         }
     }
 
@@ -568,7 +517,17 @@ class MainViewModel @Inject constructor(
             return
         }
         try {
-            val plans = purchaseRepository.getPlans()
+            val freshPlans = purchaseRepository.getPlans()
+                ?.takeIf(::hasPurchasablePlanShape)
+            val usingFallbackPlanShape = freshPlans == null
+            val plans = if (freshPlans != null) {
+                cachePurchasePlanShape(authenticated.telegramId, freshPlans)
+                _purchasePlansFromCache.value = false
+                freshPlans
+            } else {
+                loadCachedPurchasePlanShape(authenticated.telegramId)
+                    ?.also { _purchasePlansFromCache.value = true }
+            }
             if (request != purchaseLoadRequest ||
                 authRepository.getAuthStateSnapshot() != authenticated
             ) {
@@ -580,7 +539,7 @@ class MainViewModel @Inject constructor(
                 if (request == purchaseLoadRequest) clearPurchaseState()
                 return
             }
-            val limits = loadCurrentLimitsNow()
+            val limits = if (usingFallbackPlanShape) null else loadCurrentLimitsNow()
             if (request != purchaseLoadRequest ||
                 authRepository.getAuthStateSnapshot() != authenticated
             ) {
@@ -599,6 +558,7 @@ class MainViewModel @Inject constructor(
     private fun beginPurchaseRefresh(): Int {
         val request = ++purchaseLoadRequest
         _purchasePlans.value = null
+        _purchasePlansFromCache.value = false
         _purchasePlansLoaded.value = false
         _currentLimits.value = null
         _purchasePlansLoading.value = true
@@ -608,9 +568,56 @@ class MainViewModel @Inject constructor(
     private fun clearPurchaseState() {
         purchaseLoadRequest++
         _purchasePlans.value = null
+        _purchasePlansFromCache.value = false
         _purchasePlansLoaded.value = false
         _purchasePlansLoading.value = false
         _currentLimits.value = null
+    }
+
+    private fun hasPurchasablePlanShape(plans: PurchasePlansDto): Boolean {
+        return plans.plans.any { plan -> plan.durations.any { it.days > 0 } }
+    }
+
+    private suspend fun cachePurchasePlanShape(telegramId: Long, plans: PurchasePlansDto) {
+        runCatching {
+            val shapeOnly = plans.copy(
+                plans = plans.plans
+                    .filter { plan -> plan.durations.any { it.days > 0 } }
+                    .map { plan ->
+                        plan.copy(
+                            description = null,
+                            trafficLimit = 0,
+                            deviceLimit = 0,
+                            durations = plan.durations
+                                .filter { it.days > 0 }
+                                .map { duration ->
+                                    duration.copy(
+                                        botStartParam = null,
+                                        botPaymentUrl = null,
+                                        prices = emptyList(),
+                                        paymentMethods = emptyList(),
+                                    )
+                                },
+                        )
+                    },
+            )
+            prefsDataStore.setPurchasePlansCache(
+                telegramId = telegramId,
+                json = purchasePlansGson.toJson(shapeOnly),
+            )
+        }.onFailure { error ->
+            SafeDiagnostics.warn(TAG, "Purchase plans shape cache failed: ${SafeDiagnostics.failureCategory(error)}")
+        }
+    }
+
+    private suspend fun loadCachedPurchasePlanShape(telegramId: Long): PurchasePlansDto? {
+        return runCatching {
+            val json = prefsDataStore.getPurchasePlansCache(telegramId) ?: return null
+            purchasePlansGson.fromJson(json, PurchasePlansDto::class.java)
+                ?.takeIf(::hasPurchasablePlanShape)
+        }.onFailure { error ->
+            SafeDiagnostics.warn(TAG, "Purchase plans shape cache read failed: ${SafeDiagnostics.failureCategory(error)}")
+        }.getOrNull()
     }
 
     private suspend fun loadCurrentLimitsNow(): CurrentPlanLimits? {
@@ -619,6 +626,7 @@ class MainViewModel @Inject constructor(
                 CurrentPlanLimits(
                     trafficLimitBytes = plan.trafficLimitBytes,
                     deviceLimit = plan.deviceLimit,
+                    renewalUrl = plan.renewalUrl,
                 )
             } ?: run {
                 SafeDiagnostics.warn(TAG, "Current plan limits response did not contain current-plan data")

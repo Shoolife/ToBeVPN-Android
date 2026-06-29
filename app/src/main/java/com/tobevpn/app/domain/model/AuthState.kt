@@ -7,6 +7,7 @@ sealed interface AuthState {
         val plan: UserPlan,
         val planExpiresAt: Long? = null,
         val planDisplayName: String? = null,
+        val isAdminProfile: Boolean = false,
     ) : AuthState
 }
 

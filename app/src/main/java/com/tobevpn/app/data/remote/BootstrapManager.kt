@@ -195,6 +195,8 @@ class BootstrapManager @Inject constructor(
                     authState = "ANONYMOUS",
                     isLinked = false,
                     telegramId = null,
+                    panelUserUuid = stored.panelUserUuid ?: session.panelUserUuid,
+                    shortUuid = stored.shortUuid ?: session.shortUuid,
                 )
             }
         }

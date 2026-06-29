@@ -8,6 +8,7 @@ import com.tobevpn.app.data.device.DeviceFingerprintProvider
 import com.tobevpn.app.util.SafeDiagnostics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -113,9 +114,9 @@ class SubscriptionPinger @Inject constructor(
 
         try {
             primaryProbeClient.newCall(baseRequest).execute().use { response ->
-                if (response.code == FALLBACK_HTTP_STATUS && fallbackRequest != null) {
-                    val primaryResult = readResult(response)
-                    SafeDiagnostics.warn(TAG, "Primary subscription route rejected request; retrying via fallback")
+                val primaryResult = readResult(response)
+                if (!response.isSuccessful && fallbackRequest != null) {
+                    SafeDiagnostics.warn(TAG, "Primary subscription ping returned HTTP_${response.code}; retrying via fallback")
                     return@withContext try {
                         client.newCall(fallbackRequest).execute().use {
                             readFallbackResult(it) ?: primaryResult
@@ -126,7 +127,7 @@ class SubscriptionPinger @Inject constructor(
                     }
                 }
                 primaryUnavailableUntilMs = 0L
-                return@withContext readResult(response)
+                return@withContext primaryResult
             }
         } catch (primaryError: IOException) {
             if (!isFallbackEligible(primaryError)) {
@@ -206,9 +207,9 @@ class SubscriptionPinger @Inject constructor(
 
         try {
             primaryProbeClient.newCall(baseRequest).execute().use { response ->
-                if (response.code == FALLBACK_HTTP_STATUS && fallbackRequest != null) {
-                    val primaryResult = readProfileResult(response)
-                    SafeDiagnostics.warn(TAG, "Primary subscription route rejected profile request; retrying via fallback")
+                val primaryResult = readProfileResult(response)
+                if (!response.isSuccessful && fallbackRequest != null) {
+                    SafeDiagnostics.warn(TAG, "Primary subscription profile returned HTTP_${response.code}; retrying via fallback")
                     return@withContext try {
                         client.newCall(fallbackRequest).execute().use {
                             readFallbackProfileResult(it) ?: primaryResult
@@ -219,7 +220,7 @@ class SubscriptionPinger @Inject constructor(
                     }
                 }
                 primaryUnavailableUntilMs = 0L
-                return@withContext readProfileResult(response)
+                return@withContext primaryResult
             }
         } catch (primaryError: IOException) {
             if (!isFallbackEligible(primaryError)) {
@@ -414,19 +415,16 @@ class SubscriptionPinger @Inject constructor(
         val base = BuildConfig.SUBSCRIPTION_BASE_URL.trim()
         val key = rawKey?.trim()?.takeIf { it.isNotBlank() } ?: return null
         if (base.isBlank()) return null
-        val url = try {
-            base.toHttpUrl().newBuilder()
-                .addPathSegment(key)
-                .build()
-        } catch (_: IllegalArgumentException) {
-            return null
-        }
+        val url = buildSubscriptionUrlByKey(base, key) ?: return null
         return buildBaseRequest(url.toString(), deviceId)
     }
 
     private fun extractSubscriptionKey(subscriptionUrl: String): String? {
         return try {
-            subscriptionUrl.toHttpUrl().pathSegments.lastOrNull { it.isNotBlank() }
+            val url = subscriptionUrl.toHttpUrl()
+            url.queryParameter("sub")?.takeIf { it.isNotBlank() }
+                ?: url.queryParameter("key")?.takeIf { it.isNotBlank() }
+                ?: url.pathSegments.lastOrNull { it.isNotBlank() }
         } catch (_: IllegalArgumentException) {
             null
         }
@@ -445,16 +443,35 @@ class SubscriptionPinger @Inject constructor(
         val fallbackBase = BuildConfig.FALLBACK_SUBS_DOMAIN
         val key = rawKey?.trim()?.takeIf { it.isNotBlank() } ?: return null
         if (fallbackBase.isBlank()) return null
-        val rebuilt = try {
-            (fallbackBase + key).toHttpUrl()
-        } catch (_: IllegalArgumentException) {
-            return null
-        }
+        val rebuilt = buildSubscriptionUrlByKey(fallbackBase, key) ?: return null
         return template
             ?.newBuilder()
             ?.url(rebuilt)
             ?.build()
             ?: buildBaseRequest(rebuilt.toString(), deviceId)
+    }
+
+    private fun buildSubscriptionUrlByKey(base: String, key: String): HttpUrl? {
+        val substituted = when {
+            base.contains("{key}") -> base.replace("{key}", key)
+            base.contains("{sub}") -> base.replace("{sub}", key)
+            else -> null
+        }
+        if (substituted != null) {
+            return runCatching { substituted.toHttpUrl() }.getOrNull()
+        }
+
+        val url = runCatching { base.toHttpUrl() }.getOrNull() ?: return null
+        val builder = url.newBuilder()
+        return if (url.query != null) {
+            when {
+                "sub" in url.queryParameterNames -> builder.setQueryParameter("sub", key)
+                "key" in url.queryParameterNames -> builder.setQueryParameter("key", key)
+                else -> builder.addQueryParameter("sub", key)
+            }.build()
+        } else {
+            builder.addPathSegment(key).build()
+        }
     }
 
     private fun logFailure(stage: String, e: IOException) {

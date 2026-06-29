@@ -55,7 +55,9 @@ data class CurrentSubscriptionPlanInfo(
     val isExpired: Boolean?,
     val isTrial: Boolean?,
     val isUnlimited: Boolean?,
+    val isAdmin: Boolean,
     val subscriptionUrl: String?,
+    val renewalUrl: String?,
     val hasPlanData: Boolean,
 )
 
@@ -97,6 +99,7 @@ class AuthRepository @Inject constructor(
                 plan = planFromString(session.userPlan),
                 planExpiresAt = session.planExpiresAt,
                 planDisplayName = session.planDisplayName,
+                isAdminProfile = session.isAdminProfile,
             )
         } else {
             AuthState.Anonymous
@@ -318,6 +321,7 @@ class AuthRepository @Inject constructor(
                 userPlan = resolvedPlan ?: current.userPlan,
                 planDisplayName = planInfo?.displayName ?: current.planDisplayName,
                 planExpiresAt = planInfo?.expiresAtMillis ?: current.planExpiresAt,
+                isAdminProfile = planInfo?.isAdmin ?: current.isAdminProfile,
             )
         }
         planInfo?.trafficLimitBytes?.let { usageRepository.updateLimits(it, 0) }
@@ -379,6 +383,7 @@ class AuthRepository @Inject constructor(
                 },
                 planExpiresAt = planInfo.expiresAtMillis,
                 subscriptionUrl = nextUrl ?: current.subscriptionUrl,
+                isAdminProfile = planInfo.isAdmin,
             )
         }
         planInfo.trafficLimitBytes?.let { usageRepository.updateLimits(it, 0) }
@@ -431,6 +436,7 @@ class AuthRepository @Inject constructor(
                 userPlan = "FREE_TRIAL",
                 planDisplayName = null,
                 email = null,
+                isAdminProfile = false,
                 pendingAuthToken = null,
                 subscriptionUrl = null,
             )
@@ -484,6 +490,7 @@ class AuthRepository @Inject constructor(
                     pendingAuthToken = if (isAuthenticated) null else current.pendingAuthToken,
                     userPlan = if (isAuthenticated) current.userPlan else "FREE_TRIAL",
                     planExpiresAt = if (isAuthenticated) current.planExpiresAt else null,
+                    isAdminProfile = if (isAuthenticated) current.isAdminProfile else false,
                     subscriptionUrl = if (isAuthenticated) {
                         data.subscriptionUrl ?: current.subscriptionUrl
                     } else {
@@ -595,7 +602,9 @@ class AuthRepository @Inject constructor(
             isTrial = subscription?.isTrial ?: snapshot?.isTrial,
             isUnlimited = subscription?.isUnlimited
                 ?: snapshot?.type?.equals("UNLIMITED", ignoreCase = true),
+            isAdmin = isAdmin == true,
             subscriptionUrl = subscription?.url?.trim()?.takeIf { it.isNotBlank() },
+            renewalUrl = renewalUrl?.trim()?.takeIf { it.isNotBlank() },
             hasPlanData = hasPlanData,
         )
     }
@@ -860,6 +869,7 @@ class AuthRepository @Inject constructor(
                             ?.takeIf { resolvedPlan != "EXPIRED" },
                         planExpiresAt = currentPlanInfo?.expiresAtMillis,
                         subscriptionUrl = currentPlanInfo?.subscriptionUrl ?: current.subscriptionUrl,
+                        isAdminProfile = currentPlanInfo?.isAdmin ?: current.isAdminProfile,
                     )
                 }
                 if (updated != null) session = updated
@@ -1032,6 +1042,7 @@ class AuthRepository @Inject constructor(
                 userPlan = "FREE_TRIAL",
                 planDisplayName = null,
                 email = null,
+                isAdminProfile = false,
                 pendingAuthToken = null,
                 subscriptionUrl = null,
             )

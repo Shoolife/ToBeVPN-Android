@@ -39,7 +39,14 @@ object DatabaseModule {
             "tobevpn.db",
         )
             .openHelperFactory(SupportOpenHelperFactory(passphrase))
-            .addMigrations(MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12)
+            .addMigrations(
+                MIGRATION_8_9,
+                MIGRATION_9_10,
+                MIGRATION_10_11,
+                MIGRATION_11_12,
+                MIGRATION_12_13,
+                MIGRATION_13_14,
+            )
             .fallbackToDestructiveMigration(dropAllTables = false)
             // TRUNCATE journal (no WAL) — committed writes land in the
             // main .db file synchronously, so a process kill / force-stop
@@ -93,6 +100,23 @@ object DatabaseModule {
     private val MIGRATION_11_12 = object : Migration(11, 12) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE session ADD COLUMN planDisplayName TEXT")
+        }
+    }
+
+    // v12 -> v13: cache the backend current-plan `is_admin` flag. It does
+    // not change subscription tier; it unlocks extended diagnostic UI.
+    private val MIGRATION_12_13 = object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE session ADD COLUMN isAdminProfile INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
+    // v13 -> v14: persist the subscription-profile order of servers. Room/SQLite
+    // does not guarantee row order without ORDER BY, so the list could jump
+    // after refreshes or metadata enrichment rewrote the cache.
+    private val MIGRATION_13_14 = object : Migration(13, 14) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE servers ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
         }
     }
 

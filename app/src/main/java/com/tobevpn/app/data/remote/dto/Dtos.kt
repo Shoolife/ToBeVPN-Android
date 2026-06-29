@@ -56,6 +56,8 @@ data class DeviceTrafficDto(
 )
 
 data class CurrentPlanDto(
+    @SerializedName("is_admin") val isAdmin: Boolean? = null,
+    @SerializedName("renewal_url") val renewalUrl: String? = null,
     @SerializedName("current_plan") val currentPlan: CurrentPlanSnapshotDto? = null,
     @SerializedName("plan_snapshot") val planSnapshot: CurrentPlanSnapshotDto? = null,
     val subscription: CurrentPlanSubscriptionDto? = null,

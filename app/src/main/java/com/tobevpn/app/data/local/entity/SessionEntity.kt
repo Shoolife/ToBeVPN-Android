@@ -21,6 +21,7 @@ data class SessionEntity(
     val shortUuid: String? = null,
     val panelUserUuid: String? = null,
     val email: String? = null,
+    val isAdminProfile: Boolean = false,
     // Per-user subscription URL (https://<panel-host>/<KEY>). The path
     // segment is a secret token issued by the panel — anyone with the
     // URL can pull the user's VPN config. Lives here in the encrypted

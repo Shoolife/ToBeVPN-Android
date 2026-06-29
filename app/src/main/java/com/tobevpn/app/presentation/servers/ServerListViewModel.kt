@@ -6,6 +6,7 @@ import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.repository.AuthRepository
 import com.tobevpn.app.data.repository.ServerQualityRepository
 import com.tobevpn.app.data.repository.VpnRepository
+import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.Server
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -46,6 +48,10 @@ class ServerListViewModel @Inject constructor(
 
     val automaticServerSelection: StateFlow<Boolean> = prefsDataStore.automaticServerSelection
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    val isAdminProfile: StateFlow<Boolean> = authRepository.observeAuthState()
+        .map { state -> (state as? AuthState.Authenticated)?.isAdminProfile == true }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
@@ -80,7 +86,11 @@ class ServerListViewModel @Inject constructor(
                 // Without this, opening the server list before MainViewModel has
                 // finished its init leaves shortUuid null and refreshServers fails
                 // with "Нет подписки".
-                authRepository.ensurePanelUser()
+                val ensureResult = authRepository.ensurePanelUser()
+                if (ensureResult.isFailure) {
+                    _error.value = ensureResult.exceptionOrNull()?.message
+                    return@launch
+                }
                 authRepository.syncSubscription(force = force)
                 val result = vpnRepository.refreshServers()
                 result.onFailure { _error.value = it.message }

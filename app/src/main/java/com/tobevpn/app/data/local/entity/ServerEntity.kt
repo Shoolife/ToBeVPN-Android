@@ -23,4 +23,5 @@ data class ServerEntity(
     val spx: String = "",
     val country: String = "",
     val isOnline: Boolean = true,
+    val sortOrder: Int = 0,
 )

@@ -13,6 +13,7 @@
     <string name="continue_btn">Продолжить</string>
     <string name="refresh">Обновить</string>
     <string name="loading_data">Загрузка…</string>
+    <string name="qs_tile_label">ToBeVPN</string>
 
     <!-- Onboarding -->
     <string name="onboarding_subtitle">Пробный тариф для первого подключения</string>
@@ -123,6 +124,7 @@
     <string name="login_required_for_purchase">Для покупки подписки нужно сначала авторизоваться</string>
     <string name="buy_plan">Купить «%1$s» за %2$s</string>
     <string name="renew_plan">Продлить «%1$s» за %2$s</string>
+    <string name="change_plan">Перейти на «%1$s» за %2$s</string>
     <string name="price_rub">%1$s\u20BD</string>
     <string name="price_usd">$%1$s</string>
     <string name="plan_day">1 день</string>
@@ -274,7 +276,21 @@
     <string name="country_CA">Канада</string>
     <string name="country_AU">Австралия</string>
     <string name="country_TR">Турция</string>
+    <string name="country_to_NL">Нидерландам</string>
+    <string name="country_to_DE">Германии</string>
+    <string name="country_to_US">США</string>
+    <string name="country_to_GB">Великобритании</string>
+    <string name="country_to_FI">Финляндии</string>
+    <string name="country_to_SE">Швеции</string>
+    <string name="country_to_FR">Франции</string>
+    <string name="country_to_JP">Японии</string>
+    <string name="country_to_SG">Сингапуру</string>
+    <string name="country_to_CA">Канаде</string>
+    <string name="country_to_AU">Австралии</string>
+    <string name="country_to_TR">Турции</string>
     <string name="vpn_notification_channel">VPN-подключение</string>
+    <string name="vpn_notification_connecting_to">Подключаемся к %1$s…</string>
+    <string name="vpn_notification_connected_to">Вы подключились к %1$s</string>
 
     <!-- In-app updater -->
     <string name="update_banner_title">Доступна v%1$s</string>

@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.io.IOException
 import java.net.InetAddress
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,7 +50,6 @@ class VpnRepository @Inject constructor(
         val session = sessionDao.getSession()
         val shortUuid = session?.shortUuid
         if (shortUuid.isNullOrBlank()) {
-            clearServerCache()
             return Result.failure(Exception("Нет подписки"))
         }
 
@@ -64,18 +64,18 @@ class VpnRepository @Inject constructor(
             if (profile.links.isEmpty() && !profile.isSuccessful && !profile.isUsageBlocked) {
                 throw IOException("Subscription profile unavailable")
             }
+            if (profile.isUsageBlocked) {
+                clearServerCache()
+                return Result.failure(Exception("Доступ к подписке ограничен"))
+            }
             updateServersFromLinks(shortUuid, profile.links)
         } catch (e: Exception) {
             SafeDiagnostics.warn(TAG, "Server refresh failed; checking local cache: ${SafeDiagnostics.failureCategory(e)}")
-            val cached = if (prefsDataStore.isServerCacheOwner(shortUuid)) {
-                serverDao.getAll().map { it.toDomain() }.filterNot { it.isSentinel }
-            } else {
-                clearServerCache()
-                emptyList()
-            }
+            val cached = getOwnedCachedServers(shortUuid)
             if (cached.isNotEmpty()) {
                 Result.success(cached)
             } else {
+                clearServerCache()
                 Result.failure(e)
             }
         }
@@ -86,32 +86,42 @@ class VpnRepository @Inject constructor(
         links: List<String>,
     ): Result<List<Server>> {
         if (links.isEmpty()) {
+            keepOwnedCacheOnRefreshMiss(shortUuid)?.let { return Result.success(it) }
             clearServerCache()
             return Result.failure(Exception("Подписка не найдена"))
         }
 
-        val servers = links.mapNotNull { link -> VlessUrlParser.parse(link) }
-            .filterNot { it.isSentinel }
+        val parsedServers = links.mapNotNull { link -> VlessUrlParser.parse(link) }
+        val servers = parsedServers.filterNot { it.isSentinel }
         // Drop the panel's "subscription expired" placeholder link so it
         // never appears in the UI or reaches xray.
         if (servers.isEmpty()) {
+            if (parsedServers.none { it.isSentinel }) {
+                keepOwnedCacheOnRefreshMiss(shortUuid)?.let { return Result.success(it) }
+            }
             clearServerCache()
             return Result.failure(Exception("Нет доступных серверов"))
         }
 
-        val cachedById = serverDao.getAll().associateBy { it.id }
-        val entities = servers.map { server ->
+        val cachedServers = serverDao.getAll()
+        val cachedById = cachedServers.associateBy { it.id }
+        val stableServers = keepStableServerOrder(
+            servers = servers,
+            cachedServers = cachedServers,
+        )
+        val entities = stableServers.mapIndexed { index, server ->
             val id = serverId(server)
             val cached = cachedById[id]
             server.toEntity(
                 country = cached?.country.orEmpty(),
                 isOnline = cached?.isOnline ?: true,
+                sortOrder = index,
             )
         }
         val generation = refreshGeneration.incrementAndGet()
         serverDao.replaceAll(entities)
         prefsDataStore.setServerCacheOwner(shortUuid)
-        enrichMetadataInBackground(shortUuid, generation, servers)
+        enrichMetadataInBackground(shortUuid, generation, stableServers)
         return Result.success(entities.map { it.toDomain() })
     }
 
@@ -134,7 +144,7 @@ class VpnRepository @Inject constructor(
                     .toSet()
 
                 val enriched = coroutineScope {
-                    servers.map { server ->
+                    servers.mapIndexed { index, server ->
                         async {
                             val resolvedIp = try {
                                 InetAddress.getByName(server.address).hostAddress
@@ -146,6 +156,7 @@ class VpnRepository @Inject constructor(
                                     ?: countryByAddress[resolvedIp]
                                     ?: "",
                                 isOnline = resolvedIp !in disabledNodeIps,
+                                sortOrder = index,
                             )
                         }
                     }.awaitAll()
@@ -168,9 +179,100 @@ class VpnRepository @Inject constructor(
         prefsDataStore.clearServerCacheOwner()
     }
 
+    private fun keepStableServerOrder(
+        servers: List<Server>,
+        cachedServers: List<ServerEntity>,
+    ): List<Server> {
+        if (cachedServers.isEmpty()) {
+            return servers.sortedWith(
+                compareBy<Server> { serverNameParts(it.name).base }
+                    .thenBy { serverNameParts(it.name).number ?: Int.MAX_VALUE }
+                    .thenBy { it.name.lowercase(Locale.ROOT) }
+                    .thenBy { serverId(it) },
+            )
+        }
+        val cachedPositionById = cachedServers
+            .mapIndexed { index, entity -> entity.id to index }
+            .toMap()
+        val cachedGroupPositionByName = cachedServers
+            .mapIndexed { index, entity -> serverNameParts(entity.name).base to index }
+            .groupBy({ it.first }, { it.second })
+            .mapValues { (_, positions) -> positions.min() }
+
+        return servers
+            .mapIndexed { profileIndex, server ->
+                val nameParts = serverNameParts(server.name)
+                OrderedServer(
+                    server = server,
+                    cachedPosition = cachedPositionById[serverId(server)],
+                    cachedGroupPosition = cachedGroupPositionByName[nameParts.base],
+                    nameParts = nameParts,
+                    profileIndex = profileIndex,
+                )
+            }
+            .sortedWith(
+                compareBy<OrderedServer> {
+                    if (it.nameParts.number != null) {
+                        it.cachedGroupPosition ?: it.cachedPosition ?: Int.MAX_VALUE
+                    } else {
+                        it.cachedPosition ?: it.cachedGroupPosition ?: Int.MAX_VALUE
+                    }
+                }
+                    .thenBy { it.nameParts.base }
+                    .thenBy { it.nameParts.number ?: Int.MAX_VALUE }
+                    .thenBy { it.server.name.lowercase(Locale.ROOT) }
+                    .thenBy { serverId(it.server) }
+                    .thenBy { it.profileIndex },
+            )
+            .map { it.server }
+    }
+
+    private fun serverNameParts(name: String): ServerNameParts {
+        val normalized = name
+            .trim()
+            .replace(Regex("\\s+"), " ")
+            .lowercase(Locale.ROOT)
+        val match = TRAILING_NUMBER_REGEX.matchEntire(normalized)
+        return if (match != null) {
+            ServerNameParts(
+                base = match.groupValues[1].trim(),
+                number = match.groupValues[2].toIntOrNull(),
+            )
+        } else {
+            ServerNameParts(base = normalized, number = null)
+        }
+    }
+
+    private suspend fun getOwnedCachedServers(shortUuid: String): List<Server> {
+        if (!prefsDataStore.isServerCacheOwner(shortUuid)) return emptyList()
+        return serverDao.getAll().map { it.toDomain() }.filterNot { it.isSentinel }
+    }
+
+    private suspend fun keepOwnedCacheOnRefreshMiss(shortUuid: String): List<Server>? {
+        val session = sessionDao.getSession()
+        if (session?.shortUuid != shortUuid) return null
+        if (session.userPlan == "EXPIRED") return null
+        if (prefsDataStore.isSubscriptionUsageBlocked(shortUuid)) return null
+        return getOwnedCachedServers(shortUuid).takeIf { it.isNotEmpty() }
+    }
+
     private companion object {
         const val TAG = "VpnRepository"
+        val TRAILING_NUMBER_REGEX = Regex("""^(.*?)[\s#_-]+(\d+)$""")
     }
+
+    private data class OrderedServer(
+        val server: Server,
+        val cachedPosition: Int?,
+        val cachedGroupPosition: Int?,
+        val nameParts: ServerNameParts,
+        val profileIndex: Int,
+    )
+
+    private data class ServerNameParts(
+        val base: String,
+        val number: Int?,
+    )
 
     suspend fun getServers(): List<Server> {
         return serverDao.getAll().map { it.toDomain() }
@@ -181,6 +283,7 @@ class VpnRepository @Inject constructor(
     private fun Server.toEntity(
         country: String,
         isOnline: Boolean,
+        sortOrder: Int,
     ) = ServerEntity(
         id = serverId(this),
         name = name,
@@ -199,6 +302,7 @@ class VpnRepository @Inject constructor(
         spx = spx,
         country = country,
         isOnline = isOnline,
+        sortOrder = sortOrder,
     )
 
     private fun ServerEntity.toDomain() = Server(

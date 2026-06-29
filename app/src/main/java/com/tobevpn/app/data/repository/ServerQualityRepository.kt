@@ -79,6 +79,9 @@ class ServerQualityRepository @Inject constructor(
         val records = stateMutex.withLock { loadStateLocked().records }
         val now = System.currentTimeMillis()
 
+        fun preferPanelOnline(candidates: List<Server>): List<Server> =
+            candidates.filter { it.isOnline }.ifEmpty { candidates }
+
         fun rank(candidates: List<Server>): Server? {
             return candidates
                 .mapNotNull { server ->
@@ -101,9 +104,13 @@ class ServerQualityRepository @Inject constructor(
                 ?.server
         }
 
-        return rank(preferredCandidates)
+        val preferredOnlineCandidates = preferPanelOnline(preferredCandidates)
+        val onlineCandidates = preferPanelOnline(available)
+        return rank(preferredOnlineCandidates)
+            ?: rank(preferredCandidates)
+            ?: rank(onlineCandidates)
             ?: rank(available)
-            ?: preferredCandidates.firstOrNull()?.let { server ->
+            ?: preferredOnlineCandidates.firstOrNull()?.let { server ->
                 server.copy(ping = pings[server.id] ?: server.ping)
             }
     }

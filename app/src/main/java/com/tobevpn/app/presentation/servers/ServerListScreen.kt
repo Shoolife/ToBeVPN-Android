@@ -67,6 +67,7 @@ fun ServerListScreen(
     val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
     val selectedServerKey by viewModel.selectedServerKey.collectAsStateWithLifecycle()
     val automaticServerSelection by viewModel.automaticServerSelection.collectAsStateWithLifecycle()
+    val isAdminProfile by viewModel.isAdminProfile.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
@@ -136,7 +137,7 @@ fun ServerListScreen(
                         val names = servers.map { serverDisplayName(it.name, it.country) }
                         val trailingWidthPx = servers.maxOf { server ->
                             when {
-                                !server.isOnline -> textMeasurer.measure(
+                                !server.isSelectable -> textMeasurer.measure(
                                     text = AnnotatedString(offlineText),
                                     style = labelStyle,
                                     maxLines = 1,
@@ -216,7 +217,7 @@ fun ServerListScreen(
                                     },
                                 )
                             }
-                            items(servers, key = { it.id }) { server ->
+                            items(servers, key = { serverListItemKey(it) }) { server ->
                                 val selectable = server.isSelectable
                                 ServerItem(
                                     server = server,
@@ -226,6 +227,7 @@ fun ServerListScreen(
                                         selectedKey = selectedServerKey,
                                     ),
                                     enabled = selectable,
+                                    showEndpoint = isAdminProfile,
                                     serverNameFontSize = serverNameFontSize,
                                     onClick = {
                                         scope.launch {
@@ -310,6 +312,7 @@ private fun ServerItem(
     server: Server,
     selected: Boolean,
     enabled: Boolean,
+    showEndpoint: Boolean,
     serverNameFontSize: TextUnit,
     onClick: () -> Unit,
 ) {
@@ -370,25 +373,34 @@ private fun ServerItem(
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (!server.isOnline) {
+                if (!server.isSelectable) {
                     Text(
                         stringResource(R.string.server_unavailable),
                         style = MaterialTheme.typography.bodySmall,
                         color = VpnRed,
                     )
-                } else {
+                }
+                if (showEndpoint) {
                     Text(
-                        countryName(serverCountryCodeForUi(server.country, server.name)),
+                        buildString {
+                            append(countryName(serverCountryCodeForUi(server.country, server.name)))
+                            append(" · ")
+                            append(server.address)
+                            append(":")
+                            append(server.port)
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
             // Ping, unreachable or offline
-            if (!server.isOnline || server.ping != 0L) {
+            if (!server.isSelectable || server.ping != 0L) {
                 Spacer(modifier = Modifier.width(16.dp))
             }
-            if (!server.isOnline) {
+            if (!server.isSelectable) {
                 Text(
                     text = stringResource(R.string.server_offline),
                     style = MaterialTheme.typography.labelSmall,
@@ -441,3 +453,13 @@ private fun countryName(code: String): String = when (code.uppercase()) {
     "TR" -> stringResource(R.string.country_TR)
     else -> code
 }
+
+private fun serverListItemKey(server: Server): String = listOf(
+    serverSelectionKey(server),
+    server.address,
+    server.port.toString(),
+    server.uuid,
+    server.sni,
+    server.publicKey,
+    server.shortId,
+).joinToString("|")

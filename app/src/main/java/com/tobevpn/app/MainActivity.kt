@@ -1,7 +1,12 @@
 package com.tobevpn.app
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
@@ -13,6 +18,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.rememberNavController
@@ -31,7 +38,9 @@ import com.tobevpn.app.presentation.theme.ToBeVPNTheme
 import com.tobevpn.app.update.UpdateBannerCheck
 import com.tobevpn.app.update.UpdateBannerHost
 import com.tobevpn.app.util.DeepLinkBus
+import com.tobevpn.app.util.DeepLinkDestination
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 
@@ -44,6 +53,8 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var deepLinkBus: DeepLinkBus
 
+    private val quickSettingsConnectRequests = MutableStateFlow(0)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         val systemSplash = installSplashScreen()
         super.onCreate(savedInstanceState)
@@ -51,10 +62,34 @@ class MainActivity : AppCompatActivity() {
         systemSplash.setKeepOnScreenCondition { false }
         enableEdgeToEdge()
         dispatchDeepLink(intent)
+        dispatchQuickSettingsIntent(intent)
+        dispatchQuickSettingsPreferencesIntent(intent)
 
         setContent {
+            val quickSettingsConnectRequest by quickSettingsConnectRequests.collectAsStateWithLifecycle()
+            val notificationPermissionPrompted by prefsDataStore.notificationPermissionPrompted
+                .collectAsStateWithLifecycle(initialValue = true)
+            val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                ActivityResultContracts.RequestPermission(),
+            ) {}
             var showStartupSplash by rememberSaveable {
                 mutableStateOf(savedInstanceState == null)
+            }
+
+            LaunchedEffect(notificationPermissionPrompted) {
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+                    notificationPermissionPrompted
+                ) {
+                    return@LaunchedEffect
+                }
+                prefsDataStore.setNotificationPermissionPrompted()
+                if (ContextCompat.checkSelfPermission(
+                        this@MainActivity,
+                        Manifest.permission.POST_NOTIFICATIONS,
+                    ) != PackageManager.PERMISSION_GRANTED
+                ) {
+                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
@@ -78,6 +113,7 @@ class MainActivity : AppCompatActivity() {
                                     navController = navController,
                                     startFromOnboarding = !seen,
                                     deepLinkBus = deepLinkBus,
+                                    quickSettingsConnectRequest = quickSettingsConnectRequest,
                                     modifier = Modifier.fillMaxSize(),
                                 )
                             }
@@ -122,6 +158,8 @@ class MainActivity : AppCompatActivity() {
         // received, in case other code reads it later.
         setIntent(intent)
         dispatchDeepLink(intent)
+        dispatchQuickSettingsIntent(intent)
+        dispatchQuickSettingsPreferencesIntent(intent)
     }
 
     private fun dispatchDeepLink(intent: Intent?) {
@@ -129,5 +167,24 @@ class MainActivity : AppCompatActivity() {
         if (intent.action != Intent.ACTION_VIEW) return
         if (!deepLinkBus.supports(uri)) return
         deepLinkBus.post(uri)
+    }
+
+    private fun dispatchQuickSettingsIntent(intent: Intent?) {
+        val fromTile = intent?.action == ACTION_CONNECT_FROM_QS_TILE ||
+            intent?.getBooleanExtra(EXTRA_CONNECT_FROM_QS_TILE, false) == true
+        if (!fromTile) return
+        quickSettingsConnectRequests.value += 1
+    }
+
+    private fun dispatchQuickSettingsPreferencesIntent(intent: Intent?) {
+        if (intent?.action != ACTION_QS_TILE_PREFERENCES) return
+        deepLinkBus.navigateTo(DeepLinkDestination.SERVERS)
+    }
+
+    companion object {
+        const val ACTION_CONNECT_FROM_QS_TILE = "com.tobevpn.app.action.CONNECT_FROM_QS_TILE"
+        const val EXTRA_CONNECT_FROM_QS_TILE = "com.tobevpn.app.extra.CONNECT_FROM_QS_TILE"
+        private const val ACTION_QS_TILE_PREFERENCES =
+            "android.service.quicksettings.action.QS_TILE_PREFERENCES"
     }
 }

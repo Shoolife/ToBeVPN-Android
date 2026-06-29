@@ -11,10 +11,10 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface ServerDao {
 
-    @Query("SELECT * FROM servers")
+    @Query("SELECT * FROM servers ORDER BY sortOrder ASC, name COLLATE NOCASE ASC, id ASC")
     fun observeAll(): Flow<List<ServerEntity>>
 
-    @Query("SELECT * FROM servers")
+    @Query("SELECT * FROM servers ORDER BY sortOrder ASC, name COLLATE NOCASE ASC, id ASC")
     suspend fun getAll(): List<ServerEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)

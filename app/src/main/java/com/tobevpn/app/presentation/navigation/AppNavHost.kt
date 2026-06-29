@@ -27,6 +27,7 @@ fun AppNavHost(
     navController: NavHostController,
     startFromOnboarding: Boolean = false,
     deepLinkBus: DeepLinkBus,
+    quickSettingsConnectRequest: Int = 0,
     modifier: Modifier = Modifier,
 ) {
     hiltViewModel<AppSessionViewModel>()
@@ -47,8 +48,19 @@ fun AppNavHost(
             when (destination) {
                 DeepLinkDestination.AUTH -> navController.navigateSingleTop(AuthRoute)
                 DeepLinkDestination.MAIN -> navController.navigateSingleTop(MainRoute)
+                DeepLinkDestination.SERVERS -> {
+                    if (!startFromOnboarding) {
+                        navController.navigateSingleTop(ServerListRoute)
+                    }
+                }
                 DeepLinkDestination.SETTINGS -> navController.navigateSingleTop(SettingsRoute)
             }
+        }
+    }
+
+    LaunchedEffect(quickSettingsConnectRequest, startFromOnboarding) {
+        if (quickSettingsConnectRequest > 0 && !startFromOnboarding) {
+            navController.navigateSingleTop(MainRoute)
         }
     }
 
@@ -74,6 +86,7 @@ fun AppNavHost(
                 onNavigateToSettings = { navController.navigateSingleTop(SettingsRoute) },
                 onNavigateToStats = { navController.navigateSingleTop(StatsRoute) },
                 onNavigateToSpeedTest = { navController.navigateSingleTop(SpeedTestRoute) },
+                quickSettingsConnectRequest = quickSettingsConnectRequest,
             )
         }
         composable<ServerListRoute> {

@@ -35,7 +35,7 @@ class AppSessionViewModel @Inject constructor(
                     connectionManager.stopVpn()
                     return@collectLatest
                 }
-                connectionManager.switchServer(server)
+                connectionManager.switchServer(server, allowStaleOnRefreshMiss = false)
             }
         }
 

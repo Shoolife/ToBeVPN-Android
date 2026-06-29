@@ -10,6 +10,7 @@ import javax.inject.Singleton
 enum class DeepLinkDestination {
     AUTH,
     MAIN,
+    SERVERS,
     SETTINGS,
 }
 
@@ -54,6 +55,10 @@ class DeepLinkBus @Inject constructor() {
                 }
             }
         }
+    }
+
+    fun navigateTo(destination: DeepLinkDestination) {
+        navigationChannel.trySend(destination)
     }
 
     fun supports(uri: Uri): Boolean {

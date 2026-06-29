@@ -42,6 +42,7 @@ class PrefsDataStore @Inject constructor(
         val AUTOMATIC_SERVER_SELECTION = booleanPreferencesKey("automatic_server_selection")
         val SERVER_QUALITY_STATE = stringPreferencesKey("server_quality_state")
         val EMAIL_PROMPT_SHOWN = booleanPreferencesKey("email_prompt_shown")
+        val NOTIFICATION_PERMISSION_PROMPTED = booleanPreferencesKey("notification_permission_prompted")
         // USER_EMAIL was removed in v9 — email now lives in the encrypted
         // SessionEntity. We still scrub the legacy plaintext key on first launch
         // so it doesn't linger in the protobuf file. See clearLegacyEmail().
@@ -64,6 +65,8 @@ class PrefsDataStore @Inject constructor(
         val PENDING_PURCHASE_BASELINE_PLAN = stringPreferencesKey("pending_purchase_baseline_plan")
         val PENDING_PURCHASE_BASELINE_EXPIRES_AT = longPreferencesKey("pending_purchase_baseline_expires_at")
         val SERVER_CACHE_OWNER = stringPreferencesKey("server_cache_owner")
+        val PURCHASE_PLANS_CACHE_OWNER = stringPreferencesKey("purchase_plans_cache_owner")
+        val PURCHASE_PLANS_CACHE_JSON = stringPreferencesKey("purchase_plans_cache_json")
         val BLOCKED_SUBSCRIPTION_OWNER = stringPreferencesKey("blocked_subscription_owner")
         // Scope the persisted block to the installed build. After an update,
         // a block recorded by the previous version must not lock the new
@@ -86,6 +89,9 @@ class PrefsDataStore @Inject constructor(
         it[Keys.AUTOMATIC_SERVER_SELECTION] ?: (it[Keys.SELECTED_SERVER_ID] == null)
     }
     val emailPromptShown: Flow<Boolean> = context.dataStore.data.map { it[Keys.EMAIL_PROMPT_SHOWN] ?: false }
+    val notificationPermissionPrompted: Flow<Boolean> = context.dataStore.data.map {
+        it[Keys.NOTIFICATION_PERMISSION_PROMPTED] ?: false
+    }
     val language: Flow<String?> = context.dataStore.data.map { it[Keys.LANGUAGE] }
 
     suspend fun getCachedUsdRate(): Pair<Double, Long>? {
@@ -163,6 +169,10 @@ class PrefsDataStore @Inject constructor(
 
     suspend fun setEmailPromptShown() {
         context.dataStore.edit { it[Keys.EMAIL_PROMPT_SHOWN] = true }
+    }
+
+    suspend fun setNotificationPermissionPrompted() {
+        context.dataStore.edit { it[Keys.NOTIFICATION_PERMISSION_PROMPTED] = true }
     }
 
     suspend fun setLanguage(tag: String) {
@@ -286,6 +296,28 @@ class PrefsDataStore @Inject constructor(
 
     suspend fun clearServerCacheOwner() {
         context.dataStore.edit { it.remove(Keys.SERVER_CACHE_OWNER) }
+    }
+
+    suspend fun setPurchasePlansCache(telegramId: Long, json: String) {
+        val owner = cacheOwnerHash(telegramId.toString())
+        context.dataStore.edit {
+            it[Keys.PURCHASE_PLANS_CACHE_OWNER] = owner
+            it[Keys.PURCHASE_PLANS_CACHE_JSON] = json
+        }
+    }
+
+    suspend fun getPurchasePlansCache(telegramId: Long): String? {
+        val prefs = context.dataStore.data.first()
+        val owner = cacheOwnerHash(telegramId.toString())
+        if (prefs[Keys.PURCHASE_PLANS_CACHE_OWNER] != owner) return null
+        return prefs[Keys.PURCHASE_PLANS_CACHE_JSON]
+    }
+
+    suspend fun clearPurchasePlansCache() {
+        context.dataStore.edit {
+            it.remove(Keys.PURCHASE_PLANS_CACHE_OWNER)
+            it.remove(Keys.PURCHASE_PLANS_CACHE_JSON)
+        }
     }
 
     suspend fun setSubscriptionUsageBlocked(shortUuid: String, blocked: Boolean) {

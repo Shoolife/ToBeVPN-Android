@@ -1,21 +1,23 @@
 package com.tobevpn.app.presentation.main
 
-import android.Manifest
 import android.app.Activity
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.ui.graphics.Color
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -23,12 +25,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -75,9 +79,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalConfiguration
@@ -89,11 +95,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
+import com.tobevpn.app.data.remote.dto.PurchasePlanDto
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.domain.model.Server
@@ -115,6 +121,7 @@ fun MainScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToSpeedTest: () -> Unit = {},
+    quickSettingsConnectRequest: Int = 0,
     viewModel: MainViewModel = hiltViewModel(),
 ) {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
@@ -126,6 +133,7 @@ fun MainScreen(
     val sessionBytes by viewModel.sessionBytes.collectAsStateWithLifecycle()
     val rubToUsdRate by viewModel.rubToUsdRate.collectAsStateWithLifecycle()
     val purchasePlans by viewModel.purchasePlans.collectAsStateWithLifecycle()
+    val purchasePlansFromCache by viewModel.purchasePlansFromCache.collectAsStateWithLifecycle()
     val purchasePlansLoading by viewModel.purchasePlansLoading.collectAsStateWithLifecycle()
     val purchasePlansLoaded by viewModel.purchasePlansLoaded.collectAsStateWithLifecycle()
     val currentLimits by viewModel.currentLimits.collectAsStateWithLifecycle()
@@ -145,13 +153,12 @@ fun MainScreen(
     var showTemporaryAccessDialog by remember { mutableStateOf(false) }
     var showBlockedDialog by remember { mutableStateOf(false) }
     val prevBlocked = remember { mutableStateOf(subscriptionUsageBlocked) }
-    var deferredPurchaseUrl by remember { mutableStateOf<String?>(null) }
+    var handledQuickSettingsConnectRequest by rememberSaveable { mutableStateOf(0) }
     val showTemporaryAccessBanner = authState is AuthState.Anonymous
 
     LaunchedEffect(subscriptionUsageBlocked) {
         if (subscriptionUsageBlocked) {
             showSubscriptionSheet = false
-            deferredPurchaseUrl = null
             if (!prevBlocked.value) {
                 kotlinx.coroutines.delay(1000)
                 showBlockedDialog = true
@@ -162,28 +169,10 @@ fun MainScreen(
         prevBlocked.value = subscriptionUsageBlocked
     }
 
-    val notificationPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission(),
-    ) {
-        val currentActivity = activity
-        if (currentActivity != null) {
-            deferredPurchaseUrl?.let { url -> viewModel.openPurchaseUrl(currentActivity, url) }
-        }
-        deferredPurchaseUrl = null
-    }
-
     val openPurchaseUrl: (String?) -> Unit = { url ->
         val currentActivity = activity
         if (!url.isNullOrBlank() && currentActivity != null) {
-            val needsPermission = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                ContextCompat.checkSelfPermission(currentActivity, Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED
-            if (needsPermission) {
-                deferredPurchaseUrl = url
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            } else {
-                viewModel.openPurchaseUrl(currentActivity, url)
-            }
+            viewModel.openPurchaseUrl(currentActivity, url)
         }
     }
 
@@ -210,6 +199,22 @@ fun MainScreen(
                 viewModel.toggleConnection()
             }
         }
+    }
+
+    LaunchedEffect(quickSettingsConnectRequest) {
+        if (quickSettingsConnectRequest <= 0 ||
+            handledQuickSettingsConnectRequest == quickSettingsConnectRequest
+        ) {
+            return@LaunchedEffect
+        }
+        handledQuickSettingsConnectRequest = quickSettingsConnectRequest
+        if (connectionPreparation ||
+            connectionState is ConnectionState.Connecting ||
+            connectionState is ConnectionState.Connected
+        ) {
+            return@LaunchedEffect
+        }
+        onConnectClick()
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -505,6 +510,7 @@ fun MainScreen(
             authState = authState,
             rubToUsdRate = rubToUsdRate,
             purchasePlans = purchasePlans,
+            purchasePlansFromCache = purchasePlansFromCache,
             purchasePlansLoading = purchasePlansLoading,
             purchasePlansLoaded = purchasePlansLoaded,
             currentLimits = currentLimits,
@@ -1069,7 +1075,7 @@ private fun ServerSelectorCard(
                     },
                 )
                 if (server != null) {
-                    if (!server.isOnline) {
+                    if (!server.isSelectable) {
                         Text(
                             text = stringResource(R.string.server_unavailable),
                             style = MaterialTheme.typography.bodySmall,
@@ -1550,6 +1556,7 @@ private fun SubscriptionBottomSheet(
     authState: AuthState,
     rubToUsdRate: Double?,
     purchasePlans: com.tobevpn.app.data.remote.dto.PurchasePlansDto?,
+    purchasePlansFromCache: Boolean,
     purchasePlansLoading: Boolean,
     purchasePlansLoaded: Boolean,
     currentLimits: CurrentPlanLimits?,
@@ -1565,6 +1572,28 @@ private fun SubscriptionBottomSheet(
     androidx.compose.runtime.LaunchedEffect(authState) {
         if (authState is AuthState.Authenticated) onLoadPurchasePlans()
     }
+
+    var sheetContentVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        sheetContentVisible = true
+    }
+    val sheetContentAlpha by animateFloatAsState(
+        targetValue = if (sheetContentVisible) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = 280,
+            delayMillis = 60,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "SubscriptionSheetContentAlpha",
+    )
+    val sheetContentOffset by animateDpAsState(
+        targetValue = if (sheetContentVisible) 0.dp else 18.dp,
+        animationSpec = tween(
+            durationMillis = 450,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "SubscriptionSheetContentOffset",
+    )
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -1582,6 +1611,8 @@ private fun SubscriptionBottomSheet(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
+                .offset(y = sheetContentOffset)
+                .alpha(sheetContentAlpha)
                 .verticalScroll(rememberScrollState())
                 .navigationBarsPadding()
                 .padding(horizontal = 24.dp)
@@ -1600,6 +1631,8 @@ private fun SubscriptionBottomSheet(
             val unknownPlanData = stringResource(R.string.plan_unknown_name)
             val unknownDeviceCount = stringResource(R.string.plan_unknown_device_count)
             val unknownQuotaDescription = "$quotaMonth \u00B7 ${stringResource(R.string.plan_devices_unknown)}"
+            val unlimitedTrafficText = stringResource(R.string.plan_unlimited_traffic)
+            val unknownDevicesText = stringResource(R.string.plan_devices_unknown)
             val trafficLimitBytes = currentLimits?.trafficLimitBytes
             val currentDeviceLimit = currentLimits?.deviceLimit
             val trafficGb: Int? = trafficLimitBytes
@@ -1753,28 +1786,38 @@ private fun SubscriptionBottomSheet(
                 modifier = Modifier.padding(bottom = 12.dp),
             )
 
-            data class PlanInfo(val key: String, val title: String, val priceDisplay: String, val description: String, val botPaymentUrl: String? = null)
+            data class PlanInfo(
+                val key: String,
+                val title: String,
+                val priceDisplay: String,
+                val description: String,
+                val botPaymentUrl: String? = null,
+            )
+            data class TariffInfo(
+                val key: String,
+                val title: String,
+                val periods: List<PlanInfo>,
+            )
 
             val isRussian = LocalConfiguration.current.locales[0].language == "ru"
 
-            // Build the per-row description ("200 ГБ / месяц · до 5 устройств") from the
+            // Build the per-row description ("200 ГБ / месяц · до 5 устройств") from each
             // backend plan, falling back to an explicit unknown quota when the data is missing.
-            val planDescription: String = run {
-                val sourcePlanForDesc = purchasePlans?.plans
-                    ?.filter { it.durations.any { d -> d.days > 0 } }
-                    ?.maxByOrNull { it.durations.size }
+            @Composable
+            fun planDescription(sourcePlanForDesc: PurchasePlanDto?): String {
+                if (purchasePlansFromCache) return "$quotaMonth \u00B7 $unknownDevicesText"
                 val trafficGb = sourcePlanForDesc?.trafficLimit?.toInt()
                 val deviceLimit = sourcePlanForDesc?.deviceLimit
                 val trafficPart = when {
                     trafficGb == null -> quotaMonth
-                    trafficGb <= 0 -> stringResource(R.string.plan_unlimited_traffic)
+                    trafficGb <= 0 -> unlimitedTrafficText
                     else -> stringResource(R.string.plan_traffic_month_fmt, trafficGb)
                 }
                 val devicePart = deviceLimit
                     ?.takeIf { it > 0 }
                     ?.let { stringResource(R.string.plan_devices_fmt, it) }
-                    ?: stringResource(R.string.plan_devices_unknown)
-                "$trafficPart \u00B7 $devicePart"
+                    ?: unknownDevicesText
+                return "$trafficPart \u00B7 $devicePart"
             }
 
             fun formatRubAmount(amount: String): String {
@@ -1799,6 +1842,7 @@ private fun SubscriptionBottomSheet(
             fun formatDurationPrice(
                 duration: com.tobevpn.app.data.remote.dto.PurchaseDurationDto,
             ): String {
+                if (purchasePlansFromCache) return unknownPlanData
                 val prices = duration.prices.associateBy { it.currency }
                 return when {
                     isRussian -> prices["RUB"]?.amount?.let(::formatRubAmount)
@@ -1843,49 +1887,54 @@ private fun SubscriptionBottomSheet(
                 else -> "$days"
             }
 
-            // Prefer the "paid" plan with real durations (skip UNLIMITED/free plans).
-            val sourcePlan = purchasePlans?.plans
+            val sourcePlans = purchasePlans?.plans
                 ?.filter { it.durations.any { d -> d.days > 0 } }
-                ?.maxByOrNull { it.durations.size }
+                ?.sortedWith(compareBy<PurchasePlanDto> { it.orderIndex }.thenBy { it.name })
+                ?: emptyList()
+            val hasServerPlans = sourcePlans.isNotEmpty()
 
             val plansLoading = authState is AuthState.Authenticated &&
-                sourcePlan == null &&
+                !hasServerPlans &&
                 (purchasePlansLoading || !purchasePlansLoaded)
-            val plans: List<PlanInfo> = when {
-                sourcePlan != null -> {
-                    sourcePlan.durations
-                        .filter { it.days > 0 }
-                        .sortedBy { it.orderIndex }
-                        .map { d ->
-                            PlanInfo(
-                                key = planKey(d.days),
-                                title = planTitle(d.days),
-                                priceDisplay = formatDurationPrice(d),
-                                description = planDescription,
-                                botPaymentUrl = d.botPaymentUrl,
-                            )
-                        }
+            val tariffs: List<TariffInfo> = when {
+                hasServerPlans -> {
+                    sourcePlans.map { sourcePlan ->
+                        val description = planDescription(sourcePlan)
+                        TariffInfo(
+                            key = sourcePlan.id.toString(),
+                            title = sourcePlan.name,
+                            periods = sourcePlan.durations
+                                .filter { it.days > 0 }
+                                .sortedBy { it.orderIndex }
+                                .map { d ->
+                                    PlanInfo(
+                                        key = "${sourcePlan.id}:${planKey(d.days)}",
+                                        title = planTitle(d.days),
+                                        priceDisplay = formatDurationPrice(d),
+                                        description = description,
+                                        botPaymentUrl = d.botPaymentUrl.takeUnless { purchasePlansFromCache },
+                                    )
+                                },
+                        )
+                    }
                 }
                 plansLoading -> emptyList()
                 else -> {
-                    // Fallback prices after the request has failed or returned no paid plan.
-                    val rubPrices = listOf(15, 65, 200, 500, 1500)
-                    fun fallbackPrice(rubPrice: Int): String {
-                        return if (isRussian) {
-                            val formatted = if (rubPrice >= 1000) "%,d".format(rubPrice).replace(',', ' ') else rubPrice.toString()
-                            "$formatted\u20BD"
-                        } else if (rubToUsdRate != null) {
-                            "$%.2f".format(rubPrice * rubToUsdRate)
-                        } else {
-                            "${kotlin.math.round(rubPrice / 1.3).toInt()} \u2B50"
-                        }
-                    }
+                    // Last-resort shape for first launch with no cached tariff structure.
+                    // Real prices, limits and payment links are intentionally hidden.
+                    val description = planDescription(null)
                     listOf(
-                        PlanInfo("day", stringResource(R.string.plan_day), fallbackPrice(rubPrices[0]), planDescription),
-                        PlanInfo("week", stringResource(R.string.plan_week), fallbackPrice(rubPrices[1]), planDescription),
-                        PlanInfo("month", stringResource(R.string.plan_month), fallbackPrice(rubPrices[2]), planDescription),
-                        PlanInfo("3month", stringResource(R.string.plan_3month), fallbackPrice(rubPrices[3]), planDescription),
-                        PlanInfo("year", stringResource(R.string.plan_year), fallbackPrice(rubPrices[4]), planDescription),
+                        TariffInfo(
+                            key = "fallback",
+                            title = unknownPlanData,
+                            periods = listOf(
+                                PlanInfo("day", stringResource(R.string.plan_day), unknownPlanData, description),
+                                PlanInfo("week", stringResource(R.string.plan_week), unknownPlanData, description),
+                                PlanInfo("month", stringResource(R.string.plan_month), unknownPlanData, description),
+                                PlanInfo("3month", stringResource(R.string.plan_3month), unknownPlanData, description),
+                                PlanInfo("year", stringResource(R.string.plan_year), unknownPlanData, description),
+                            ),
+                        ),
                     )
                 }
             }
@@ -1893,19 +1942,133 @@ private fun SubscriptionBottomSheet(
             if (plansLoading) {
                 LoadingBlock(text = stringResource(R.string.plans_loading))
             } else {
-                var selectedPlan by remember(plans) {
-                    mutableStateOf(plans.firstOrNull { it.key == "month" }?.key ?: plans.firstOrNull()?.key ?: "month")
+                var selectedTariffKey by remember(tariffs) {
+                    mutableStateOf(tariffs.firstOrNull()?.key ?: "fallback")
+                }
+                val selectedTariffIndex = tariffs
+                    .indexOfFirst { it.key == selectedTariffKey }
+                    .takeIf { it >= 0 }
+                    ?: 0
+                val selectedTariff = tariffs.getOrNull(selectedTariffIndex)
+                val periods = selectedTariff?.periods.orEmpty()
+
+                if (tariffs.isNotEmpty()) {
+                    BoxWithConstraints(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp),
+                    ) {
+                        val tabWidth = maxWidth / tariffs.size.toFloat()
+                        val indicatorOffset by animateDpAsState(
+                            targetValue = tabWidth * selectedTariffIndex.toFloat(),
+                            animationSpec = tween(
+                                durationMillis = 360,
+                                easing = FastOutSlowInEasing,
+                            ),
+                            label = "TariffTabIndicatorOffset",
+                        )
+
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                tariffs.forEachIndexed { index, tariff ->
+                                    val selected = selectedTariffIndex == index
+                                    val titleColor by animateColorAsState(
+                                        targetValue = if (selected) {
+                                            MaterialTheme.colorScheme.onSurface
+                                        } else {
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                        },
+                                        animationSpec = tween(
+                                            durationMillis = 220,
+                                            easing = FastOutSlowInEasing,
+                                        ),
+                                        label = "TariffTabTitleColor",
+                                    )
+
+                                    Text(
+                                        text = tariff.title,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                selectedTariffKey = tariff.key
+                                            }
+                                            .padding(vertical = 10.dp),
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                        color = titleColor,
+                                    )
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(3.dp),
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = indicatorOffset)
+                                        .width(tabWidth)
+                                        .height(3.dp)
+                                        .clip(RoundedCornerShape(99.dp))
+                                        .background(MaterialTheme.colorScheme.primary),
+                                )
+                            }
+                        }
+                    }
                 }
 
-                plans.forEach { plan ->
-                    PlanOption(
-                        title = plan.title,
-                        priceDisplay = plan.priceDisplay,
-                        description = plan.description,
-                        selected = selectedPlan == plan.key,
-                        onClick = { selectedPlan = plan.key },
+                var selectedPlan by remember(selectedTariff?.key, periods) {
+                    mutableStateOf(
+                        periods.firstOrNull { it.key == "month" || it.key.endsWith(":month") }?.key
+                            ?: periods.firstOrNull()?.key
+                            ?: "month",
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateContentSize(
+                            animationSpec = tween(
+                                durationMillis = 450,
+                                easing = FastOutSlowInEasing,
+                            ),
+                        ),
+                ) {
+                    AnimatedContent(
+                        targetState = selectedTariff?.key.orEmpty(),
+                        transitionSpec = {
+                            fadeIn(
+                                animationSpec = tween(
+                                    durationMillis = 260,
+                                    delayMillis = 70,
+                                    easing = FastOutSlowInEasing,
+                                ),
+                            ) togetherWith fadeOut(
+                                animationSpec = tween(
+                                    durationMillis = 160,
+                                    easing = FastOutSlowInEasing,
+                                ),
+                            )
+                        },
+                        label = "TariffPeriodsTransition",
+                    ) { tariffKey ->
+                        val animatedPeriods = tariffs.firstOrNull { it.key == tariffKey }?.periods.orEmpty()
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            animatedPeriods.forEach { plan ->
+                                PlanOption(
+                                    title = plan.title,
+                                    priceDisplay = plan.priceDisplay,
+                                    description = plan.description,
+                                    selected = selectedPlan == plan.key,
+                                    onClick = { selectedPlan = plan.key },
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -1947,22 +2110,52 @@ private fun SubscriptionBottomSheet(
                         modifier = Modifier.fillMaxWidth(),
                     )
                 } else {
-                    val selectedLabel = plans.firstOrNull { it.key == selectedPlan }
-                        ?: plans.firstOrNull()
+                    val selectedLabel = periods.firstOrNull { it.key == selectedPlan }
+                        ?: periods.firstOrNull()
                         ?: return@Column
-                    val actionTextRes = if (authState is AuthState.Authenticated &&
-                        authState.plan != UserPlan.FREE_TRIAL
-                    ) {
-                        R.string.renew_plan
-                    } else {
-                        R.string.buy_plan
+                    val selectedActionTitle = selectedTariff
+                        ?.takeIf { it.key != "fallback" && it.title.isNotBlank() }
+                        ?.let { "${it.title} · ${selectedLabel.title}" }
+                        ?: selectedLabel.title
+                    fun normalizedTariffName(value: String?): String {
+                        return value
+                            ?.trim()
+                            ?.lowercase()
+                            ?.replace(Regex("\\s+"), " ")
+                            .orEmpty()
+                    }
+                    fun sameTariffName(current: String?, selected: String?): Boolean {
+                        val currentName = normalizedTariffName(current)
+                        val selectedName = normalizedTariffName(selected)
+                        if (currentName.isBlank() || selectedName.isBlank()) return false
+                        return currentName == selectedName ||
+                            currentName.startsWith("$selectedName ") ||
+                            selectedName.startsWith("$currentName ")
+                    }
+                    val currentAuth = authState as? AuthState.Authenticated
+                    val isPaidAccount = currentAuth != null &&
+                        currentAuth.plan != UserPlan.FREE_TRIAL
+                    val selectedTariffIsCurrent = sameTariffName(
+                        current = currentAuth?.planDisplayName,
+                        selected = selectedTariff?.title,
+                    )
+                    val isRenewal = isPaidAccount && selectedTariffIsCurrent
+                    val selectedPaymentUrl = selectedLabel.botPaymentUrl
+                        ?.takeUnless { purchasePlansFromCache }
+                        ?: currentLimits
+                            ?.renewalUrl
+                            ?.takeIf { isRenewal && !purchasePlansFromCache }
+                    val actionTextRes = when {
+                        isRenewal -> R.string.renew_plan
+                        isPaidAccount && selectedTariff?.key != "fallback" -> R.string.change_plan
+                        else -> R.string.buy_plan
                     }
                     Button(
                         onClick = {
                             onDismiss()
-                            onOpenPurchaseUrl(selectedLabel.botPaymentUrl)
+                            onOpenPurchaseUrl(selectedPaymentUrl)
                         },
-                        enabled = selectedLabel.botPaymentUrl != null,
+                        enabled = selectedPaymentUrl != null,
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         // Light theme: dark-grey CTA so it stands as the
@@ -1981,7 +2174,7 @@ private fun SubscriptionBottomSheet(
                         SubscriptionActionText(
                             stringResource(
                                 actionTextRes,
-                                selectedLabel.title,
+                                selectedActionTitle,
                                 selectedLabel.priceDisplay,
                             )
                         )
