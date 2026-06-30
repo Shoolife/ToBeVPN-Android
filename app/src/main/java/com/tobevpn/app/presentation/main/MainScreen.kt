@@ -184,10 +184,7 @@ fun MainScreen(
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        val currentActivity = activity
-        val vpnPermissionGranted = currentActivity != null &&
-            viewModel.getVpnPermissionIntent(currentActivity) == null
-        if (result.resultCode == Activity.RESULT_OK || vpnPermissionGranted) {
+        if (result.resultCode == Activity.RESULT_OK) {
             viewModel.toggleConnection()
         }
     }

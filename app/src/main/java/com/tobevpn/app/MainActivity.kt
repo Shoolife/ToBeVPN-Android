@@ -76,10 +76,9 @@ class MainActivity : AppCompatActivity() {
                 mutableStateOf(savedInstanceState == null)
             }
 
-            LaunchedEffect(notificationPermissionPrompted, quickSettingsConnectRequest) {
+            LaunchedEffect(notificationPermissionPrompted) {
                 if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-                    notificationPermissionPrompted ||
-                    quickSettingsConnectRequest > 0
+                    notificationPermissionPrompted
                 ) {
                     return@LaunchedEffect
                 }

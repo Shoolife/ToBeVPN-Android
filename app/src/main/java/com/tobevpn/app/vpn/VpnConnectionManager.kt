@@ -294,7 +294,7 @@ class VpnConnectionManager @Inject constructor(
                 putExtra(ToBeVpnService.EXTRA_SERVER_COUNTRY, serverToStart.country)
                 putExtra(ToBeVpnService.EXTRA_GENERATION, gen)
             }
-            startVpnServiceOrFail(intent, request, gen)
+            context.startForegroundService(intent)
         }
     }
 
@@ -398,7 +398,7 @@ class VpnConnectionManager @Inject constructor(
                 putExtra(ToBeVpnService.EXTRA_SERVER_COUNTRY, serverToStart.country)
                 putExtra(ToBeVpnService.EXTRA_GENERATION, restartGeneration)
             }
-            startVpnServiceOrFail(startIntent, request, restartGeneration)
+            context.startForegroundService(startIntent)
         }
     }
 
@@ -431,37 +431,6 @@ class VpnConnectionManager @Inject constructor(
 
     fun mayServiceStart(generation: Int): Boolean =
         permittedServiceStartGeneration.get() == generation
-
-    private suspend fun startVpnServiceOrFail(intent: Intent, request: Int, generation: Int) {
-        try {
-            context.startForegroundService(intent)
-        } catch (error: Exception) {
-            SafeDiagnostics.warn(
-                TAG,
-                "VPN foreground service start failed: ${SafeDiagnostics.failureCategory(error)}",
-            )
-            failStartAttempt(request, generation)
-        }
-    }
-
-    private suspend fun failStartAttempt(request: Int, generation: Int) {
-        var failedServer: Server? = null
-        mutex.withLock {
-            if (request != requestedOperation.get()) return
-            if (generation != connectionGeneration) return
-            if (_connectionState.value !is ConnectionState.Connecting) return
-
-            failedServer = _currentServer.value
-            advanceGeneration()
-            permittedServiceStartGeneration.set(-1)
-            _connectionState.value = ConnectionState.Error(
-                context.getString(R.string.error_vpn_start_failed),
-            )
-            stopUsageTracking()
-            _sessionTimeSeconds.value = 0
-        }
-        failedServer?.let { serverQualityRepository.recordConnectionFailure(it) }
-    }
 
     private suspend fun mayStartTunnel(request: Int, generation: Int): Boolean =
         mutex.withLock {

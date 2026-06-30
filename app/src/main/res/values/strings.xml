@@ -42,7 +42,6 @@
     <string name="update_required_button">Update</string>
     <string name="update_required_quit">Quit</string>
     <string name="error_vpn_interface">Failed to create VPN interface</string>
-    <string name="error_vpn_start_failed">Failed to start VPN service</string>
     <string name="error_tunnel_unhealthy">VPN connected, but traffic is not passing through the server. Try another server.</string>
     <string name="error_unknown">Unknown error</string>
     <string name="error_network">Network error</string>
