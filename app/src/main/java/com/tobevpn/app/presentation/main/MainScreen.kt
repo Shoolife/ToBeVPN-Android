@@ -23,6 +23,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -88,9 +89,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -1953,70 +1958,16 @@ private fun SubscriptionBottomSheet(
                 val periods = selectedTariff?.periods.orEmpty()
 
                 if (tariffs.isNotEmpty()) {
-                    BoxWithConstraints(
+                    TariffTabs(
+                        titles = tariffs.map { it.title },
+                        selectedIndex = selectedTariffIndex,
+                        onSelect = { index ->
+                            tariffs.getOrNull(index)?.let { selectedTariffKey = it.key }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 12.dp),
-                    ) {
-                        val tabWidth = maxWidth / tariffs.size.toFloat()
-                        val indicatorOffset by animateDpAsState(
-                            targetValue = tabWidth * selectedTariffIndex.toFloat(),
-                            animationSpec = tween(
-                                durationMillis = 360,
-                                easing = FastOutSlowInEasing,
-                            ),
-                            label = "TariffTabIndicatorOffset",
-                        )
-
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Row(modifier = Modifier.fillMaxWidth()) {
-                                tariffs.forEachIndexed { index, tariff ->
-                                    val selected = selectedTariffIndex == index
-                                    val titleColor by animateColorAsState(
-                                        targetValue = if (selected) {
-                                            MaterialTheme.colorScheme.onSurface
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        animationSpec = tween(
-                                            durationMillis = 220,
-                                            easing = FastOutSlowInEasing,
-                                        ),
-                                        label = "TariffTabTitleColor",
-                                    )
-
-                                    Text(
-                                        text = tariff.title,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clickable {
-                                                selectedTariffKey = tariff.key
-                                            }
-                                            .padding(vertical = 10.dp),
-                                        textAlign = TextAlign.Center,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                        color = titleColor,
-                                    )
-                                }
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(3.dp),
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .offset(x = indicatorOffset)
-                                        .width(tabWidth)
-                                        .height(3.dp)
-                                        .clip(RoundedCornerShape(99.dp))
-                                        .background(MaterialTheme.colorScheme.primary),
-                                )
-                            }
-                        }
-                    }
+                    )
                 }
 
                 var selectedPlan by remember(selectedTariff?.key, periods) {
@@ -2183,6 +2134,168 @@ private fun SubscriptionBottomSheet(
             }
         }
     }
+}
+
+@Composable
+private fun TariffTabs(
+    titles: List<String>,
+    selectedIndex: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (titles.isEmpty()) return
+
+    val textMeasurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val tabTextStyle = MaterialTheme.typography.titleMedium
+    val maxFontSp = 18f
+    val minFontSp = 10f
+    val horizontalTextPadding = 4.dp
+
+    BoxWithConstraints(modifier = modifier) {
+        val tabCount = titles.size
+        val equalTabWidth = maxWidth / tabCount.toFloat()
+        val horizontalPaddingPx = with(density) { (horizontalTextPadding * 2).roundToPx() }
+        val equalTextWidthPx = with(density) {
+            equalTabWidth.roundToPx() - horizontalPaddingPx
+        }.coerceAtLeast(1)
+        val equalTabFontSp = remember(titles, equalTextWidthPx, tabTextStyle, textMeasurer) {
+            findLargestFittingTabFontSp(
+                titles = titles,
+                availableWidthPx = equalTextWidthPx,
+                textMeasurer = textMeasurer,
+                style = tabTextStyle,
+                minFontSp = minFontSp,
+                maxFontSp = maxFontSp,
+            )
+        }
+        val useEqualTabs = equalTabFontSp != null
+        val scrollTabWidth = remember(titles, tabTextStyle, textMeasurer, horizontalPaddingPx, density) {
+            val widestTitlePx = titles.maxOf { title ->
+                measureTabTitleWidthPx(
+                    title = title,
+                    textMeasurer = textMeasurer,
+                    style = tabTextStyle,
+                    fontSizeSp = maxFontSp,
+                )
+            }
+            with(density) { (widestTitlePx + horizontalPaddingPx).toDp() }
+        }
+        val tabWidth = if (useEqualTabs) equalTabWidth else scrollTabWidth
+        val tabStripWidth = if (useEqualTabs) maxWidth else tabWidth * tabCount.toFloat()
+        val tabFontSize = (equalTabFontSp ?: maxFontSp).sp
+        val scrollState = rememberScrollState()
+        val indicatorOffset by animateDpAsState(
+            targetValue = tabWidth * selectedIndex.coerceIn(0, tabCount - 1).toFloat(),
+            animationSpec = tween(
+                durationMillis = 360,
+                easing = FastOutSlowInEasing,
+            ),
+            label = "TariffTabIndicatorOffset",
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(if (useEqualTabs) Modifier else Modifier.horizontalScroll(scrollState)),
+        ) {
+            Column(
+                modifier = if (useEqualTabs) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier.width(tabStripWidth)
+                },
+            ) {
+                Row(modifier = Modifier.width(tabStripWidth)) {
+                    titles.forEachIndexed { index, title ->
+                        val selected = selectedIndex == index
+                        val titleColor by animateColorAsState(
+                            targetValue = if (selected) {
+                                MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            animationSpec = tween(
+                                durationMillis = 220,
+                                easing = FastOutSlowInEasing,
+                            ),
+                            label = "TariffTabTitleColor",
+                        )
+
+                        Text(
+                            text = title,
+                            modifier = Modifier
+                                .width(tabWidth)
+                                .clickable { onSelect(index) }
+                                .padding(horizontal = horizontalTextPadding, vertical = 10.dp),
+                            style = tabTextStyle.copy(fontSize = tabFontSize),
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Clip,
+                            fontWeight = FontWeight.Bold,
+                            color = titleColor,
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier
+                        .width(tabStripWidth)
+                        .height(3.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .offset(x = indicatorOffset)
+                            .width(tabWidth)
+                            .height(3.dp)
+                            .clip(RoundedCornerShape(99.dp))
+                            .background(MaterialTheme.colorScheme.primary),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun findLargestFittingTabFontSp(
+    titles: List<String>,
+    availableWidthPx: Int,
+    textMeasurer: TextMeasurer,
+    style: TextStyle,
+    minFontSp: Float,
+    maxFontSp: Float,
+): Float? {
+    var candidate = maxFontSp
+    while (candidate >= minFontSp) {
+        val fits = titles.all { title ->
+            measureTabTitleWidthPx(
+                title = title,
+                textMeasurer = textMeasurer,
+                style = style,
+                fontSizeSp = candidate,
+            ) <= availableWidthPx
+        }
+        if (fits) return candidate
+        candidate -= 0.5f
+    }
+    return null
+}
+
+private fun measureTabTitleWidthPx(
+    title: String,
+    textMeasurer: TextMeasurer,
+    style: TextStyle,
+    fontSizeSp: Float,
+): Int {
+    return textMeasurer.measure(
+        text = title,
+        style = style.copy(
+            fontSize = fontSizeSp.sp,
+            fontWeight = FontWeight.Bold,
+        ),
+        maxLines = 1,
+        softWrap = false,
+    ).size.width
 }
 
 @Composable
