@@ -19,15 +19,15 @@ import androidx.compose.ui.graphics.Color
 //   * #DFE2F3 — selected-row highlight in the plans bottom sheet
 //   * #5A5D6C — selected radio-dot colour for PlanOption
 //
-// Dark theme is also fixed. Android 12+ dynamic colors are wallpaper/OEM
-// dependent: Pixel can look neutral while Samsung shifts the same UI into a
-// saturated blue palette. Keep the dark scheme deterministic across devices.
+// Dark theme uses only the neutral colours already present in the app. Do not
+// use Material You/dynamic accent colours here: on Samsung they can turn
+// buttons and selected rows saturated instead of neutral.
 // ──────────────────────────────────────────────────────────────────────────
 
 internal val BrandNeutralPrimary = Color(0xFFB3B1B4)
 internal val BrandNeutralPrimaryContainer = Color(0xFFDFE2F3)
 // Card fill — pure neutral grey. Earlier draft used #E4E2E5 which has a
-// faint pinkish cast on this device (blue channel 229 > green 226); the
+// visible colour cast on this device (blue channel 229 > green 226); the
 // look spec is "cards on Home are a light, even grey".
 internal val BrandCardFill = Color(0xFFEEEEEE)
 internal val BrandIconAccent = Color(0xFF5C5E6A)
@@ -50,8 +50,8 @@ private val LightColorScheme = lightColorScheme(
     onBackground = Color(0xFF1A1C1E),
     // Material 3 Card pulls its fill from surfaceContainer* tokens (not
     // from surfaceVariant). If we leave them unset, Compose computes them
-    // algorithmically off `primary`, which inherits the tiny pink cast
-    // primary has — and the cards on Home end up a faint pink. Pin every
+    // algorithmically off `primary`, which inherits the tiny colour cast
+    // primary has — and the cards on Home end up slightly tinted. Pin every
     // container slot to the brand grey so a Card from any factory
     // (filled / elevated / outlined) lands on the same neutral.
     surfaceContainerHighest = BrandCardFill,
@@ -70,39 +70,53 @@ private val LightColorScheme = lightColorScheme(
     surfaceTint = Color.Transparent,
 )
 
-private val BrandDarkBackground = Color(0xFF090909)
-private val BrandDarkSurface = Color(0xFF111111)
-private val BrandDarkCardFill = Color(0xFF242528)
-private val BrandDarkSelectedFill = Color(0xFF4B5363)
-private val BrandDarkPrimary = Color(0xFFC8CBDE)
-private val BrandDarkText = Color(0xFFE7E7EA)
-private val BrandDarkMutedText = Color(0xFFB3B3BA)
+private val PreviousDarkPrimary = Color(0xFFC2C6D6)
+private val PreviousDarkOnPrimary = Color(0xFF3B404D)
+private val PreviousDarkPrimaryContainer = Color(0xFF424754)
+private val PreviousDarkOnPrimaryContainer = Color(0xFFCCD0E0)
+private val PreviousDarkSecondary = Color(0xFF9D9DA4)
+private val PreviousDarkOnSecondary = Color(0xFF1E2025)
+private val PreviousDarkSecondaryContainer = Color(0xFF3A3B41)
+private val PreviousDarkOnSecondaryContainer = Color(0xFFBFBFC5)
+private val PreviousDarkSurface = Color(0xFF0E0E0F)
+private val PreviousDarkOnSurface = Color(0xFFE7E5E8)
+private val PreviousDarkSurfaceVariant = Color(0xFF252628)
+private val PreviousDarkOnSurfaceVariant = Color(0xFFACAAAD)
+private val PreviousDarkOutline = Color(0xFF767578)
+private val PreviousDarkOutlineVariant = Color(0xFF48484A)
+private val PreviousDarkSurfaceBright = Color(0xFF2B2C2F)
+private val PreviousDarkSurfaceContainer = Color(0xFF19191B)
+private val PreviousDarkSurfaceContainerHigh = Color(0xFF1F1F21)
+private val PreviousDarkSurfaceContainerHighest = Color(0xFF252628)
+private val PreviousDarkSurfaceContainerLow = Color(0xFF131314)
 
 private val DarkColorScheme = darkColorScheme(
-    primary = BrandDarkPrimary,
-    onPrimary = Color(0xFF252936),
-    primaryContainer = BrandDarkSelectedFill,
-    onPrimaryContainer = Color(0xFFF0F1F7),
-    secondary = Color(0xFFBFC1CC),
-    onSecondary = Color(0xFF252936),
+    primary = PreviousDarkPrimary,
+    onPrimary = PreviousDarkOnPrimary,
+    primaryContainer = PreviousDarkPrimaryContainer,
+    onPrimaryContainer = PreviousDarkOnPrimaryContainer,
+    secondary = PreviousDarkSecondary,
+    onSecondary = PreviousDarkOnSecondary,
+    secondaryContainer = PreviousDarkSecondaryContainer,
+    onSecondaryContainer = PreviousDarkOnSecondaryContainer,
     tertiary = VpnBlue,
     onTertiary = Color.White,
-    surface = BrandDarkBackground,
-    onSurface = BrandDarkText,
-    background = BrandDarkBackground,
-    onBackground = BrandDarkText,
-    surfaceContainerHighest = BrandDarkCardFill,
-    surfaceContainerHigh = BrandDarkCardFill,
-    surfaceContainer = BrandDarkSurface,
-    surfaceContainerLow = Color(0xFF161719),
-    surfaceContainerLowest = Color(0xFF0E0E0F),
-    surfaceBright = Color(0xFF1B1C1F),
-    surfaceDim = BrandDarkBackground,
-    surfaceVariant = BrandDarkCardFill,
-    onSurfaceVariant = BrandDarkMutedText,
-    outline = Color(0xFF47484D),
-    outlineVariant = Color(0xFF38393D),
-    surfaceTint = Color.Transparent,
+    surface = PreviousDarkSurface,
+    onSurface = PreviousDarkOnSurface,
+    background = PreviousDarkSurface,
+    onBackground = PreviousDarkOnSurface,
+    surfaceContainerHighest = PreviousDarkSurfaceContainerHighest,
+    surfaceContainerHigh = PreviousDarkSurfaceContainerHigh,
+    surfaceContainer = PreviousDarkSurfaceContainer,
+    surfaceContainerLow = PreviousDarkSurfaceContainerLow,
+    surfaceContainerLowest = Color.Black,
+    surfaceBright = PreviousDarkSurfaceBright,
+    surfaceDim = PreviousDarkSurface,
+    surfaceVariant = PreviousDarkSurfaceVariant,
+    onSurfaceVariant = PreviousDarkOnSurfaceVariant,
+    outline = PreviousDarkOutline,
+    outlineVariant = PreviousDarkOutlineVariant,
+    surfaceTint = PreviousDarkPrimary,
 )
 
 @Composable

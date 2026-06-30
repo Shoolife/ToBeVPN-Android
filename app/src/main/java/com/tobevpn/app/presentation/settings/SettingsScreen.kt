@@ -363,9 +363,8 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         // Light theme chips: neutral grey selected fill so the
-                        // active language doesn't pick up the pinkish
-                        // secondaryContainer M3 derives from primary. Dark
-                        // theme keeps Material You defaults.
+                        // active language doesn't pick up a generated accent
+                        // from secondaryContainer. Dark theme keeps defaults.
                         val isDark = androidx.compose.foundation.isSystemInDarkTheme()
                         val chipColors = if (isDark) {
                             androidx.compose.material3.FilterChipDefaults.filterChipColors()
@@ -1081,9 +1080,8 @@ private fun EmailInput(
                     onClearResult()
                     isEditing = true
                 },
-                // Light theme: brand grey instead of M3's secondaryContainer
-                // (which lands on a pinkish hue on this colour scheme).
-                // Dark theme keeps the dynamic-palette default.
+                // Light theme: brand grey instead of M3's generated
+                // secondaryContainer accent. Dark theme keeps defaults.
                 colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
                     androidx.compose.material3.IconButtonDefaults.filledTonalIconButtonColors()
                 } else {

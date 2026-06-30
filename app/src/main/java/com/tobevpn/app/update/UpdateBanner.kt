@@ -153,11 +153,9 @@ private fun AvailableCard(
             TextButton(
                 onClick = onDismiss,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                // TextButton defaults to colorScheme.primary, which under
-                // dynamicDarkColorScheme on Material You devices is the
-                // Purple40 family — clashes with the green action button on
-                // the right and looks foreign in the dark VPN UI. Force a
-                // neutral on-surface tone instead.
+                // TextButton defaults to colorScheme.primary, which can pick
+                // up an OEM/wallpaper accent. Force a neutral on-surface tone
+                // instead.
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = bannerContentColor().copy(alpha = 0.85f),
                 ),
@@ -208,10 +206,9 @@ private fun DownloadingCard(
                     color = bannerContentColor(),
                 )
                 Spacer(Modifier.height(6.dp))
-                // Material 3 defaults trackColor to surfaceVariant, which on
-                // this device picks up the dynamic-palette purple tint. Pin
-                // both the bar and its track to neutral values so the
-                // indicator stays on-brand regardless of the wallpaper.
+                // Material 3 defaults trackColor to surfaceVariant, which can
+                // pick up a generated accent. Pin both the bar and its track
+                // to neutral values so the indicator stays on-brand.
                 val trackColour = bannerContentColor().copy(alpha = 0.18f)
                 if (totalBytes > 0L) {
                     val target = (downloadedBytes.toDouble() / totalBytes.toDouble())
@@ -291,11 +288,9 @@ private fun ReadyCard(
             TextButton(
                 onClick = onDismiss,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                // TextButton defaults to colorScheme.primary, which under
-                // dynamicDarkColorScheme on Material You devices is the
-                // Purple40 family — clashes with the green action button on
-                // the right and looks foreign in the dark VPN UI. Force a
-                // neutral on-surface tone instead.
+                // TextButton defaults to colorScheme.primary, which can pick
+                // up an OEM/wallpaper accent. Force a neutral on-surface tone
+                // instead.
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = bannerContentColor().copy(alpha = 0.85f),
                 ),
@@ -351,11 +346,9 @@ private fun FailedCard(
             TextButton(
                 onClick = onDismiss,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                // TextButton defaults to colorScheme.primary, which under
-                // dynamicDarkColorScheme on Material You devices is the
-                // Purple40 family — clashes with the green action button on
-                // the right and looks foreign in the dark VPN UI. Force a
-                // neutral on-surface tone instead.
+                // TextButton defaults to colorScheme.primary, which can pick
+                // up an OEM/wallpaper accent. Force a neutral on-surface tone
+                // instead.
                 colors = ButtonDefaults.textButtonColors(
                     contentColor = bannerContentColor().copy(alpha = 0.85f),
                 ),
@@ -381,11 +374,9 @@ private fun FailedCard(
     }
 }
 
-// Pure greys — no blue / green / violet undertone. Material 3 Card applies
-// a `surfaceTint` overlay that scales with elevation, and surfaceTint comes
-// from the dynamic palette (purple-ish on this device). At elevation = 0
-// the overlay is fully transparent, so the card sits at exactly the
-// container colour we picked. The drop shadow is reinstated via
+// Pure greys. Material 3 Card applies a `surfaceTint` overlay that scales
+// with elevation, so the card uses elevation = 0 and sits at exactly the
+// neutral container colour we picked. The drop shadow is reinstated via
 // Modifier.shadow on the Card itself.
 private val BannerDarkBg = Color(0xFF202020)
 private val BannerLightBg = Color(0xFFFFFFFF)
