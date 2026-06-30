@@ -1,14 +1,11 @@
 package com.tobevpn.app.presentation.theme
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 
 // ──────────────────────────────────────────────────────────────────────────
 // Light theme is hand-tuned to brand-approved values; we deliberately don't
@@ -22,8 +19,9 @@ import androidx.compose.ui.platform.LocalContext
 //   * #DFE2F3 — selected-row highlight in the plans bottom sheet
 //   * #5A5D6C — selected radio-dot colour for PlanOption
 //
-// Dark theme keeps Material You for now because the dark palette renders
-// neutral on most devices.
+// Dark theme is also fixed. Android 12+ dynamic colors are wallpaper/OEM
+// dependent: Pixel can look neutral while Samsung shifts the same UI into a
+// saturated blue palette. Keep the dark scheme deterministic across devices.
 // ──────────────────────────────────────────────────────────────────────────
 
 internal val BrandNeutralPrimary = Color(0xFFB3B1B4)
@@ -72,10 +70,39 @@ private val LightColorScheme = lightColorScheme(
     surfaceTint = Color.Transparent,
 )
 
+private val BrandDarkBackground = Color(0xFF090909)
+private val BrandDarkSurface = Color(0xFF111111)
+private val BrandDarkCardFill = Color(0xFF242528)
+private val BrandDarkSelectedFill = Color(0xFF4B5363)
+private val BrandDarkPrimary = Color(0xFFC8CBDE)
+private val BrandDarkText = Color(0xFFE7E7EA)
+private val BrandDarkMutedText = Color(0xFFB3B3BA)
+
 private val DarkColorScheme = darkColorScheme(
-    primary = Purple80,
-    secondary = PurpleGrey80,
-    tertiary = Pink80,
+    primary = BrandDarkPrimary,
+    onPrimary = Color(0xFF252936),
+    primaryContainer = BrandDarkSelectedFill,
+    onPrimaryContainer = Color(0xFFF0F1F7),
+    secondary = Color(0xFFBFC1CC),
+    onSecondary = Color(0xFF252936),
+    tertiary = VpnBlue,
+    onTertiary = Color.White,
+    surface = BrandDarkBackground,
+    onSurface = BrandDarkText,
+    background = BrandDarkBackground,
+    onBackground = BrandDarkText,
+    surfaceContainerHighest = BrandDarkCardFill,
+    surfaceContainerHigh = BrandDarkCardFill,
+    surfaceContainer = BrandDarkSurface,
+    surfaceContainerLow = Color(0xFF161719),
+    surfaceContainerLowest = Color(0xFF0E0E0F),
+    surfaceBright = Color(0xFF1B1C1F),
+    surfaceDim = BrandDarkBackground,
+    surfaceVariant = BrandDarkCardFill,
+    onSurfaceVariant = BrandDarkMutedText,
+    outline = Color(0xFF47484D),
+    outlineVariant = Color(0xFF38393D),
+    surfaceTint = Color.Transparent,
 )
 
 @Composable
@@ -83,15 +110,7 @@ fun ToBeVPNTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    val colorScheme = when {
-        // Dark stays on Material You so the OLED-friendly palette tracks the
-        // user's wallpaper; the violet-overlay problem we saw was specifically
-        // a light-theme issue.
-        darkTheme && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-            dynamicDarkColorScheme(LocalContext.current)
-        darkTheme -> DarkColorScheme
-        else -> LightColorScheme
-    }
+    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,
