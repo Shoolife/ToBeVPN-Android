@@ -184,7 +184,10 @@ fun MainScreen(
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
+        val currentActivity = activity
+        val vpnPermissionGranted = currentActivity != null &&
+            viewModel.getVpnPermissionIntent(currentActivity) == null
+        if (result.resultCode == Activity.RESULT_OK || vpnPermissionGranted) {
             viewModel.toggleConnection()
         }
     }
@@ -2149,62 +2152,92 @@ private fun TariffTabs(
     val density = LocalDensity.current
     val tabTextStyle = MaterialTheme.typography.titleMedium
     val maxFontSp = 18f
-    val minFontSp = 10f
-    val horizontalTextPadding = 4.dp
+    val horizontalTextPadding = 12.dp
+    val minTabWidth = 56.dp
 
     BoxWithConstraints(modifier = modifier) {
         val tabCount = titles.size
-        val equalTabWidth = maxWidth / tabCount.toFloat()
         val horizontalPaddingPx = with(density) { (horizontalTextPadding * 2).roundToPx() }
-        val equalTextWidthPx = with(density) {
-            equalTabWidth.roundToPx() - horizontalPaddingPx
-        }.coerceAtLeast(1)
-        val equalTabFontSp = remember(titles, equalTextWidthPx, tabTextStyle, textMeasurer) {
-            findLargestFittingTabFontSp(
-                titles = titles,
-                availableWidthPx = equalTextWidthPx,
-                textMeasurer = textMeasurer,
-                style = tabTextStyle,
-                minFontSp = minFontSp,
-                maxFontSp = maxFontSp,
-            )
-        }
-        val useEqualTabs = equalTabFontSp != null
-        val scrollTabWidth = remember(titles, tabTextStyle, textMeasurer, horizontalPaddingPx, density) {
-            val widestTitlePx = titles.maxOf { title ->
-                measureTabTitleWidthPx(
-                    title = title,
-                    textMeasurer = textMeasurer,
-                    style = tabTextStyle,
-                    fontSizeSp = maxFontSp,
+        val minTabWidthPx = with(density) { minTabWidth.roundToPx() }
+        val safetyPx = with(density) { 6.dp.roundToPx() }
+        val maxWidthPx = with(density) { maxWidth.roundToPx() }.coerceAtLeast(1)
+        val naturalTabWidthsPx = remember(
+            titles,
+            tabTextStyle,
+            textMeasurer,
+            horizontalPaddingPx,
+            minTabWidthPx,
+            safetyPx,
+        ) {
+            titles.map { title ->
+                maxOf(
+                    measureTabTitleWidthPx(
+                        title = title,
+                        textMeasurer = textMeasurer,
+                        style = tabTextStyle,
+                        fontSizeSp = maxFontSp,
+                    ) + horizontalPaddingPx + safetyPx,
+                    minTabWidthPx,
                 )
             }
-            with(density) { (widestTitlePx + horizontalPaddingPx).toDp() }
         }
-        val tabWidth = if (useEqualTabs) equalTabWidth else scrollTabWidth
-        val tabStripWidth = if (useEqualTabs) maxWidth else tabWidth * tabCount.toFloat()
-        val tabFontSize = (equalTabFontSp ?: maxFontSp).sp
+        val naturalWidthPx = naturalTabWidthsPx.sum()
+        val spareWidthPx = (maxWidthPx - naturalWidthPx).coerceAtLeast(0)
+        val extraPerTabPx = spareWidthPx / tabCount
+        val extraRemainderPx = spareWidthPx % tabCount
+        val tabWidthsPx = naturalTabWidthsPx.mapIndexed { index, width ->
+            width + extraPerTabPx + if (index < extraRemainderPx) 1 else 0
+        }
+        val tabWidths = tabWidthsPx.map { widthPx ->
+            with(density) { widthPx.toDp() }
+        }
+        val tabStripWidthPx = tabWidthsPx.sum()
+        val tabStripWidth = with(density) { tabStripWidthPx.toDp() }
+        val tabFontSize = maxFontSp.sp
         val scrollState = rememberScrollState()
+        val scrollable = tabStripWidthPx > maxWidthPx
+        val selectedSafeIndex = selectedIndex.coerceIn(0, tabCount - 1)
+        val selectedOffsetPx = tabWidthsPx.take(selectedSafeIndex).sum()
         val indicatorOffset by animateDpAsState(
-            targetValue = tabWidth * selectedIndex.coerceIn(0, tabCount - 1).toFloat(),
+            targetValue = with(density) { selectedOffsetPx.toDp() },
             animationSpec = tween(
                 durationMillis = 360,
                 easing = FastOutSlowInEasing,
             ),
             label = "TariffTabIndicatorOffset",
         )
+        val indicatorWidth by animateDpAsState(
+            targetValue = tabWidths.getOrElse(selectedSafeIndex) { minTabWidth },
+            animationSpec = tween(
+                durationMillis = 360,
+                easing = FastOutSlowInEasing,
+            ),
+            label = "TariffTabIndicatorWidth",
+        )
+
+        LaunchedEffect(scrollable, selectedSafeIndex, tabStripWidthPx, maxWidthPx) {
+            if (!scrollable) return@LaunchedEffect
+            val selectedStart = tabWidthsPx.take(selectedSafeIndex).sum()
+            val selectedEnd = selectedStart + tabWidthsPx[selectedSafeIndex]
+            val visibleStart = scrollState.value
+            val visibleEnd = visibleStart + maxWidthPx
+            val target = when {
+                selectedStart < visibleStart -> selectedStart
+                selectedEnd > visibleEnd -> selectedEnd - maxWidthPx
+                else -> visibleStart
+            }.coerceIn(0, scrollState.maxValue)
+            if (target != visibleStart) {
+                scrollState.animateScrollTo(target)
+            }
+        }
 
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .then(if (useEqualTabs) Modifier else Modifier.horizontalScroll(scrollState)),
+                .then(if (scrollable) Modifier.horizontalScroll(scrollState) else Modifier),
         ) {
             Column(
-                modifier = if (useEqualTabs) {
-                    Modifier.fillMaxWidth()
-                } else {
-                    Modifier.width(tabStripWidth)
-                },
+                modifier = Modifier.width(tabStripWidth),
             ) {
                 Row(modifier = Modifier.width(tabStripWidth)) {
                     titles.forEachIndexed { index, title ->
@@ -2225,14 +2258,14 @@ private fun TariffTabs(
                         Text(
                             text = title,
                             modifier = Modifier
-                                .width(tabWidth)
+                                .width(tabWidths[index])
                                 .clickable { onSelect(index) }
                                 .padding(horizontal = horizontalTextPadding, vertical = 10.dp),
                             style = tabTextStyle.copy(fontSize = tabFontSize),
                             textAlign = TextAlign.Center,
                             maxLines = 1,
                             softWrap = false,
-                            overflow = TextOverflow.Clip,
+                            overflow = TextOverflow.Visible,
                             fontWeight = FontWeight.Bold,
                             color = titleColor,
                         )
@@ -2246,7 +2279,7 @@ private fun TariffTabs(
                     Box(
                         modifier = Modifier
                             .offset(x = indicatorOffset)
-                            .width(tabWidth)
+                            .width(indicatorWidth)
                             .height(3.dp)
                             .clip(RoundedCornerShape(99.dp))
                             .background(MaterialTheme.colorScheme.primary),
@@ -2255,30 +2288,6 @@ private fun TariffTabs(
             }
         }
     }
-}
-
-private fun findLargestFittingTabFontSp(
-    titles: List<String>,
-    availableWidthPx: Int,
-    textMeasurer: TextMeasurer,
-    style: TextStyle,
-    minFontSp: Float,
-    maxFontSp: Float,
-): Float? {
-    var candidate = maxFontSp
-    while (candidate >= minFontSp) {
-        val fits = titles.all { title ->
-            measureTabTitleWidthPx(
-                title = title,
-                textMeasurer = textMeasurer,
-                style = style,
-                fontSizeSp = candidate,
-            ) <= availableWidthPx
-        }
-        if (fits) return candidate
-        candidate -= 0.5f
-    }
-    return null
 }
 
 private fun measureTabTitleWidthPx(

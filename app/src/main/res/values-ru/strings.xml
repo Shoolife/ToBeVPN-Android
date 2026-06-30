@@ -44,6 +44,7 @@
     <string name="update_required_button">Обновить</string>
     <string name="update_required_quit">Выйти</string>
     <string name="error_vpn_interface">Не удалось создать VPN-интерфейс</string>
+    <string name="error_vpn_start_failed">Не удалось запустить VPN-сервис</string>
     <string name="error_tunnel_unhealthy">VPN подключился, но трафик через сервер не проходит. Попробуйте другой сервер.</string>
     <string name="error_unknown">Неизвестная ошибка</string>
     <string name="error_network">Ошибка сети</string>

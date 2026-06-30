@@ -20,6 +20,7 @@ import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
+import com.tobevpn.app.util.SafeDiagnostics
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -93,10 +94,23 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         serverCountry: String,
     ) {
         val serverLocation = serverLocationLabel(serverName, serverCountry)
-        startForeground(
-            NOTIFICATION_ID,
-            createNotification(getString(R.string.vpn_notification_connecting_to, serverLocation)),
-        )
+        try {
+            startForeground(
+                NOTIFICATION_ID,
+                createNotification(getString(R.string.vpn_notification_connecting_to, serverLocation)),
+            )
+        } catch (error: Exception) {
+            SafeDiagnostics.warn(
+                TAG,
+                "VPN service foreground promotion failed: ${SafeDiagnostics.failureCategory(error)}",
+            )
+            connectionManager.updateState(
+                ConnectionState.Error(getString(R.string.error_vpn_start_failed)),
+                generation,
+            )
+            stopSelf()
+            return
+        }
 
         serviceScope.launch {
             try {
@@ -364,6 +378,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         const val EXTRA_FORCE_STOP = "force_stop"
         private const val CHANNEL_ID = "tobevpn_channel"
         private const val NOTIFICATION_ID = 1
+        private const val TAG = "ToBeVpnService"
         private val activeInstance = AtomicReference<ToBeVpnService?>()
 
         fun cleanupActiveInstance(): Boolean {

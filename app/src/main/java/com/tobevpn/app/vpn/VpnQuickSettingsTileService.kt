@@ -11,7 +11,6 @@ import com.tobevpn.app.MainActivity
 import com.tobevpn.app.R
 import com.tobevpn.app.domain.model.ConnectionState
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,7 +28,6 @@ class VpnQuickSettingsTileService : TileService() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var stateJob: Job? = null
-    private var toggleJob: Job? = null
 
     override fun onTileAdded() {
         super.onTileAdded()
@@ -57,31 +55,11 @@ class VpnQuickSettingsTileService : TileService() {
         super.onClick()
         val state = vpnToggleController.connectionState.value
         if (state is ConnectionState.Connected || state is ConnectionState.Connecting) {
-            toggleJob?.cancel()
             vpnToggleController.stopVpn()
             updateTile(ConnectionState.Disconnected)
             return
         }
-        if (!vpnToggleController.hasVpnPermission()) {
-            openMainActivityForVpnPermission()
-            return
-        }
-        if (toggleJob?.isActive == true) return
-        updateTile(ConnectionState.Connecting)
-        toggleJob = serviceScope.launch {
-            try {
-                val server = vpnToggleController.prepareSelectedServerForConnect()
-                if (server == null) {
-                    vpnToggleController.showNoServersError()
-                    return@launch
-                }
-                vpnToggleController.startVpn(server)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                vpnToggleController.showNetworkError()
-            }
-        }
+        openMainActivityForConnect()
     }
 
     override fun onDestroy() {
@@ -105,7 +83,7 @@ class VpnQuickSettingsTileService : TileService() {
         tile.updateTile()
     }
 
-    private fun openMainActivityForVpnPermission() {
+    private fun openMainActivityForConnect() {
         if (isLocked) {
             unlockAndRun { startMainActivityAndCollapse() }
         } else {
