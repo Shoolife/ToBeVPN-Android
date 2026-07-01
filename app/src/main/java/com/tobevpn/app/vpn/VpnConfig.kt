@@ -6,6 +6,8 @@ import org.json.JSONObject
 
 object VpnConfig {
 
+    const val LOCAL_SOCKS_PORT = 28080
+
     fun buildConfigJson(server: Server): String {
         return JSONObject().apply {
             put("stats", JSONObject())
@@ -42,7 +44,7 @@ object VpnConfig {
         return JSONArray().apply {
             put(JSONObject().apply {
                 put("tag", "socks")
-                put("port", 10808)
+                put("port", LOCAL_SOCKS_PORT)
                 put("protocol", "socks")
                 put("listen", "127.0.0.1")
                 put("settings", JSONObject().apply {

@@ -15,7 +15,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
-import androidx.compose.ui.graphics.Color
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -24,6 +23,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -48,6 +48,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.SystemUpdateAlt
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
@@ -86,7 +87,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -98,6 +107,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -2193,6 +2203,22 @@ private fun TariffTabs(
         val tabFontSize = maxFontSp.sp
         val scrollState = rememberScrollState()
         val scrollable = tabStripWidthPx > maxWidthPx
+        val startFadeAlpha by animateFloatAsState(
+            targetValue = if (scrollable && scrollState.value > 0) 1f else 0f,
+            animationSpec = tween(
+                durationMillis = 180,
+                easing = FastOutSlowInEasing,
+            ),
+            label = "TariffTabsStartFade",
+        )
+        val endFadeAlpha by animateFloatAsState(
+            targetValue = if (scrollable && scrollState.value < scrollState.maxValue) 1f else 0f,
+            animationSpec = tween(
+                durationMillis = 180,
+                easing = FastOutSlowInEasing,
+            ),
+            label = "TariffTabsEndFade",
+        )
         val selectedSafeIndex = selectedIndex.coerceIn(0, tabCount - 1)
         val selectedOffsetPx = tabWidthsPx.take(selectedSafeIndex).sum()
         val indicatorOffset by animateDpAsState(
@@ -2215,77 +2241,185 @@ private fun TariffTabs(
         LaunchedEffect(scrollable, selectedSafeIndex, tabStripWidthPx, maxWidthPx) {
             if (!scrollable) return@LaunchedEffect
             val selectedStart = tabWidthsPx.take(selectedSafeIndex).sum()
-            val selectedEnd = selectedStart + tabWidthsPx[selectedSafeIndex]
+            val selectedWidth = tabWidthsPx[selectedSafeIndex]
+            val selectedEnd = selectedStart + selectedWidth
+            val selectedCenter = selectedStart + selectedWidth / 2
             val visibleStart = scrollState.value
             val visibleEnd = visibleStart + maxWidthPx
+            val edgeComfortPx = maxOf(maxWidthPx / 4, selectedWidth / 2)
+            val centeredTarget = selectedCenter - maxWidthPx / 2
             val target = when {
-                selectedStart < visibleStart -> selectedStart
-                selectedEnd > visibleEnd -> selectedEnd - maxWidthPx
+                selectedStart < visibleStart -> centeredTarget
+                selectedEnd > visibleEnd -> centeredTarget
+                selectedCenter < visibleStart + edgeComfortPx -> centeredTarget
+                selectedCenter > visibleEnd - edgeComfortPx -> centeredTarget
                 else -> visibleStart
             }.coerceIn(0, scrollState.maxValue)
             if (target != visibleStart) {
-                scrollState.animateScrollTo(target)
+                scrollState.animateScrollTo(
+                    value = target,
+                    animationSpec = tween(
+                        durationMillis = 520,
+                        easing = FastOutSlowInEasing,
+                    ),
+                )
             }
         }
 
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .then(if (scrollable) Modifier.horizontalScroll(scrollState) else Modifier),
+                .fillMaxWidth(),
         ) {
-            Column(
-                modifier = Modifier.width(tabStripWidth),
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalFadingEdges(
+                        startAlpha = startFadeAlpha,
+                        endAlpha = endFadeAlpha,
+                        fadeWidth = 38.dp,
+                    ),
             ) {
-                Row(modifier = Modifier.width(tabStripWidth)) {
-                    titles.forEachIndexed { index, title ->
-                        val selected = selectedIndex == index
-                        val titleColor by animateColorAsState(
-                            targetValue = if (selected) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                            animationSpec = tween(
-                                durationMillis = 220,
-                                easing = FastOutSlowInEasing,
-                            ),
-                            label = "TariffTabTitleColor",
-                        )
+                Box(
+                    modifier = Modifier.then(
+                        if (scrollable) Modifier.horizontalScroll(scrollState) else Modifier,
+                    ),
+                ) {
+                    Column(
+                        modifier = Modifier.width(tabStripWidth),
+                    ) {
+                        Row(modifier = Modifier.width(tabStripWidth)) {
+                            titles.forEachIndexed { index, title ->
+                                val selected = selectedIndex == index
+                                val titleColor by animateColorAsState(
+                                    targetValue = if (selected) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    },
+                                    animationSpec = tween(
+                                        durationMillis = 220,
+                                        easing = FastOutSlowInEasing,
+                                    ),
+                                    label = "TariffTabTitleColor",
+                                )
 
-                        Text(
-                            text = title,
+                                Text(
+                                    text = title,
+                                    modifier = Modifier
+                                        .width(tabWidths[index])
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null,
+                                        ) { onSelect(index) }
+                                        .padding(horizontal = horizontalTextPadding, vertical = 10.dp),
+                                    style = tabTextStyle.copy(fontSize = tabFontSize),
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Visible,
+                                    fontWeight = FontWeight.Bold,
+                                    color = titleColor,
+                                )
+                            }
+                        }
+                        Box(
                             modifier = Modifier
-                                .width(tabWidths[index])
-                                .clickable { onSelect(index) }
-                                .padding(horizontal = horizontalTextPadding, vertical = 10.dp),
-                            style = tabTextStyle.copy(fontSize = tabFontSize),
-                            textAlign = TextAlign.Center,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Visible,
-                            fontWeight = FontWeight.Bold,
-                            color = titleColor,
-                        )
+                                .width(tabStripWidth)
+                                .height(3.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = indicatorOffset)
+                                    .width(indicatorWidth)
+                                    .height(3.dp)
+                                    .clip(RoundedCornerShape(99.dp))
+                                    .background(MaterialTheme.colorScheme.primary),
+                            )
+                        }
                     }
                 }
-                Box(
-                    modifier = Modifier
-                        .width(tabStripWidth)
-                        .height(3.dp),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .offset(x = indicatorOffset)
-                            .width(indicatorWidth)
-                            .height(3.dp)
-                            .clip(RoundedCornerShape(99.dp))
-                            .background(MaterialTheme.colorScheme.primary),
-                    )
-                }
             }
+
+            ScrollEdgeArrow(
+                alpha = startFadeAlpha,
+                isStart = true,
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 2.dp),
+            )
+            ScrollEdgeArrow(
+                alpha = endFadeAlpha,
+                isStart = false,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 2.dp),
+            )
         }
     }
 }
+
+@Composable
+private fun ScrollEdgeArrow(
+    alpha: Float,
+    isStart: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Icon(
+        imageVector = if (isStart) Icons.Filled.KeyboardArrowLeft else Icons.Filled.KeyboardArrowRight,
+        contentDescription = null,
+        modifier = modifier
+            .size(22.dp)
+            .alpha(alpha.coerceIn(0f, 1f)),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+}
+
+private fun Modifier.horizontalFadingEdges(
+    startAlpha: Float,
+    endAlpha: Float,
+    fadeWidth: Dp,
+): Modifier = this
+    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+    .drawWithContent {
+        drawContent()
+
+        val fadeWidthPx = fadeWidth.toPx().coerceAtMost(size.width / 2f)
+        if (fadeWidthPx <= 0f) return@drawWithContent
+
+        val coercedStartAlpha = startAlpha.coerceIn(0f, 1f)
+        if (coercedStartAlpha > 0.001f) {
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        Color.Black.copy(alpha = 1f - coercedStartAlpha),
+                        Color.Black,
+                    ),
+                    startX = 0f,
+                    endX = fadeWidthPx,
+                ),
+                topLeft = Offset.Zero,
+                size = Size(fadeWidthPx, size.height),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+
+        val coercedEndAlpha = endAlpha.coerceIn(0f, 1f)
+        if (coercedEndAlpha > 0.001f) {
+            drawRect(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        Color.Black,
+                        Color.Black.copy(alpha = 1f - coercedEndAlpha),
+                    ),
+                    startX = size.width - fadeWidthPx,
+                    endX = size.width,
+                ),
+                topLeft = Offset(size.width - fadeWidthPx, 0f),
+                size = Size(fadeWidthPx, size.height),
+                blendMode = BlendMode.DstIn,
+            )
+        }
+    }
 
 private fun measureTabTitleWidthPx(
     title: String,

@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.servers
 
+import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -36,15 +37,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -72,6 +77,72 @@ import kotlinx.coroutines.launch
 private val ServerFlagColumnWidth = 40.dp
 private val ServerFlagTextGap = 16.dp
 
+private data class ServerListMetrics(
+    val maxListWidth: Dp,
+    val listSidePadding: Dp,
+    val listVerticalPadding: Dp,
+    val cardHorizontalPadding: Dp,
+    val cardVerticalPadding: Dp,
+    val cardCornerRadius: Dp,
+    val rowHorizontalPadding: Dp,
+    val compactRowVerticalPadding: Dp,
+    val endpointRowTopPadding: Dp,
+    val endpointRowBottomPadding: Dp,
+    val flagColumnWidth: Dp,
+    val flagTextGap: Dp,
+    val flagFontSize: TextUnit,
+    val statusGap: Dp,
+    val pingWidth: Dp,
+    val adminPingWidth: Dp,
+    val autoIconSize: Dp,
+    val autoRowPadding: Dp,
+)
+
+private fun serverListMetrics(isTv: Boolean): ServerListMetrics =
+    if (isTv) {
+        ServerListMetrics(
+            maxListWidth = 1040.dp,
+            listSidePadding = 72.dp,
+            listVerticalPadding = 18.dp,
+            cardHorizontalPadding = 0.dp,
+            cardVerticalPadding = 7.dp,
+            cardCornerRadius = 18.dp,
+            rowHorizontalPadding = 20.dp,
+            compactRowVerticalPadding = 18.dp,
+            endpointRowTopPadding = 16.dp,
+            endpointRowBottomPadding = 12.dp,
+            flagColumnWidth = 48.dp,
+            flagTextGap = 18.dp,
+            flagFontSize = 38.sp,
+            statusGap = 18.dp,
+            pingWidth = 54.dp,
+            adminPingWidth = 58.dp,
+            autoIconSize = 36.dp,
+            autoRowPadding = 20.dp,
+        )
+    } else {
+        ServerListMetrics(
+            maxListWidth = Dp.Unspecified,
+            listSidePadding = 0.dp,
+            listVerticalPadding = 0.dp,
+            cardHorizontalPadding = 16.dp,
+            cardVerticalPadding = 4.dp,
+            cardCornerRadius = 16.dp,
+            rowHorizontalPadding = 16.dp,
+            compactRowVerticalPadding = 16.dp,
+            endpointRowTopPadding = 14.dp,
+            endpointRowBottomPadding = 10.dp,
+            flagColumnWidth = ServerFlagColumnWidth,
+            flagTextGap = ServerFlagTextGap,
+            flagFontSize = 32.sp,
+            statusGap = 16.dp,
+            pingWidth = 46.dp,
+            adminPingWidth = 52.dp,
+            autoIconSize = 32.dp,
+            autoRowPadding = 16.dp,
+        )
+    }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ServerListScreen(
@@ -86,6 +157,8 @@ fun ServerListScreen(
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val isTv = isTelevisionUi()
+    val metrics = serverListMetrics(isTv)
 
     Scaffold(
         topBar = {
@@ -149,9 +222,21 @@ fun ServerListScreen(
                     val textMeasurer = rememberTextMeasurer()
 
                     BoxWithConstraints {
+                        val listWidth = if (isTv) {
+                            val availableWidth = (maxWidth - metrics.listSidePadding * 2)
+                                .coerceAtLeast(360.dp)
+                            if (availableWidth > metrics.maxListWidth) {
+                                metrics.maxListWidth
+                            } else {
+                                availableWidth
+                            }
+                        } else {
+                            maxWidth
+                        }
                         val names = servers.map { serverDisplayName(it.name, it.country) }
                         val pingBlockWidthPx = with(density) {
-                            (if (isAdminProfile) 52.dp else 46.dp).roundToPx()
+                            (if (isAdminProfile) metrics.adminPingWidth else metrics.pingWidth)
+                                .roundToPx()
                         }
                         val trailingWidthPx = servers.maxOf { server ->
                             when {
@@ -174,12 +259,12 @@ fun ServerListScreen(
                         val trailingWidth = with(density) { trailingWidthPx.toDp() }
                         val nameWidthPx = with(density) {
                             (
-                                maxWidth -
-                                    32.dp - // card outer horizontal margin
-                                    32.dp - // card inner horizontal padding
-                                    ServerFlagColumnWidth - // flag slot
-                                    ServerFlagTextGap - // gap after flag
-                                    16.dp - // visual gap before ping/status
+                                listWidth -
+                                    metrics.cardHorizontalPadding * 2 -
+                                    metrics.rowHorizontalPadding * 2 -
+                                    metrics.flagColumnWidth -
+                                    metrics.flagTextGap -
+                                    metrics.statusGap -
                                     trailingWidth
                                 ).coerceAtLeast(1.dp).roundToPx()
                         }
@@ -208,11 +293,18 @@ fun ServerListScreen(
                             candidate.coerceAtLeast(13f).sp
                         }
 
-                        LazyColumn {
+                        LazyColumn(
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .width(listWidth)
+                                .padding(vertical = metrics.listVerticalPadding),
+                        ) {
                             item(key = "automatic") {
                                 AutomaticServerItem(
                                     selected = automaticServerSelection,
                                     enabled = servers.any { it.isSelectable },
+                                    metrics = metrics,
+                                    isTv = isTv,
                                     onClick = {
                                         scope.launch {
                                             if (viewModel.selectAutomaticServer()) {
@@ -234,6 +326,8 @@ fun ServerListScreen(
                                     enabled = selectable,
                                     showEndpoint = isAdminProfile,
                                     serverNameFontSize = serverNameFontSize,
+                                    metrics = metrics,
+                                    isTv = isTv,
                                     onClick = {
                                         scope.launch {
                                             if (viewModel.selectServer(server)) {
@@ -255,9 +349,12 @@ fun ServerListScreen(
 private fun AutomaticServerItem(
     selected: Boolean,
     enabled: Boolean,
+    metrics: ServerListMetrics,
+    isTv: Boolean,
     onClick: () -> Unit,
 ) {
     val isDark = isSystemInDarkTheme()
+    var focused by remember { mutableStateOf(false) }
     val selectedContainerColor = if (isDark) {
         VpnGreen.copy(alpha = 0.14f)
     } else {
@@ -272,28 +369,37 @@ private fun AutomaticServerItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .padding(
+                horizontal = metrics.cardHorizontalPadding,
+                vertical = metrics.cardVerticalPadding,
+            )
+            .onFocusChanged { focused = it.isFocused }
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(metrics.cardCornerRadius),
         colors = CardDefaults.cardColors(
             containerColor = if (selected) selectedContainerColor
             else MaterialTheme.colorScheme.surfaceContainerHigh,
         ),
-        border = if (selected) BorderStroke(1.dp, selectedBorderColor) else null,
+        border = serverCardBorder(
+            selected = selected,
+            focused = focused,
+            tvFocusEnabled = isTv,
+            selectedBorderColor = selectedBorderColor,
+        ),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(metrics.autoRowPadding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 imageVector = Icons.Default.Bolt,
                 contentDescription = null,
                 tint = VpnGreen,
-                modifier = Modifier.size(32.dp),
+                modifier = Modifier.size(metrics.autoIconSize),
             )
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(metrics.flagTextGap))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.server_auto),
@@ -319,9 +425,12 @@ private fun ServerItem(
     enabled: Boolean,
     showEndpoint: Boolean,
     serverNameFontSize: TextUnit,
+    metrics: ServerListMetrics,
+    isTv: Boolean,
     onClick: () -> Unit,
 ) {
     val isDark = isSystemInDarkTheme()
+    var focused by remember { mutableStateOf(false) }
     val selectedContainerColor = if (isDark) {
         VpnGreen.copy(alpha = 0.14f)
     } else {
@@ -343,11 +452,12 @@ private fun ServerItem(
         modifier = Modifier
             .fillMaxWidth()
             .padding(
-                horizontal = 16.dp,
-                vertical = 4.dp,
+                horizontal = metrics.cardHorizontalPadding,
+                vertical = metrics.cardVerticalPadding,
             )
+            .onFocusChanged { focused = it.isFocused }
             .clickable(enabled = enabled, onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(metrics.cardCornerRadius),
         // surfaceContainerHigh sits a step lighter than surfaceContainerLow
         // in the dark Material You palette, so server tiles match the
         // brighter card fill used on Home. On light theme this slot is
@@ -360,7 +470,12 @@ private fun ServerItem(
                 MaterialTheme.colorScheme.surfaceContainerHigh
             },
         ),
-        border = if (selected) BorderStroke(1.dp, selectedBorderColor) else null,
+        border = serverCardBorder(
+            selected = selected,
+            focused = focused,
+            tvFocusEnabled = isTv,
+            selectedBorderColor = selectedBorderColor,
+        ),
     ) {
         Column(
             modifier = Modifier
@@ -370,21 +485,29 @@ private fun ServerItem(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(
-                        start = 16.dp,
-                        top = if (showEndpoint) 14.dp else 16.dp,
-                        end = 16.dp,
-                        bottom = if (showEndpoint) 10.dp else 16.dp,
+                        start = metrics.rowHorizontalPadding,
+                        top = if (showEndpoint) {
+                            metrics.endpointRowTopPadding
+                        } else {
+                            metrics.compactRowVerticalPadding
+                        },
+                        end = metrics.rowHorizontalPadding,
+                        bottom = if (showEndpoint) {
+                            metrics.endpointRowBottomPadding
+                        } else {
+                            metrics.compactRowVerticalPadding
+                        },
                     ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Country flag
                 Text(
                     text = countryFlagForUi(server.country, server.name),
-                    modifier = Modifier.width(ServerFlagColumnWidth),
-                    fontSize = 32.sp,
+                    modifier = Modifier.width(metrics.flagColumnWidth),
+                    fontSize = metrics.flagFontSize,
                     textAlign = TextAlign.Center,
                 )
-                Spacer(modifier = Modifier.width(ServerFlagTextGap))
+                Spacer(modifier = Modifier.width(metrics.flagTextGap))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         serverDisplayName(server.name, server.country),
@@ -415,10 +538,10 @@ private fun ServerItem(
                     }
                 }
 
-                Spacer(modifier = Modifier.width(16.dp))
+                Spacer(modifier = Modifier.width(metrics.statusGap))
                 ServerStatusBlock(
                     server = server,
-                    alignWithEndpointPort = showEndpoint,
+                    width = if (showEndpoint) metrics.adminPingWidth else metrics.pingWidth,
                 )
             }
 
@@ -428,22 +551,33 @@ private fun ServerItem(
                     thickness = 1.dp,
                     color = dividerColor,
                 )
-                ServerEndpointRow(server = server)
+                ServerEndpointRow(
+                    server = server,
+                    metrics = metrics,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ServerEndpointRow(server: Server) {
+private fun ServerEndpointRow(
+    server: Server,
+    metrics: ServerListMetrics,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 12.dp),
+            .padding(
+                start = metrics.rowHorizontalPadding,
+                top = 8.dp,
+                end = metrics.rowHorizontalPadding,
+                bottom = 12.dp,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ServerEndpointMarker(modifier = Modifier.width(ServerFlagColumnWidth))
-        Spacer(modifier = Modifier.width(ServerFlagTextGap))
+        ServerEndpointMarker(modifier = Modifier.width(metrics.flagColumnWidth))
+        Spacer(modifier = Modifier.width(metrics.flagTextGap))
         Text(
             text = server.address,
             modifier = Modifier.weight(1f),
@@ -460,7 +594,7 @@ private fun ServerEndpointRow(server: Server) {
         Spacer(modifier = Modifier.width(10.dp))
         EndpointValueChip(
             text = server.port.toString(),
-            width = 52.dp,
+            width = metrics.adminPingWidth,
         )
     }
 }
@@ -520,7 +654,7 @@ private fun ServerEndpointMarker(modifier: Modifier = Modifier) {
 @Composable
 private fun ServerStatusBlock(
     server: Server,
-    alignWithEndpointPort: Boolean,
+    width: Dp,
 ) {
     when {
         !server.isSelectable -> {
@@ -549,12 +683,12 @@ private fun ServerStatusBlock(
         server.ping > 0 -> {
             PingChip(
                 ping = server.ping,
-                width = if (alignWithEndpointPort) 52.dp else 46.dp,
+                width = width,
             )
         }
         else -> {
             LoadingPingChip(
-                width = if (alignWithEndpointPort) 52.dp else 46.dp,
+                width = width,
             )
         }
     }
@@ -667,6 +801,24 @@ private fun pingColor(ping: Long) = when {
     ping < 100 -> VpnGreen
     ping < 200 -> VpnOrange
     else -> VpnRed
+}
+
+@Composable
+private fun serverCardBorder(
+    selected: Boolean,
+    focused: Boolean,
+    tvFocusEnabled: Boolean,
+    selectedBorderColor: Color,
+): BorderStroke? = when {
+    selected -> BorderStroke(1.dp, selectedBorderColor)
+    tvFocusEnabled && focused -> BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+    else -> null
+}
+
+@Composable
+private fun isTelevisionUi(): Boolean {
+    val uiMode = LocalConfiguration.current.uiMode
+    return (uiMode and Configuration.UI_MODE_TYPE_MASK) == Configuration.UI_MODE_TYPE_TELEVISION
 }
 
 @Composable

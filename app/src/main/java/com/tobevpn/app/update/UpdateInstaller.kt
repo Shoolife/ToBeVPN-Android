@@ -63,7 +63,7 @@ class UpdateInstaller @Inject constructor(
     }
 
     /**
-     * DownloadManager hands us a `file://` URI; ACTION_VIEW on a file:// is
+     * The updater hands us a `file://` URI; ACTION_VIEW on a file:// is
      * forbidden since Android 7 (FileUriExposedException). Re-wrap as a
      * content:// FileProvider URI that the installer can read.
      */

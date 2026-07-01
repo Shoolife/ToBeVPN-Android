@@ -15,15 +15,15 @@ import javax.inject.Singleton
 /**
  * Coordinates the "is there a newer build?" check against the release API.
  *
- * The check is best-effort: any error (no network, rate-limit, malformed
- * response) returns [UpdateCheckResult.UpToDate] so the UI never blocks startup
- * because of an update probe.
+ * The check is best-effort: any network/API error returns
+ * [UpdateCheckResult.UpToDate] so the UI never blocks startup because of an
+ * update probe. Failed probes are not cached.
  *
  * Caching: unauthenticated release API calls are rate-limited per IP. With
  * many users behind one carrier-grade NAT we'd burn that budget on cold-launch
- * spam. We cache the result for [CACHE_TTL_MS] (7 days) — that's the cadence
- * we expect to ship at, and the user can manually re-check from Settings if
- * they want to see something sooner.
+ * spam. We cache only the "up to date" result for [CACHE_TTL_MS] (7 days).
+ * Available updates are always revalidated so a user never downloads
+ * v1.0.45 first when v1.0.47 is already published.
  */
 @Singleton
 class UpdateRepository @Inject constructor(
@@ -44,26 +44,28 @@ class UpdateRepository @Inject constructor(
             val cached = readCached()
             if (cached != null) return cached
         }
-        val fresh = fetchFromNetwork()
-        writeCached(fresh)
-        return fresh
+        return runCatching {
+            val fresh = fetchFromNetwork()
+            writeCached(fresh)
+            fresh
+        }.getOrElse { e ->
+            Log.w(TAG, "update check failed", e)
+            UpdateCheckResult.UpToDate
+        }
     }
 
-    private suspend fun fetchFromNetwork(): UpdateCheckResult = runCatching {
-        val release = api.latestRelease(GITHUB_OWNER, GITHUB_REPO)
-        if (release.draft || release.prerelease) {
-            return@runCatching UpdateCheckResult.UpToDate
-        }
+    private suspend fun fetchFromNetwork(): UpdateCheckResult {
+        val current = parseSemver(BuildConfig.VERSION_NAME) ?: return UpdateCheckResult.UpToDate
+        val releases = fetchReleasePages()
+        val update = selectNewestUpdate(
+            releases = releases,
+            current = current,
+            supportedAbis = Build.SUPPORTED_ABIS.toList(),
+        ) ?: return UpdateCheckResult.UpToDate
+        val release = update.release
+        val apk = update.apk
 
-        val latest = parseSemver(release.tagName) ?: return@runCatching UpdateCheckResult.UpToDate
-        val current = parseSemver(BuildConfig.VERSION_NAME) ?: return@runCatching UpdateCheckResult.UpToDate
-        if (compareSemver(latest, current) <= 0) {
-            return@runCatching UpdateCheckResult.UpToDate
-        }
-
-        val apk = pickApkAsset(release) ?: return@runCatching UpdateCheckResult.UpToDate
-
-        UpdateCheckResult.Available(
+        return UpdateCheckResult.Available(
             versionName = release.tagName.removePrefix("v"),
             releaseNotes = release.body.orEmpty(),
             releasePageUrl = release.htmlUrl,
@@ -71,37 +73,22 @@ class UpdateRepository @Inject constructor(
             apkSizeBytes = apk.size,
             apkFileName = apk.name,
         )
-    }.getOrElse { e ->
-        Log.w(TAG, "update check failed", e)
-        UpdateCheckResult.UpToDate
     }
 
-    /**
-     * Picks the APK asset that matches this device's primary ABI.
-     *
-     * Build.SUPPORTED_ABIS is ordered from most-preferred to least-preferred
-     * — on an arm64 device the list is `[arm64-v8a, armeabi-v7a]`, meaning
-     * "I prefer arm64 but I can also run armv7". We honour that order so an
-     * arm64 device will try the arm64-v8a APK first and only fall back to
-     * armeabi-v7a if the release didn't ship one.
-     *
-     * Asset naming convention (set by the CI workflow):
-     *     ToBeVPN-<version>-<abi>-<sha>.apk
-     *     ToBeVPN-<version>-universal-<sha>.apk
-     */
-    private fun pickApkAsset(release: GithubReleaseDto): GithubAssetDto? {
-        val apks = release.assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
-        if (apks.isEmpty()) return null
-
-        // 1. Match by SUPPORTED_ABIS in declared preference order.
-        for (abi in Build.SUPPORTED_ABIS) {
-            val token = "-$abi-"
-            apks.firstOrNull { it.name.contains(token, ignoreCase = true) }?.let { return it }
+    private suspend fun fetchReleasePages(): List<GithubReleaseDto> {
+        val releases = mutableListOf<GithubReleaseDto>()
+        for (page in 1..MAX_RELEASE_PAGES) {
+            val pageItems = api.releases(
+                owner = GITHUB_OWNER,
+                repo = GITHUB_REPO,
+                perPage = RELEASES_PER_PAGE,
+                page = page,
+            )
+            if (pageItems.isEmpty()) break
+            releases += pageItems
+            if (pageItems.size < RELEASES_PER_PAGE) break
         }
-        // 2. Universal fallback for unusual devices.
-        apks.firstOrNull { it.name.contains("-universal-", ignoreCase = true) }?.let { return it }
-        // 3. Last resort: any APK in the release.
-        return apks.first()
+        return releases
     }
 
     // ── Cache ───────────────────────────────────────────────────────────
@@ -112,27 +99,6 @@ class UpdateRepository @Inject constructor(
         if (System.currentTimeMillis() - ts > CACHE_TTL_MS) return null
         return when (prefs.getString(KEY_CACHED_KIND, null)) {
             "uptodate" -> UpdateCheckResult.UpToDate
-            "available" -> {
-                val version = prefs.getString(KEY_VERSION, null) ?: return null
-                // After the user installs an update, BuildConfig.VERSION_NAME
-                // catches up but the SharedPreferences cache still holds the
-                // pre-install "Available v1.0.1" record. Drop it so the next
-                // probe writes a fresh result instead of nagging about a
-                // version the user has already installed.
-                val cached = parseSemver(version)
-                val current = parseSemver(BuildConfig.VERSION_NAME)
-                if (cached == null || current == null || compareSemver(cached, current) <= 0) {
-                    return null
-                }
-                UpdateCheckResult.Available(
-                    versionName = version,
-                    releaseNotes = prefs.getString(KEY_NOTES, "") ?: "",
-                    releasePageUrl = prefs.getString(KEY_PAGE_URL, "") ?: "",
-                    apkUrl = prefs.getString(KEY_APK_URL, null) ?: return null,
-                    apkSizeBytes = prefs.getLong(KEY_APK_SIZE, 0L),
-                    apkFileName = prefs.getString(KEY_APK_NAME, null) ?: return null,
-                )
-            }
             else -> null
         }
     }
@@ -151,13 +117,13 @@ class UpdateRepository @Inject constructor(
                     .remove(KEY_APK_NAME)
             }
             is UpdateCheckResult.Available -> {
-                editor.putString(KEY_CACHED_KIND, "available")
-                    .putString(KEY_VERSION, result.versionName)
-                    .putString(KEY_NOTES, result.releaseNotes)
-                    .putString(KEY_PAGE_URL, result.releasePageUrl)
-                    .putString(KEY_APK_URL, result.apkUrl)
-                    .putLong(KEY_APK_SIZE, result.apkSizeBytes)
-                    .putString(KEY_APK_NAME, result.apkFileName)
+                editor.remove(KEY_CACHED_KIND)
+                    .remove(KEY_VERSION)
+                    .remove(KEY_NOTES)
+                    .remove(KEY_PAGE_URL)
+                    .remove(KEY_APK_URL)
+                    .remove(KEY_APK_SIZE)
+                    .remove(KEY_APK_NAME)
             }
         }
         editor.apply()
@@ -179,8 +145,16 @@ class UpdateRepository @Inject constructor(
         const val KEY_APK_NAME = "apk_name"
 
         const val CACHE_TTL_MS = 7L * 24 * 60 * 60 * 1000  // 7 days
+        const val RELEASES_PER_PAGE = 100
+        const val MAX_RELEASE_PAGES = 5
     }
 }
+
+internal data class UpdateReleaseCandidate(
+    val release: GithubReleaseDto,
+    val apk: GithubAssetDto,
+    val version: IntArray,
+)
 
 sealed interface UpdateCheckResult {
     data object UpToDate : UpdateCheckResult
@@ -213,4 +187,39 @@ internal fun compareSemver(a: IntArray, b: IntArray): Int {
         if (diff != 0) return diff
     }
     return 0
+}
+
+internal fun selectNewestUpdate(
+    releases: List<GithubReleaseDto>,
+    current: IntArray,
+    supportedAbis: List<String>,
+): UpdateReleaseCandidate? {
+    return releases
+        .asSequence()
+        .filterNot { it.draft || it.prerelease }
+        .mapNotNull { release ->
+            val version = parseSemver(release.tagName) ?: return@mapNotNull null
+            if (compareSemver(version, current) <= 0) return@mapNotNull null
+            val apk = pickApkAsset(release, supportedAbis) ?: return@mapNotNull null
+            UpdateReleaseCandidate(release = release, apk = apk, version = version)
+        }
+        .maxWithOrNull { left, right -> compareSemver(left.version, right.version) }
+}
+
+internal fun pickApkAsset(
+    release: GithubReleaseDto,
+    supportedAbis: List<String>,
+): GithubAssetDto? {
+    val apks = release.assets.filter { it.name.endsWith(".apk", ignoreCase = true) }
+    if (apks.isEmpty()) return null
+
+    // 1. Match by SUPPORTED_ABIS in declared preference order.
+    for (abi in supportedAbis) {
+        val token = "-$abi-"
+        apks.firstOrNull { it.name.contains(token, ignoreCase = true) }?.let { return it }
+    }
+    // 2. Universal fallback for unusual devices.
+    apks.firstOrNull { it.name.contains("-universal-", ignoreCase = true) }?.let { return it }
+    // 3. Last resort: any APK in the release.
+    return apks.first()
 }

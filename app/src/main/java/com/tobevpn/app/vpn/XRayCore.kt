@@ -27,7 +27,9 @@ object XRayCore {
         initialized.set(true)
     }
 
+    @Synchronized
     fun createController(callback: CoreCallbackHandler): CoreController {
+        stopControllerLoop(controller)
         val ctrl = Libv2ray.newCoreController(callback)
         controller = ctrl
         return ctrl
@@ -38,11 +40,10 @@ object XRayCore {
     val currentLoopGeneration: Int
         get() = loopGeneration.get()
 
+    @Synchronized
     fun startLoop(configJson: String, tunFd: Int): Int {
         // Stop any leftover loop from a previous connection (e.g. after Error state)
-        if (controller?.isRunning == true) {
-            controller?.stopLoop()
-        }
+        stopControllerLoop(controller)
         val generation = loopGeneration.incrementAndGet()
         controller?.startLoop(configJson, tunFd)
         return generation
@@ -53,10 +54,21 @@ object XRayCore {
      * matches the current loop generation (prevents a stale Thread from
      * killing a newer loop started after reconnect).
      */
+    @Synchronized
     fun stopLoop(generation: Int = -1) {
         try {
             if (generation != -1 && generation != loopGeneration.get()) return
-            controller?.stopLoop()
+            stopControllerLoop(controller)
+        } catch (_: Exception) {
+            // Ignore — core may already be stopped
+        }
+    }
+
+    private fun stopControllerLoop(ctrl: CoreController?) {
+        if (ctrl == null) return
+        try {
+            if (!ctrl.isRunning) return
+            ctrl.stopLoop()
         } catch (_: Exception) {
             // Ignore — core may already be stopped
         }

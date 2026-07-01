@@ -84,8 +84,7 @@ fun UpdateBannerHost(
             viewModel.installer.install(contentUri)
         } catch (_: ActivityNotFoundException) {
             // Some highly customised launchers strip the package installer; we
-            // can't do much here. The DownloadManager notification still
-            // exposes the same APK so the user can tap it from there.
+            // can't do much here.
         }
     }
 
@@ -214,7 +213,7 @@ private fun DownloadingCard(
                     val target = (downloadedBytes.toDouble() / totalBytes.toDouble())
                         .coerceIn(0.0, 1.0)
                         .toFloat()
-                    // DownloadManager hands progress in irregular bursts (a few
+                    // The HTTP stream hands progress in irregular bursts (a few
                     // chunks land in one tick, then nothing for 200-300ms). A
                     // raw `progress = { target }` would jump every burst —
                     // animate the value with linear easing so the bar reads as

@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tobevpn.app.R
 import com.tobevpn.app.domain.model.ConnectionState
+import com.tobevpn.app.vpn.VpnConfig
 import com.tobevpn.app.vpn.VpnConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -53,7 +54,7 @@ class SpeedTestViewModel @Inject constructor(
      * When the VPN is active the app itself is in xray's `addDisallowedApplication`
      * list, so direct sockets bypass the tunnel. To still measure tunnel speed
      * we route the speed test through the SOCKS5 inbound xray exposes on
-     * 127.0.0.1:10808 (see [com.tobevpn.app.vpn.VpnConfig]) — that path goes
+     * 127.0.0.1 using [VpnConfig.LOCAL_SOCKS_PORT] — that path goes
      * through xray and out via the VLESS outbound to the VPN server.
      */
     val viaVpn: StateFlow<Boolean> = connectionManager.connectionState
@@ -72,7 +73,7 @@ class SpeedTestViewModel @Inject constructor(
         if (throughVpn) {
             // xray's local SOCKS5 inbound — traffic sent here flows through
             // the VLESS outbound and out the tunnel.
-            builder.proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", 10808)))
+            builder.proxy(Proxy(Proxy.Type.SOCKS, InetSocketAddress("127.0.0.1", VpnConfig.LOCAL_SOCKS_PORT)))
         }
         return builder.build()
     }
