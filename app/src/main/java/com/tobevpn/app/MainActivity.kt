@@ -34,6 +34,7 @@ import androidx.navigation.compose.rememberNavController
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.presentation.navigation.AppNavHost
 import com.tobevpn.app.presentation.splash.SplashScreen
+import com.tobevpn.app.domain.model.ThemeMode
 import com.tobevpn.app.presentation.theme.ToBeVPNTheme
 import com.tobevpn.app.update.UpdateBannerCheck
 import com.tobevpn.app.update.UpdateBannerHost
@@ -69,6 +70,9 @@ class MainActivity : AppCompatActivity() {
             val quickSettingsConnectRequest by quickSettingsConnectRequests.collectAsStateWithLifecycle()
             val notificationPermissionPrompted by prefsDataStore.notificationPermissionPrompted
                 .collectAsStateWithLifecycle(initialValue = true)
+            val themeMode by prefsDataStore.themeMode
+                .map { ThemeMode.fromName(it) }
+                .collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
             val notificationPermissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission(),
             ) {}
@@ -93,7 +97,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
-                ToBeVPNTheme {
+                ToBeVPNTheme(themeMode = themeMode) {
                     // Surface establishes the app's background color and
                     // LocalContentColor for screens that don't use Scaffold
                     // (e.g. Onboarding) — without it, headline Text renders

@@ -21,7 +21,7 @@ import com.tobevpn.app.data.local.entity.UsageEntity
         TrafficLogEntity::class,
         AppFilterEntry::class,
     ],
-    version = 14,
+    version = 16,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun sessionDao(): SessionDao

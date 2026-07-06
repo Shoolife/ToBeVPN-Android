@@ -22,6 +22,13 @@ data class SessionEntity(
     val panelUserUuid: String? = null,
     val email: String? = null,
     val isAdminProfile: Boolean = false,
+    // Telegram profile parsed from the panel user's description
+    // ("name: ...\nusername: ..."). Shown on the account card.
+    val telegramName: String? = null,
+    val telegramUsername: String? = null,
+    // Local file path of the cached Telegram avatar (fetched from
+    // GET /api/user/avatar and saved to disk). Null when unknown / no photo.
+    val photoUrl: String? = null,
     // Per-user subscription URL (https://<panel-host>/<KEY>). The path
     // segment is a secret token issued by the panel — anyone with the
     // URL can pull the user's VPN config. Lives here in the encrypted

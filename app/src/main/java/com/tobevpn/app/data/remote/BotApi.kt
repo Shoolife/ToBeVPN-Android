@@ -22,16 +22,25 @@ import com.tobevpn.app.data.remote.dto.TvPairConfirmRequestDto
 import com.tobevpn.app.data.remote.dto.TvPairCreateRequestDto
 import com.tobevpn.app.data.remote.dto.TvPairCreateResponseDto
 import com.tobevpn.app.data.remote.dto.TvPairStatusDto
+import okhttp3.ResponseBody
+import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 interface BotApi {
 
     @GET("api/config")
     suspend fun getConfig(): ApiResponse<RemoteConfigDto>
+
+    // Current user's Telegram avatar as binary JPEG (not JSON). Rate-limited on
+    // the server (20/min per device, cached 5 min) — fetch sparingly.
+    @Streaming
+    @GET("api/user/avatar")
+    suspend fun getUserAvatar(): Response<ResponseBody>
 
     @POST("api/auth/request")
     suspend fun requestAuth(

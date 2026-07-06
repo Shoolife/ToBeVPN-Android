@@ -37,6 +37,9 @@ data class PanelUserDto(
     @SerializedName("user_traffic") val userTraffic: PanelUserTrafficDto?,
     @SerializedName("hwid_device_limit") val hwidDeviceLimit: Int? = null,
     val email: String? = null,
+    // Free-text panel description; the bot stores the Telegram profile here as
+    // "name: <full name>\nusername: <@handle>".
+    val description: String? = null,
 )
 
 data class PanelSquadRefDto(

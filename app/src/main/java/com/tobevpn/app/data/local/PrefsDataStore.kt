@@ -48,6 +48,8 @@ class PrefsDataStore @Inject constructor(
         // so it doesn't linger in the protobuf file. See clearLegacyEmail().
         val LEGACY_USER_EMAIL = stringPreferencesKey("user_email")
         val LANGUAGE = stringPreferencesKey("language")
+        val PROFILE_NAME_DISPLAY = stringPreferencesKey("profile_name_display")
+        val THEME_MODE = stringPreferencesKey("theme_mode")
         val USD_RATE = doublePreferencesKey("usd_rate")
         val USD_RATE_TIMESTAMP = longPreferencesKey("usd_rate_timestamp")
         val ANON_SERVER_BYTES = longPreferencesKey("anon_server_bytes")
@@ -93,6 +95,18 @@ class PrefsDataStore @Inject constructor(
         it[Keys.NOTIFICATION_PERMISSION_PROMPTED] ?: false
     }
     val language: Flow<String?> = context.dataStore.data.map { it[Keys.LANGUAGE] }
+    val profileNameDisplay: Flow<String?> =
+        context.dataStore.data.map { it[Keys.PROFILE_NAME_DISPLAY] }
+
+    suspend fun setProfileNameDisplay(value: String) {
+        context.dataStore.edit { it[Keys.PROFILE_NAME_DISPLAY] = value }
+    }
+
+    val themeMode: Flow<String?> = context.dataStore.data.map { it[Keys.THEME_MODE] }
+
+    suspend fun setThemeMode(value: String) {
+        context.dataStore.edit { it[Keys.THEME_MODE] = value }
+    }
 
     suspend fun getCachedUsdRate(): Pair<Double, Long>? {
         val prefs = context.dataStore.data.first()

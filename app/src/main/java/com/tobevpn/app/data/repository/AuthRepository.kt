@@ -1,5 +1,6 @@
 package com.tobevpn.app.data.repository
 
+import android.content.Context
 import android.os.Build
 import com.tobevpn.app.data.device.DeviceIdProvider
 import com.tobevpn.app.data.device.DeviceFingerprintProvider
@@ -22,11 +23,17 @@ import com.tobevpn.app.data.remote.dto.TvPairCreateRequestDto
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.util.SafeDiagnostics
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
@@ -34,6 +41,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
@@ -63,6 +71,7 @@ data class CurrentSubscriptionPlanInfo(
 
 @Singleton
 class AuthRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val sessionDao: SessionDao,
     private val sessionStore: SessionStore,
     private val prefsDataStore: PrefsDataStore,
@@ -81,6 +90,70 @@ class AuthRepository @Inject constructor(
     private val _subscriptionResetEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val subscriptionResetEvents: SharedFlow<Unit> = _subscriptionResetEvents.asSharedFlow()
 
+    // Avatar (GET /api/user/avatar) is rate-limited, so we fetch it at most once
+    // per app process unless a re-auth forces a refresh.
+    @Volatile
+    private var avatarFetchedThisSession = false
+
+    private val _avatarLoading = MutableStateFlow(false)
+    /** True while an avatar download is in flight (drives a loading spinner). */
+    val avatarLoading: StateFlow<Boolean> = _avatarLoading.asStateFlow()
+
+    private fun avatarDir(): File = File(context.filesDir, "avatars").apply { mkdirs() }
+
+    /**
+     * Fetches the avatar on app entry only when we don't already have one
+     * cached — a photo persisted from a previous run is reused as-is (no repeat
+     * download). Re-auth still forces a fresh download via [refreshAvatar].
+     */
+    suspend fun refreshAvatarOnce() {
+        if (avatarFetchedThisSession) return
+        avatarFetchedThisSession = true
+        val cached = sessionDao.getSession()?.photoUrl
+        if (cached != null && File(cached).exists()) return
+        refreshAvatar()
+    }
+
+    /**
+     * Downloads the current user's Telegram avatar (binary JPEG) and caches it
+     * on disk, pointing the session at the file. 404 clears the cached photo;
+     * other errors (401/403/429/502) leave the current one for a later retry.
+     * Call sparingly — the endpoint is rate-limited (20/min per device).
+     */
+    suspend fun refreshAvatar() {
+        _avatarLoading.value = true
+        try {
+            // All of this runs off the main thread: with @Streaming, reading the
+            // response bytes performs the actual network download on the calling
+            // thread, and the file writes are blocking I/O — doing it on main
+            // froze the Settings screen.
+            withContext(Dispatchers.IO) {
+                val response = botApi.getUserAvatar()
+                if (response.isSuccessful) {
+                    val bytes = response.body()?.byteStream()?.use { it.readBytes() }
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        val dir = avatarDir()
+                        // A fresh filename each time avoids a stale Coil cache.
+                        val file = File(dir, "tg_avatar_${System.currentTimeMillis()}.jpg")
+                        file.writeBytes(bytes)
+                        dir.listFiles()?.forEach { if (it != file) it.delete() }
+                        sessionStore.update { it.copy(photoUrl = file.absolutePath) }
+                    }
+                } else {
+                    response.body()?.close()
+                    if (response.code() == 404) {
+                        avatarDir().listFiles()?.forEach { it.delete() }
+                        sessionStore.update { it.copy(photoUrl = null) }
+                    }
+                }
+            }
+        } catch (error: Exception) {
+            SafeDiagnostics.warn(TAG, "Avatar refresh failed: ${SafeDiagnostics.failureCategory(error)}")
+        } finally {
+            _avatarLoading.value = false
+        }
+    }
+
     // Serialises concurrent syncSubscription() callers (MainViewModel.init,
     // ServerListViewModel.init and onResume() can fire near-simultaneously
     // on a fresh app launch). Without this each one independently hits the
@@ -92,6 +165,28 @@ class AuthRepository @Inject constructor(
         return runCatching { UserPlan.valueOf(plan) }.getOrDefault(UserPlan.FREE_TRIAL)
     }
 
+    /**
+     * Extracts the Telegram name / @username the bot stores in the panel user's
+     * description as "name: <full name>\nusername: <handle>". Returns the value
+     * or null when a field is absent; the username keeps no leading '@'.
+     */
+    private fun parseTelegramProfile(description: String?): Pair<String?, String?> {
+        if (description.isNullOrBlank()) return null to null
+        var name: String? = null
+        var username: String? = null
+        description.lineSequence().forEach { rawLine ->
+            val line = rawLine.trim()
+            when {
+                line.startsWith("name:", ignoreCase = true) ->
+                    name = line.substringAfter(':').trim().takeIf { it.isNotBlank() }
+                line.startsWith("username:", ignoreCase = true) ->
+                    username = line.substringAfter(':').trim().removePrefix("@")
+                        .takeIf { it.isNotBlank() }
+            }
+        }
+        return name to username
+    }
+
     private fun sessionToAuthState(session: SessionEntity?): AuthState {
         return if (session?.authState == "AUTHENTICATED" && session.telegramId != null) {
             AuthState.Authenticated(
@@ -100,6 +195,9 @@ class AuthRepository @Inject constructor(
                 planExpiresAt = session.planExpiresAt,
                 planDisplayName = session.planDisplayName,
                 isAdminProfile = session.isAdminProfile,
+                username = session.telegramUsername,
+                name = session.telegramName,
+                photoUrl = session.photoUrl,
             )
         } else {
             AuthState.Anonymous
@@ -752,14 +850,19 @@ class AuthRepository @Inject constructor(
         try {
             val panelUser = getPanelUserByTelegramId(telegramId)
             if (panelUser != null) {
+                val (tgName, tgUsername) = parseTelegramProfile(panelUser.description)
                 sessionStore.update { current ->
                     current.copy(
                         panelUserUuid = panelUser.uuid,
                         shortUuid = panelUser.shortUuid,
                         email = panelUser.email ?: current.email,
+                        telegramName = tgName ?: current.telegramName,
+                        telegramUsername = tgUsername ?: current.telegramUsername,
                     )
                 }
             }
+            // Fresh login / re-auth — pull the Telegram avatar once.
+            refreshAvatar()
         } catch (_: Exception) {
         }
 
@@ -843,11 +946,14 @@ class AuthRepository @Inject constructor(
                 try {
                     panelUser = getPanelUserByTelegramId(session.telegramId)
                     if (panelUser != null) {
+                        val (tgName, tgUsername) = parseTelegramProfile(panelUser.description)
                         val updated = sessionStore.update { current ->
                             current.copy(
                                 shortUuid = panelUser.shortUuid,
                                 panelUserUuid = panelUser.uuid,
                                 subscriptionUrl = panelUser.subscriptionUrl,
+                                telegramName = tgName ?: current.telegramName,
+                                telegramUsername = tgUsername ?: current.telegramUsername,
                             )
                         }
                         if (updated != null) session = updated

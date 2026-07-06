@@ -168,6 +168,22 @@
     <!-- Settings -->
     <string name="settings">Настройки</string>
     <string name="account">Аккаунт</string>
+    <string name="settings_personalization">Персонализация</string>
+    <string name="settings_advanced">Дополнительно</string>
+    <string name="settings_support">Поддержка</string>
+    <string name="settings_personalization_desc">Язык и оформление</string>
+    <string name="settings_advanced_desc">Устройства и приложения</string>
+    <string name="settings_support_desc">Написать в Telegram</string>
+    <string name="settings_about_desc">Версия и обновления</string>
+    <string name="settings_profile_display">Имя под аватаром</string>
+    <string name="profile_display_username">Только @username</string>
+    <string name="profile_display_name">Только имя</string>
+    <string name="profile_display_both">Имя и @username</string>
+    <string name="profile_display_animated">Анимация</string>
+    <string name="settings_theme">Тема</string>
+    <string name="theme_system">Системная</string>
+    <string name="theme_dark">Тёмная</string>
+    <string name="theme_light">Светлая</string>
     <string name="not_authorized">Не авторизован</string>
     <string name="telegram_id">Telegram ID</string>
     <string name="plan">Тариф</string>

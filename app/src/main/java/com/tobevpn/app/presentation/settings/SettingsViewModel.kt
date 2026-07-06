@@ -16,6 +16,8 @@ import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ConnectionState
+import com.tobevpn.app.domain.model.ProfileNameDisplay
+import com.tobevpn.app.domain.model.ThemeMode
 import com.tobevpn.app.util.DeepLinkBus
 import com.tobevpn.app.util.LocaleManager
 import com.tobevpn.app.util.SafeDiagnostics
@@ -24,14 +26,17 @@ import com.tobevpn.app.vpn.XRayCore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
@@ -57,7 +62,12 @@ class SettingsViewModel @Inject constructor(
     val authState: StateFlow<AuthState> = authRepository.observeAuthState()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AuthState.Anonymous)
 
-    val xrayVersion: String = XRayCore.getVersion()
+    val avatarLoading: StateFlow<Boolean> = authRepository.avatarLoading
+
+    // Loaded off the main thread — XRayCore.getVersion() is a native (JNI) call
+    // whose first invocation would otherwise stall the Settings navigation.
+    private val _xrayVersion = MutableStateFlow<String?>(null)
+    val xrayVersion: StateFlow<String?> = _xrayVersion.asStateFlow()
 
     val userEmail: StateFlow<String?> = sessionDao.observeEmail()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -67,6 +77,22 @@ class SettingsViewModel @Inject constructor(
 
     private val _language = MutableStateFlow(LocaleManager.current())
     val language: StateFlow<String> = _language.asStateFlow()
+
+    val profileNameDisplay: StateFlow<ProfileNameDisplay> = prefsDataStore.profileNameDisplay
+        .map { ProfileNameDisplay.fromName(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProfileNameDisplay.DEFAULT)
+
+    fun setProfileNameDisplay(mode: ProfileNameDisplay) {
+        viewModelScope.launch { prefsDataStore.setProfileNameDisplay(mode.name) }
+    }
+
+    val themeMode: StateFlow<ThemeMode> = prefsDataStore.themeMode
+        .map { ThemeMode.fromName(it) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ThemeMode.DEFAULT)
+
+    fun setThemeMode(mode: ThemeMode) {
+        viewModelScope.launch { prefsDataStore.setThemeMode(mode.name) }
+    }
 
     private val _tvPairResult = MutableStateFlow<TvPairResult?>(null)
     val tvPairResult: StateFlow<TvPairResult?> = _tvPairResult.asStateFlow()
@@ -111,6 +137,16 @@ class SettingsViewModel @Inject constructor(
             deepLinkBus.devicePairingCodes.collectLatest { code ->
                 requestTvPairConfirmation(code)
             }
+        }
+        launchGuarded("Avatar refresh") {
+            // Once per app process (the repository guards repeats) — the
+            // avatar endpoint is rate-limited.
+            if (authRepository.getAuthStateSnapshot() is AuthState.Authenticated) {
+                authRepository.refreshAvatarOnce()
+            }
+        }
+        launchGuarded("XRay version") {
+            _xrayVersion.value = withContext(Dispatchers.IO) { XRayCore.getVersion() }
         }
     }
 

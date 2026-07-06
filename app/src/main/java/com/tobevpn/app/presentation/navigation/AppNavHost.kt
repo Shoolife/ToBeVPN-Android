@@ -3,6 +3,7 @@ package com.tobevpn.app.presentation.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
@@ -15,7 +16,11 @@ import com.tobevpn.app.presentation.auth.AuthScreen
 import com.tobevpn.app.presentation.main.MainScreen
 import com.tobevpn.app.presentation.onboarding.OnboardingScreen
 import com.tobevpn.app.presentation.servers.ServerListScreen
+import com.tobevpn.app.presentation.settings.AboutScreen
+import com.tobevpn.app.presentation.settings.AdvancedScreen
+import com.tobevpn.app.presentation.settings.PersonalizationScreen
 import com.tobevpn.app.presentation.settings.SettingsScreen
+import com.tobevpn.app.presentation.settings.SettingsViewModel
 import com.tobevpn.app.presentation.speedtest.SpeedTestScreen
 import com.tobevpn.app.presentation.stats.StatsScreen
 import com.tobevpn.app.util.DeepLinkBus
@@ -120,7 +125,34 @@ fun AppNavHost(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
                 onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
                 onNavigateToDevicePairingAuth = { navController.navigateSingleTop(DevicePairingAuthRoute) },
+                onNavigateToPersonalization = { navController.navigateSingleTop(PersonalizationRoute) },
+                onNavigateToAdvanced = { navController.navigateSingleTop(AdvancedRoute) },
+                onNavigateToAbout = { navController.navigateSingleTop(AboutRoute) },
+            )
+        }
+        composable<PersonalizationRoute> { entry ->
+            // Share the SettingsRoute-scoped ViewModel so its init side effects
+            // (subscription sync, device registration, pairing observer) run
+            // once, not once per sub-screen.
+            val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
+            PersonalizationScreen(
+                onBack = { navController.popBackStackOrRecover(startDestination) },
+                viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+            )
+        }
+        composable<AdvancedRoute> { entry ->
+            val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
+            AdvancedScreen(
+                onBack = { navController.popBackStackOrRecover(startDestination) },
                 onNavigateToAppFilter = { navController.navigateSingleTop(AppFilterRoute) },
+                viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+            )
+        }
+        composable<AboutRoute> { entry ->
+            val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
+            AboutScreen(
+                onBack = { navController.popBackStackOrRecover(startDestination) },
+                viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
             )
         }
         composable<AppFilterRoute> {

@@ -46,6 +46,8 @@ object DatabaseModule {
                 MIGRATION_11_12,
                 MIGRATION_12_13,
                 MIGRATION_13_14,
+                MIGRATION_14_15,
+                MIGRATION_15_16,
             )
             .fallbackToDestructiveMigration(dropAllTables = false)
             // TRUNCATE journal (no WAL) — committed writes land in the
@@ -117,6 +119,21 @@ object DatabaseModule {
     private val MIGRATION_13_14 = object : Migration(13, 14) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE servers ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
+        }
+    }
+
+    // Telegram name + @username parsed from the panel user's description.
+    private val MIGRATION_14_15 = object : Migration(14, 15) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE session ADD COLUMN telegramName TEXT")
+            db.execSQL("ALTER TABLE session ADD COLUMN telegramUsername TEXT")
+        }
+    }
+
+    // Cached Telegram avatar file path.
+    private val MIGRATION_15_16 = object : Migration(15, 16) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE session ADD COLUMN photoUrl TEXT")
         }
     }
 

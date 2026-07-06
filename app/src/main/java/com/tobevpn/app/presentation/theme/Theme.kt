@@ -1,11 +1,16 @@
 package com.tobevpn.app.presentation.theme
 
+import android.content.res.Configuration
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import com.tobevpn.app.domain.model.ThemeMode
 
 // ──────────────────────────────────────────────────────────────────────────
 // Light theme is hand-tuned to brand-approved values; we deliberately don't
@@ -121,14 +126,39 @@ private val DarkColorScheme = darkColorScheme(
 
 @Composable
 fun ToBeVPNTheme(
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: ThemeMode = ThemeMode.SYSTEM,
     content: @Composable () -> Unit,
 ) {
+    val darkTheme = when (themeMode) {
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+    }
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content,
-    )
+    // Force the theme app-wide by overriding LocalConfiguration's night mode,
+    // so the ~70 places that call isSystemInDarkTheme() directly resolve to the
+    // chosen theme. Provide through the SAME node in every mode (SYSTEM just
+    // re-provides the real config) — switching modes then only changes the
+    // provided value, never the composition structure. A structural change here
+    // would discard the whole subtree, resetting the NavHost back stack and
+    // bouncing the user to the start screen.
+    val baseConfig = LocalConfiguration.current
+    val effectiveConfig = remember(baseConfig, themeMode, darkTheme) {
+        if (themeMode == ThemeMode.SYSTEM) {
+            baseConfig
+        } else {
+            Configuration(baseConfig).apply {
+                uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                    if (darkTheme) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
+            }
+        }
+    }
+    CompositionLocalProvider(LocalConfiguration provides effectiveConfig) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content,
+        )
+    }
 }

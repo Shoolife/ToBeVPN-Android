@@ -28,3 +28,12 @@ object OnboardingRoute
 
 @Serializable
 object AppFilterRoute
+
+@Serializable
+object PersonalizationRoute
+
+@Serializable
+object AdvancedRoute
+
+@Serializable
+object AboutRoute

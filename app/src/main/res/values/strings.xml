@@ -164,6 +164,22 @@
     <!-- Settings -->
     <string name="settings">Settings</string>
     <string name="account">Account</string>
+    <string name="settings_personalization">Personalization</string>
+    <string name="settings_advanced">Advanced</string>
+    <string name="settings_support">Support</string>
+    <string name="settings_personalization_desc">Language &amp; appearance</string>
+    <string name="settings_advanced_desc">Devices &amp; apps</string>
+    <string name="settings_support_desc">Chat in Telegram</string>
+    <string name="settings_about_desc">Version &amp; updates</string>
+    <string name="settings_profile_display">Name under the avatar</string>
+    <string name="profile_display_username">Username only</string>
+    <string name="profile_display_name">Name only</string>
+    <string name="profile_display_both">Name and username</string>
+    <string name="profile_display_animated">Animated</string>
+    <string name="settings_theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_light">Light</string>
     <string name="not_authorized">Not signed in</string>
     <string name="telegram_id">Telegram ID</string>
     <string name="plan">Plan</string>
