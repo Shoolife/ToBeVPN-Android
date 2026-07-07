@@ -21,6 +21,7 @@ import com.tobevpn.app.presentation.settings.AdvancedScreen
 import com.tobevpn.app.presentation.settings.PersonalizationScreen
 import com.tobevpn.app.presentation.settings.SettingsScreen
 import com.tobevpn.app.presentation.settings.SettingsViewModel
+import com.tobevpn.app.presentation.settings.SupportScreen
 import com.tobevpn.app.presentation.speedtest.SpeedTestScreen
 import com.tobevpn.app.presentation.stats.StatsScreen
 import com.tobevpn.app.util.DeepLinkBus
@@ -127,6 +128,7 @@ fun AppNavHost(
                 onNavigateToDevicePairingAuth = { navController.navigateSingleTop(DevicePairingAuthRoute) },
                 onNavigateToPersonalization = { navController.navigateSingleTop(PersonalizationRoute) },
                 onNavigateToAdvanced = { navController.navigateSingleTop(AdvancedRoute) },
+                onNavigateToSupport = { navController.navigateSingleTop(SupportRoute) },
                 onNavigateToAbout = { navController.navigateSingleTop(AboutRoute) },
             )
         }
@@ -146,6 +148,11 @@ fun AppNavHost(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
                 onNavigateToAppFilter = { navController.navigateSingleTop(AppFilterRoute) },
                 viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+            )
+        }
+        composable<SupportRoute> {
+            SupportScreen(
+                onBack = { navController.popBackStackOrRecover(startDestination) },
             )
         }
         composable<AboutRoute> { entry ->

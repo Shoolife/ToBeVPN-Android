@@ -36,4 +36,7 @@ object PersonalizationRoute
 object AdvancedRoute
 
 @Serializable
+object SupportRoute
+
+@Serializable
 object AboutRoute

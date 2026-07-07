@@ -1,16 +1,19 @@
 package com.tobevpn.app.presentation.settings
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,7 +24,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -48,12 +50,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,7 +67,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -71,6 +74,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -93,24 +98,14 @@ fun SettingsScreen(
     onNavigateToDevicePairingAuth: () -> Unit,
     onNavigateToPersonalization: () -> Unit,
     onNavigateToAdvanced: () -> Unit,
+    onNavigateToSupport: () -> Unit,
     onNavigateToAbout: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val nameDisplay by viewModel.profileNameDisplay.collectAsStateWithLifecycle()
     val avatarLoading by viewModel.avatarLoading.collectAsStateWithLifecycle()
-    val context = LocalContext.current
-    val supportLink = stringResource(R.string.block_appeal_link)
-
-    val openSupport: () -> Unit = {
-        runCatching {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(supportLink)).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                },
-            )
-        }
-    }
+    var showLogoutConfirm by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -122,6 +117,19 @@ fun SettingsScreen(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.back),
                         )
+                    }
+                },
+                // Sign out lives in the top-right corner of the screen, mirroring
+                // the back button — only shown while signed in.
+                actions = {
+                    if (authState is AuthState.Authenticated) {
+                        IconButton(onClick = { showLogoutConfirm = true }) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Logout,
+                                contentDescription = stringResource(R.string.logout),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 },
             )
@@ -140,7 +148,6 @@ fun SettingsScreen(
                 avatarLoading = avatarLoading,
                 onNavigateToAuth = onNavigateToAuth,
                 onNavigateToDevicePairingAuth = onNavigateToDevicePairingAuth,
-                onLogout = { viewModel.logout() },
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -170,7 +177,7 @@ fun SettingsScreen(
                         accent = VpnGreen,
                         label = stringResource(R.string.settings_support),
                         description = stringResource(R.string.settings_support_desc),
-                        onClick = openSupport,
+                        onClick = onNavigateToSupport,
                     )
                     SettingsCategoryTile(
                         icon = Icons.Filled.Info,
@@ -185,6 +192,117 @@ fun SettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
         }
     }
+
+    // Confirm before signing out — logout wipes the local session and needs a
+    // fresh Telegram login to undo. Rendered in-composition (not a platform
+    // Dialog window, which pops in/out abruptly) so it fades + scales smoothly.
+    LogoutConfirmDialog(
+        visible = showLogoutConfirm,
+        onConfirm = {
+            showLogoutConfirm = false
+            viewModel.logout()
+        },
+        onDismiss = { showLogoutConfirm = false },
+    )
+}
+
+// Confirm dialog in a real Dialog window (covers the whole screen, top bar
+// included) but with an animated scrim + card so it fades and scales in/out
+// smoothly instead of the abrupt pop of a plain AlertDialog. The transition
+// state keeps it composed through the exit animation before the window closes.
+@Composable
+private fun LogoutConfirmDialog(
+    visible: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val transitionState = remember { MutableTransitionState(false) }
+    transitionState.targetState = visible
+    if (transitionState.currentState || transitionState.targetState) {
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // Tap outside the card dismisses; no ripple on the scrim.
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onDismiss,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                AnimatedVisibility(
+                    visibleState = transitionState,
+                    enter = fadeIn(tween(180)),
+                    exit = fadeOut(tween(180)),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.5f)),
+                    )
+                }
+                AnimatedVisibility(
+                    visibleState = transitionState,
+                    enter = fadeIn(tween(180)) + scaleIn(tween(180), initialScale = 0.9f),
+                    exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.9f),
+                ) {
+                    Surface(
+                        modifier = Modifier
+                            .padding(horizontal = 40.dp)
+                            // Swallow taps so clicking the card doesn't dismiss it.
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = {},
+                            ),
+                        shape = RoundedCornerShape(28.dp),
+                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        tonalElevation = 6.dp,
+                    ) {
+                        Column(modifier = Modifier.padding(24.dp)) {
+                            Text(
+                                text = stringResource(R.string.logout_confirm_title),
+                                style = MaterialTheme.typography.headlineSmall,
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = stringResource(R.string.logout_confirm_message),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                            ) {
+                                OutlinedButton(onClick = onDismiss) {
+                                    Text(stringResource(R.string.cancel))
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Button(
+                                    onClick = onConfirm,
+                                    colors = if (isSystemInDarkTheme()) {
+                                        ButtonDefaults.buttonColors()
+                                    } else {
+                                        ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF3F3F3F),
+                                            contentColor = Color.White,
+                                        )
+                                    },
+                                ) {
+                                    Text(stringResource(R.string.logout))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -194,7 +312,6 @@ private fun AccountCard(
     avatarLoading: Boolean,
     onNavigateToAuth: () -> Unit,
     onNavigateToDevicePairingAuth: () -> Unit,
-    onLogout: () -> Unit,
 ) {
     // Accent colour drives the top glow, keyed to how much of the subscription
     // is left: green with plenty of time, orange when it's running low, red
@@ -387,24 +504,6 @@ private fun AccountCard(
                             }
                         }
                     }
-                }
-            }
-            // Sign out in the top-right corner. The card's 18dp vertical padding
-            // would push it 18dp down, so nudge it up 10dp — giving an equal 8dp
-            // gap from both the top and right edges.
-            if (authState is AuthState.Authenticated) {
-                IconButton(
-                    onClick = onLogout,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .offset(y = (-10).dp)
-                        .padding(end = 8.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Logout,
-                        contentDescription = stringResource(R.string.logout),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
                 }
             }
         }
