@@ -215,6 +215,14 @@
     <string name="faq_q_stores">Почему приложения нет в Google Play и App Store?</string>
     <string name="faq_a_stores">Приложение на стадии выхода в Google Play — скоро будет доступно там. Версия для App Store появится позже. Пока процесс обновления прямо в приложении.</string>
     <string name="about">О приложении</string>
+    <string name="about_slogan">Быстрый и надёжный VPN</string>
+    <string name="about_news_title">Новости</string>
+    <string name="about_news_link">https://t.me/meow_meow_vpn</string>
+    <string name="about_privacy_title">Политика конфиденциальности</string>
+    <string name="about_privacy_link">https://shoolife.github.io/tobevpn-legal/privacy.html</string>
+    <string name="about_delete_title">Удаление аккаунта</string>
+    <string name="about_delete_link">https://shoolife.github.io/tobevpn-legal/delete-account.html</string>
+    <string name="about_copyright">© 2026 ToBeVPN</string>
     <string name="version">Версия</string>
     <string name="xray">XRay</string>
     <string name="language">Язык</string>

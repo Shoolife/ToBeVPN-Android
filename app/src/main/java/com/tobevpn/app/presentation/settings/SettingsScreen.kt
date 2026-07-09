@@ -58,6 +58,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -67,6 +68,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -76,6 +78,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
@@ -223,6 +226,15 @@ private fun LogoutConfirmDialog(
             onDismissRequest = onDismiss,
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
+            // Kill the Dialog window's built-in dim. It isn't animated and only
+            // clears when the window is torn down (after our fade finishes), so
+            // leaving it on makes the scrim linger a beat after the card is gone
+            // — reads as a two-step, laggy close. We draw our own animated scrim
+            // below instead, so everything fades out together.
+            val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+            SideEffect {
+                dialogWindow?.setDimAmount(0f)
+            }
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -248,7 +260,9 @@ private fun LogoutConfirmDialog(
                 AnimatedVisibility(
                     visibleState = transitionState,
                     enter = fadeIn(tween(180)) + scaleIn(tween(180), initialScale = 0.9f),
-                    exit = fadeOut(tween(150)) + scaleOut(tween(150), targetScale = 0.9f),
+                    // Match the scrim's exit duration exactly so the card and the
+                    // dimming fade out together instead of in two visible steps.
+                    exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.9f),
                 ) {
                     Surface(
                         modifier = Modifier

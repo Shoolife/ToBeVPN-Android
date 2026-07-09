@@ -59,8 +59,9 @@ fun SettingsUpdateCheckRow(viewModel: UpdateViewModel = rememberAppUpdateViewMod
     ) {
         Text(
             text = statusText,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
             modifier = Modifier.weight(1f),
         )
         Spacer(Modifier.width(12.dp))
@@ -68,6 +69,10 @@ fun SettingsUpdateCheckRow(viewModel: UpdateViewModel = rememberAppUpdateViewMod
             onClick = { viewModel.forceCheck() },
             enabled = !inFlight,
             shape = RoundedCornerShape(10.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = 16.dp,
+                vertical = 8.dp,
+            ),
             border = if (androidx.compose.foundation.isSystemInDarkTheme()) {
                 androidx.compose.material3.ButtonDefaults.outlinedButtonBorder
             } else {

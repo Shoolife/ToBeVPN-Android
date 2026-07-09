@@ -211,6 +211,14 @@
     <string name="faq_q_stores">Why isn\'t the app on Google Play or the App Store?</string>
     <string name="faq_a_stores">The app is being published to Google Play and will be available there soon. An App Store version will come later. For now, updates are handled right in the app.</string>
     <string name="about">About</string>
+    <string name="about_slogan">Fast and reliable VPN</string>
+    <string name="about_news_title">News</string>
+    <string name="about_news_link">https://t.me/meow_meow_vpn</string>
+    <string name="about_privacy_title">Privacy Policy</string>
+    <string name="about_privacy_link">https://shoolife.github.io/tobevpn-legal/privacy-en.html</string>
+    <string name="about_delete_title">Delete Account</string>
+    <string name="about_delete_link">https://shoolife.github.io/tobevpn-legal/delete-account-en.html</string>
+    <string name="about_copyright">© 2026 ToBeVPN</string>
     <string name="version">Version</string>
     <string name="xray">XRay</string>
     <string name="language">Language</string>
