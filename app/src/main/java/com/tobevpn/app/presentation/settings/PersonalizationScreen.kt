@@ -21,37 +21,28 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,10 +55,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
@@ -76,7 +65,6 @@ import com.tobevpn.app.domain.model.ProfileNameDisplay
 import com.tobevpn.app.domain.model.ThemeMode
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
-import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.util.LocaleManager
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -89,8 +77,6 @@ fun PersonalizationScreen(
     val language by viewModel.language.collectAsStateWithLifecycle()
     val profileNameDisplay by viewModel.profileNameDisplay.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
-    val emailSaveResult by viewModel.emailSaveResult.collectAsStateWithLifecycle()
-    val savedEmail by viewModel.userEmail.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var pendingLanguage by remember { mutableStateOf<String?>(null) }
 
@@ -160,23 +146,6 @@ fun PersonalizationScreen(
                     selected = profileNameDisplay,
                     onSelect = { viewModel.setProfileNameDisplay(it) },
                 )
-            }
-
-            if (authState is AuthState.Authenticated) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        EmailInput(
-                            savedEmail = savedEmail,
-                            emailSaveResult = emailSaveResult,
-                            onSave = { viewModel.saveEmail(it) },
-                            onClearResult = { viewModel.clearEmailResult() },
-                        )
-                    }
-                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -490,151 +459,3 @@ private fun SelectChip(label: String, selected: Boolean, onClick: () -> Unit) {
     )
 }
 
-@Composable
-private fun EmailInput(
-    savedEmail: String?,
-    emailSaveResult: EmailSaveResult?,
-    onSave: (String) -> Unit,
-    onClearResult: () -> Unit,
-) {
-    var isEditing by remember(savedEmail) { mutableStateOf(savedEmail.isNullOrBlank()) }
-    val isSaving = emailSaveResult == EmailSaveResult.Saving
-
-    LaunchedEffect(emailSaveResult) {
-        if (emailSaveResult == EmailSaveResult.Success) {
-            isEditing = false
-        }
-    }
-
-    if (!isEditing && !savedEmail.isNullOrBlank()) {
-        SectionTitle(
-            icon = Icons.Filled.Email,
-            accent = VpnOrange,
-            title = stringResource(R.string.email_label),
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(
-                savedEmail,
-                style = MaterialTheme.typography.bodyMedium,
-                fontSize = 15.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.weight(1f),
-            )
-            FilledTonalIconButton(
-                onClick = {
-                    onClearResult()
-                    isEditing = true
-                },
-                colors = if (isSystemInDarkTheme()) {
-                    IconButtonDefaults.filledTonalIconButtonColors()
-                } else {
-                    IconButtonDefaults.filledTonalIconButtonColors(
-                        containerColor = Color(0xFFD8D8D8),
-                        contentColor = Color.Black,
-                    )
-                },
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Edit,
-                    contentDescription = stringResource(R.string.email_change),
-                )
-            }
-        }
-        return
-    }
-
-    var email by remember(savedEmail) { mutableStateOf(savedEmail.orEmpty()) }
-    var isError by remember { mutableStateOf(false) }
-
-    SectionTitle(
-        icon = Icons.Filled.Email,
-        accent = VpnOrange,
-        title = stringResource(R.string.email_label),
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    Text(
-        stringResource(R.string.email_subscription_hint),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        OutlinedTextField(
-            value = email,
-            onValueChange = {
-                email = it
-                isError = false
-                if (emailSaveResult == EmailSaveResult.Error) onClearResult()
-            },
-            placeholder = { Text(stringResource(R.string.email_label)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-            isError = isError || emailSaveResult == EmailSaveResult.Error,
-            modifier = Modifier
-                .weight(1f)
-                .align(Alignment.CenterVertically),
-            enabled = !isSaving,
-        )
-        Spacer(modifier = Modifier.width(8.dp))
-        Button(
-            onClick = {
-                val trimmed = email.trim()
-                if (trimmed.contains("@") && trimmed.contains(".")) {
-                    onSave(trimmed)
-                } else {
-                    isError = true
-                }
-            },
-            enabled = !isSaving && email.isNotBlank(),
-            modifier = Modifier.align(Alignment.CenterVertically),
-            colors = if (isSystemInDarkTheme()) {
-                ButtonDefaults.buttonColors()
-            } else {
-                ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF3F3F3F),
-                    contentColor = Color.White,
-                )
-            },
-        ) {
-            if (isSaving) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                )
-            } else {
-                Text(stringResource(R.string.ok))
-            }
-        }
-    }
-    if (emailSaveResult == EmailSaveResult.Error) {
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            stringResource(R.string.email_save_error),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-        )
-    }
-    if (!savedEmail.isNullOrBlank()) {
-        Spacer(modifier = Modifier.height(4.dp))
-        TextButton(
-            onClick = {
-                onClearResult()
-                isEditing = false
-            },
-            colors = if (isSystemInDarkTheme()) {
-                ButtonDefaults.textButtonColors()
-            } else {
-                ButtonDefaults.textButtonColors(contentColor = Color.Black)
-            },
-        ) {
-            Text(stringResource(R.string.cancel))
-        }
-    }
-}

@@ -223,6 +223,15 @@
     <string name="about_delete_title">Удаление аккаунта</string>
     <string name="about_delete_link">https://shoolife.github.io/tobevpn-legal/delete-account.html</string>
     <string name="about_copyright">© 2026 ToBeVPN</string>
+    <string name="about_whats_new_current">Что нового в этой версии</string>
+    <string name="whats_new_title">Что нового</string>
+    <string name="whats_new_version">Версия %1$s</string>
+    <string name="whats_new_intro">Главные изменения установленной версии</string>
+    <string name="whats_new_done">Понятно</string>
+    <string name="whats_new_settings_title">Обновлённые настройки</string>
+    <string name="whats_new_settings_desc">Настройки переработаны: категории, карточка аккаунта и персонализация.</string>
+    <string name="whats_new_about_title">Поддержка и «О приложении»</string>
+    <string name="whats_new_about_desc">Добавлен раздел частых вопросов и обновлённый экран «О приложении» с блоком «Что нового» прямо в приложении.</string>
     <string name="version">Версия</string>
     <string name="xray">XRay</string>
     <string name="language">Язык</string>

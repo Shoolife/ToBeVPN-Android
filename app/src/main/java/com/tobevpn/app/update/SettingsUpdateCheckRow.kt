@@ -1,14 +1,19 @@
 package com.tobevpn.app.update
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -18,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -37,7 +43,10 @@ import com.tobevpn.app.data.repository.UpdateCheckResult
  * последняя версия" (rendered in `formatStatus`).
  */
 @Composable
-fun SettingsUpdateCheckRow(viewModel: UpdateViewModel = rememberAppUpdateViewModel()) {
+fun SettingsUpdateCheckRow(
+    onWhatsNew: (() -> Unit)? = null,
+    viewModel: UpdateViewModel = rememberAppUpdateViewModel(),
+) {
     val state by viewModel.state.collectAsState()
     val inFlight by viewModel.manualCheckInFlight.collectAsState()
     val versionName = remember { com.tobevpn.app.BuildConfig.VERSION_NAME }
@@ -57,13 +66,47 @@ fun SettingsUpdateCheckRow(viewModel: UpdateViewModel = rememberAppUpdateViewMod
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(
-            text = statusText,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
-            modifier = Modifier.weight(1f),
-        )
+        // Version status + a compact "What's new in this version" link beneath
+        // it. The whole column is clickable to open the What's new dialog,
+        // matching the desktop UpdateCheckRow.
+        androidx.compose.foundation.layout.Column(
+            modifier = Modifier
+                .weight(1f)
+                .then(
+                    if (onWhatsNew != null) {
+                        Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(onClick = onWhatsNew)
+                    } else {
+                        Modifier
+                    },
+                )
+                .padding(vertical = 3.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.bodyLarge,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+            )
+            if (onWhatsNew != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(R.string.about_whats_new_current),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.width(2.dp))
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+        }
         Spacer(Modifier.width(12.dp))
         OutlinedButton(
             onClick = { viewModel.forceCheck() },

@@ -32,6 +32,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -54,6 +57,7 @@ fun AboutScreen(
 ) {
     val xrayVersion by viewModel.xrayVersion.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    var showWhatsNew by remember { mutableStateOf(false) }
 
     val newsLink = stringResource(R.string.about_news_link)
     val privacyLink = stringResource(R.string.about_privacy_link)
@@ -115,7 +119,7 @@ fun AboutScreen(
                 shape = RoundedCornerShape(16.dp),
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    SettingsUpdateCheckRow()
+                    SettingsUpdateCheckRow(onWhatsNew = { showWhatsNew = true })
                     Spacer(modifier = Modifier.height(10.dp))
                     SpecRow(stringResource(R.string.xray), xrayVersion ?: "…")
                 }
@@ -154,6 +158,10 @@ fun AboutScreen(
             )
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+
+    if (showWhatsNew) {
+        WhatsNewDialog(onDismiss = { showWhatsNew = false })
     }
 }
 

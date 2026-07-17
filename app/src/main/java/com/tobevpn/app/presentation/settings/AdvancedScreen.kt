@@ -1,9 +1,11 @@
 package com.tobevpn.app.presentation.settings
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,6 +24,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
@@ -32,9 +36,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -45,13 +51,16 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +81,7 @@ import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.presentation.theme.BrandCardFill
 import com.tobevpn.app.presentation.theme.VpnGreen
+import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.util.DeviceQrScanAction
 import com.tobevpn.app.util.DeviceQrScanParser
 import com.tobevpn.app.util.TelegramLinks
@@ -87,6 +97,8 @@ fun AdvancedScreen(
     val tvPairResult by viewModel.tvPairResult.collectAsStateWithLifecycle()
     val linkedDevicesState by viewModel.linkedDevicesState.collectAsStateWithLifecycle()
     val appFilterState by viewModel.appFilterSummary.collectAsStateWithLifecycle()
+    val emailSaveResult by viewModel.emailSaveResult.collectAsStateWithLifecycle()
+    val savedEmail by viewModel.userEmail.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val devicesLimitReachedText = stringResource(R.string.devices_limit_reached)
     val authOpenTelegramErrorText = stringResource(R.string.auth_error_open_telegram)
@@ -210,6 +222,23 @@ fun AdvancedScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             AppFilterRow(state = appFilterState, onClick = onNavigateToAppFilter)
+
+            if (authState is AuthState.Authenticated) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        EmailInput(
+                            savedEmail = savedEmail,
+                            emailSaveResult = emailSaveResult,
+                            onSave = { viewModel.saveEmail(it) },
+                            onClearResult = { viewModel.clearEmailResult() },
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -864,4 +893,186 @@ private fun formatDeviceDate(epochSeconds: Long): String {
     val sdf = java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.getDefault())
     sdf.timeZone = java.util.TimeZone.getDefault()
     return sdf.format(java.util.Date(epochSeconds * 1000))
+}
+
+// A block header: a small tinted icon badge next to the title, matching the
+// look of the category tiles on the main Settings screen.
+@Composable
+private fun SectionTitle(icon: ImageVector, accent: Color, title: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(accent.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isSystemInDarkTheme()) {
+                MaterialTheme.colorScheme.onSurface
+            } else {
+                Color.Black
+            },
+        )
+    }
+}
+
+@Composable
+private fun EmailInput(
+    savedEmail: String?,
+    emailSaveResult: EmailSaveResult?,
+    onSave: (String) -> Unit,
+    onClearResult: () -> Unit,
+) {
+    var isEditing by remember(savedEmail) { mutableStateOf(savedEmail.isNullOrBlank()) }
+    val isSaving = emailSaveResult == EmailSaveResult.Saving
+
+    LaunchedEffect(emailSaveResult) {
+        if (emailSaveResult == EmailSaveResult.Success) {
+            isEditing = false
+        }
+    }
+
+    if (!isEditing && !savedEmail.isNullOrBlank()) {
+        SectionTitle(
+            icon = Icons.Filled.Email,
+            accent = VpnOrange,
+            title = stringResource(R.string.email_label),
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(
+                savedEmail,
+                style = MaterialTheme.typography.bodyMedium,
+                fontSize = 15.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+            )
+            FilledTonalIconButton(
+                onClick = {
+                    onClearResult()
+                    isEditing = true
+                },
+                colors = if (isSystemInDarkTheme()) {
+                    IconButtonDefaults.filledTonalIconButtonColors()
+                } else {
+                    IconButtonDefaults.filledTonalIconButtonColors(
+                        containerColor = Color(0xFFD8D8D8),
+                        contentColor = Color.Black,
+                    )
+                },
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Edit,
+                    contentDescription = stringResource(R.string.email_change),
+                )
+            }
+        }
+        return
+    }
+
+    var email by remember(savedEmail) { mutableStateOf(savedEmail.orEmpty()) }
+    var isError by remember { mutableStateOf(false) }
+
+    SectionTitle(
+        icon = Icons.Filled.Email,
+        accent = VpnOrange,
+        title = stringResource(R.string.email_label),
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+        stringResource(R.string.email_subscription_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        OutlinedTextField(
+            value = email,
+            onValueChange = {
+                email = it
+                isError = false
+                if (emailSaveResult == EmailSaveResult.Error) onClearResult()
+            },
+            placeholder = { Text(stringResource(R.string.email_label)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+            isError = isError || emailSaveResult == EmailSaveResult.Error,
+            modifier = Modifier
+                .weight(1f)
+                .align(Alignment.CenterVertically),
+            enabled = !isSaving,
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Button(
+            onClick = {
+                val trimmed = email.trim()
+                if (trimmed.contains("@") && trimmed.contains(".")) {
+                    onSave(trimmed)
+                } else {
+                    isError = true
+                }
+            },
+            enabled = !isSaving && email.isNotBlank(),
+            modifier = Modifier.align(Alignment.CenterVertically),
+            colors = if (isSystemInDarkTheme()) {
+                ButtonDefaults.buttonColors()
+            } else {
+                ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF3F3F3F),
+                    contentColor = Color.White,
+                )
+            },
+        ) {
+            if (isSaving) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Text(stringResource(R.string.ok))
+            }
+        }
+    }
+    if (emailSaveResult == EmailSaveResult.Error) {
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            stringResource(R.string.email_save_error),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+    }
+    if (!savedEmail.isNullOrBlank()) {
+        Spacer(modifier = Modifier.height(4.dp))
+        TextButton(
+            onClick = {
+                onClearResult()
+                isEditing = false
+            },
+            colors = if (isSystemInDarkTheme()) {
+                ButtonDefaults.textButtonColors()
+            } else {
+                ButtonDefaults.textButtonColors(contentColor = Color.Black)
+            },
+        ) {
+            Text(stringResource(R.string.cancel))
+        }
+    }
 }
