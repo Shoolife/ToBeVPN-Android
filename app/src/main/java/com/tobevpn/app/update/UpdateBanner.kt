@@ -242,7 +242,7 @@ private fun DownloadingCard(
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = formatProgress(downloadedBytes, totalBytes),
+                    text = formatProgressText(downloadedBytes, totalBytes),
                     style = MaterialTheme.typography.labelSmall,
                     color = bannerContentColor().copy(alpha = 0.7f),
                 )
@@ -426,13 +426,14 @@ private fun BannerCard(
     }
 }
 
-private fun formatProgress(downloaded: Long, total: Long): String {
+@Composable
+private fun formatProgressText(downloaded: Long, total: Long): String {
     val mb = 1024.0 * 1024.0
     val left = String.format("%.1f", downloaded / mb)
     return if (total > 0) {
         val right = String.format("%.1f", total / mb)
-        "$left МБ / $right МБ"
+        stringResource(R.string.update_banner_progress_of, left, right)
     } else {
-        "$left МБ"
+        stringResource(R.string.update_banner_progress, left)
     }
 }

@@ -2,11 +2,17 @@ package com.tobevpn.app.data.remote.dto
 
 import com.google.gson.annotations.SerializedName
 
-/** Response payload of GET /api/purchase/plans. */
+/**
+ * Response payload of GET /api/purchase/plans.
+ *
+ * List fields are nullable: Gson bypasses Kotlin constructors, so a key the
+ * server omits lands as null even on a non-null type with a default value.
+ * Call sites use orEmpty().
+ */
 data class PurchasePlansDto(
     @SerializedName("telegram_id") val telegramId: Long,
     @SerializedName("effective_discount_percent") val effectiveDiscountPercent: Int = 0,
-    val plans: List<PurchasePlanDto> = emptyList(),
+    val plans: List<PurchasePlanDto>? = null,
 )
 
 data class PurchasePlanDto(
@@ -26,9 +32,9 @@ data class PurchasePlanDto(
     @SerializedName("device_limit") val deviceLimit: Int = 0,
     val tag: String? = null,
     @SerializedName("order_index") val orderIndex: Int = 0,
-    @SerializedName("internal_squad_uuids") val internalSquadUuids: List<String> = emptyList(),
+    @SerializedName("internal_squad_uuids") val internalSquadUuids: List<String>? = null,
     @SerializedName("external_squad_uuid") val externalSquadUuid: String? = null,
-    val durations: List<PurchaseDurationDto> = emptyList(),
+    val durations: List<PurchaseDurationDto>? = null,
 )
 
 data class PurchaseDurationDto(
@@ -37,8 +43,8 @@ data class PurchaseDurationDto(
     @SerializedName("order_index") val orderIndex: Int = 0,
     @SerializedName("bot_start_param") val botStartParam: String? = null,
     @SerializedName("bot_payment_url") val botPaymentUrl: String? = null,
-    val prices: List<PurchasePriceDto> = emptyList(),
-    @SerializedName("payment_methods") val paymentMethods: List<PurchasePaymentMethodDto> = emptyList(),
+    val prices: List<PurchasePriceDto>? = null,
+    @SerializedName("payment_methods") val paymentMethods: List<PurchasePaymentMethodDto>? = null,
 )
 
 data class PurchasePriceDto(

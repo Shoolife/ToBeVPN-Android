@@ -21,7 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.SupportAgent
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -66,14 +66,14 @@ private data class WhatsNewHighlight(
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.Tune,
-        titleRes = R.string.whats_new_settings_title,
-        descriptionRes = R.string.whats_new_settings_desc,
+        icon = Icons.Filled.Shield,
+        titleRes = R.string.whats_new_stability_title,
+        descriptionRes = R.string.whats_new_stability_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.SupportAgent,
-        titleRes = R.string.whats_new_about_title,
-        descriptionRes = R.string.whats_new_about_desc,
+        icon = Icons.Filled.Tune,
+        titleRes = R.string.whats_new_fixes_title,
+        descriptionRes = R.string.whats_new_fixes_desc,
     ),
 )
 

@@ -235,14 +235,16 @@ class AuthViewModel @Inject constructor(
         authRepository.syncSubscription(force = true)
         // Refresh servers with the subscription data that sync just populated.
         vpnRepository.refreshServers()
-        _uiState.value = AuthUiState.Success
-        pollingJob?.cancel()
-
-        // Show email prompt if not shown before
+        // Read the flag BEFORE cancelling the polling job: onAuthSuccess
+        // usually runs inside pollingJob itself, and any suspend call after
+        // the self-cancel throws CancellationException — which used to
+        // silently skip the email prompt on every polling-confirmed login.
         val alreadyShown = prefsDataStore.emailPromptShown.firstOrNull() ?: false
+        _uiState.value = AuthUiState.Success
         if (!alreadyShown) {
             _showEmailPrompt.value = true
         }
+        pollingJob?.cancel()
     }
 
     fun saveEmail(email: String) {

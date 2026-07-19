@@ -224,10 +224,10 @@
     <string name="whats_new_version">Version %1$s</string>
     <string name="whats_new_intro">Highlights in the installed version</string>
     <string name="whats_new_done">Got it</string>
-    <string name="whats_new_settings_title">Redesigned settings</string>
-    <string name="whats_new_settings_desc">Settings are reorganised into categories with an account card and personalization.</string>
-    <string name="whats_new_about_title">Support &amp; About</string>
-    <string name="whats_new_about_desc">Added an FAQ section and a refreshed About screen with what\'s new right inside the app.</string>
+    <string name="whats_new_stability_title">More stable VPN</string>
+    <string name="whats_new_stability_desc">Fixed rare crashes when starting and stopping the tunnel, smoother reconnects after app-filter changes, and the connection now survives a language switch.</string>
+    <string name="whats_new_fixes_title">Interface fixes</string>
+    <string name="whats_new_fixes_desc">Readable statistics chart with correct week ranges, accurate server flags, and the update banner now follows the in-app theme.</string>
     <string name="version">Version</string>
     <string name="xray">XRay</string>
     <string name="language">Language</string>
@@ -356,6 +356,8 @@
     <string name="update_banner_install">Install</string>
     <string name="update_banner_failed_title">Update failed</string>
     <string name="update_banner_retry">Retry</string>
+    <string name="update_banner_progress_of">%1$s MB / %2$s MB</string>
+    <string name="update_banner_progress">%1$s MB</string>
     <!-- Settings → About → "Check for updates" row -->
     <string name="update_check_button">Check</string>
     <string name="update_check_uptodate">Version %1$s</string>

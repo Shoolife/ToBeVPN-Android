@@ -161,7 +161,7 @@ fun MainScreen(
     // Re-sync on every resume (e.g. after payment in Telegram)
     LifecycleResumeEffect(Unit) {
         viewModel.onResume()
-        onPauseOrDispose {}
+        onPauseOrDispose { viewModel.onPause() }
     }
 
     var showSubscriptionSheet by remember { mutableStateOf(false) }
@@ -1858,7 +1858,7 @@ private fun SubscriptionBottomSheet(
                 duration: com.tobevpn.app.data.remote.dto.PurchaseDurationDto,
             ): String {
                 if (purchasePlansFromCache) return unknownPlanData
-                val prices = duration.prices.associateBy { it.currency }
+                val prices = duration.prices.orEmpty().associateBy { it.currency }
                 return when {
                     isRussian -> prices["RUB"]?.amount?.let(::formatRubAmount)
                         ?: prices["USD"]?.amount?.let(::formatUsdAmount)
@@ -1903,7 +1903,7 @@ private fun SubscriptionBottomSheet(
             }
 
             val sourcePlans = purchasePlans?.plans
-                ?.filter { it.durations.any { d -> d.days > 0 } }
+                ?.filter { it.durations.orEmpty().any { d -> d.days > 0 } }
                 ?.sortedWith(compareBy<PurchasePlanDto> { it.orderIndex }.thenBy { it.name })
                 ?: emptyList()
             val hasServerPlans = sourcePlans.isNotEmpty()
@@ -1918,7 +1918,7 @@ private fun SubscriptionBottomSheet(
                         TariffInfo(
                             key = sourcePlan.id.toString(),
                             title = sourcePlan.name,
-                            periods = sourcePlan.durations
+                            periods = sourcePlan.durations.orEmpty()
                                 .filter { it.days > 0 }
                                 .sortedBy { it.orderIndex }
                                 .map { d ->

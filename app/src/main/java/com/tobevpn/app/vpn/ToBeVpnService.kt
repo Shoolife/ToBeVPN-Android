@@ -58,9 +58,28 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                val config = intent.getStringExtra(EXTRA_SERVER_CONFIG) ?: return START_NOT_STICKY
+                val config = intent.getStringExtra(EXTRA_SERVER_CONFIG)
                 val generation = intent.getIntExtra(EXTRA_GENERATION, -1)
-                if (!connectionManager.mayServiceStart(generation)) return START_NOT_STICKY
+                if (config == null || !connectionManager.mayServiceStart(generation)) {
+                    // The manager started us with startForegroundService(), so the
+                    // system expects a startForeground() call even when the request
+                    // is stale (the user pressed stop while the intent was in
+                    // flight). Skipping it kills the app with
+                    // ForegroundServiceDidNotStartInTimeException. Enter foreground
+                    // once, then immediately drop it — unless a live tunnel from a
+                    // previous start is running, in which case we're already
+                    // foreground and must not tear it down.
+                    val hasActiveSession = vpnInterface != null || XRayCore.isRunning
+                    if (!hasActiveSession) {
+                        startForeground(
+                            NOTIFICATION_ID,
+                            createNotification(getString(R.string.state_disconnected)),
+                        )
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf(startId)
+                    }
+                    return START_NOT_STICKY
+                }
                 val serverName = intent.getStringExtra(EXTRA_SERVER_NAME).orEmpty()
                 val serverCountry = intent.getStringExtra(EXTRA_SERVER_COUNTRY).orEmpty()
                 cleanedUp = false
@@ -331,10 +350,11 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
 
     override fun onDestroy() {
         activeInstance.compareAndSet(this, null)
+        val generationAtDestroy = activeConnectionGeneration
         val hadActiveSession = !cleanedUp && (vpnInterface != null || XRayCore.isRunning)
         if (hadActiveSession) {
             cleanupVpn()
-            connectionManager.handleServiceDestroyed()
+            connectionManager.handleServiceDestroyed(generationAtDestroy)
         }
         unregisterNetworkCallback()
         serviceScope.cancel()

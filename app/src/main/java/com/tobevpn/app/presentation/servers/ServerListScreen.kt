@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.TextUnit
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.domain.model.Server
@@ -159,6 +160,12 @@ fun ServerListScreen(
     val scope = rememberCoroutineScope()
     val isTv = isTelevisionUi()
     val metrics = serverListMetrics(isTv)
+
+    // Pause the 5-second ping loop while the list isn't on screen.
+    LifecycleResumeEffect(Unit) {
+        viewModel.setScreenActive(true)
+        onPauseOrDispose { viewModel.setScreenActive(false) }
+    }
 
     Scaffold(
         topBar = {

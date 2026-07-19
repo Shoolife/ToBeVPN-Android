@@ -42,9 +42,11 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
 import java.io.File
-import java.text.SimpleDateFormat
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.ZoneOffset
 import java.util.Locale
-import java.util.TimeZone
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -140,7 +142,7 @@ class AuthRepository @Inject constructor(
                         sessionStore.update { it.copy(photoUrl = file.absolutePath) }
                     }
                 } else {
-                    response.body()?.close()
+                    response.errorBody()?.close()
                     if (response.code() == 404) {
                         avatarDir().listFiles()?.forEach { it.delete() }
                         sessionStore.update { it.copy(photoUrl = null) }
@@ -657,7 +659,7 @@ class AuthRepository @Inject constructor(
     }
 
     private fun planForPanelUser(panelUser: com.tobevpn.app.data.remote.dto.PanelUserDto): String {
-        val squads = panelUser.activeInternalSquads.map { it.name.uppercase(Locale.ROOT) }
+        val squads = panelUser.activeInternalSquads.orEmpty().map { it.name.uppercase(Locale.ROOT) }
         return when {
             "ADMINS" in squads -> "ADMIN"
             "STANDART" in squads -> "PAID"
@@ -738,9 +740,9 @@ class AuthRepository @Inject constructor(
 
         return users.maxWithOrNull(
             compareBy<com.tobevpn.app.data.remote.dto.PanelUserDto>(
-                { if (it.status.uppercase(Locale.ROOT) == "ACTIVE") 1 else 0 },
+                { if (it.status?.uppercase(Locale.ROOT) == "ACTIVE") 1 else 0 },
                 { planRank(it) },
-                { if (it.trafficLimitStrategy.uppercase(Locale.ROOT) == "MONTH") 1 else 0 },
+                { if (it.trafficLimitStrategy?.uppercase(Locale.ROOT) == "MONTH") 1 else 0 },
                 {
                     if (it.uuid == preferredPanelUserUuid || it.shortUuid == preferredShortUuid) {
                         1
@@ -755,12 +757,19 @@ class AuthRepository @Inject constructor(
 
     private fun parsePanelExpireAtMillis(value: String?): Long {
         if (value.isNullOrBlank()) return Long.MIN_VALUE
+        val trimmed = value.trim()
+        // Try full ISO forms first so explicit offsets ("+03:00", "-05:00",
+        // "Z") are honoured; the old regex-based cleanup silently treated
+        // offset timestamps as UTC and failed outright on negative offsets.
         return runCatching {
-            val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US).apply {
-                timeZone = TimeZone.getTimeZone("UTC")
-            }
-            val clean = value.replace(Regex("[.+Z].*"), "")
-            sdf.parse(clean)?.time ?: Long.MIN_VALUE
+            OffsetDateTime.parse(trimmed).toInstant().toEpochMilli()
+        }.recoverCatching {
+            Instant.parse(trimmed).toEpochMilli()
+        }.recoverCatching {
+            // Offset-less "2026-07-19T10:00:00[.fraction]" — panel sends UTC.
+            LocalDateTime.parse(trimmed.substringBefore('.'))
+                .toInstant(ZoneOffset.UTC)
+                .toEpochMilli()
         }.getOrDefault(Long.MIN_VALUE)
     }
 

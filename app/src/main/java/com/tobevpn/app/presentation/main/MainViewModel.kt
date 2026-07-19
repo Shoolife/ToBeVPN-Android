@@ -182,6 +182,10 @@ class MainViewModel @Inject constructor(
     val updateRequired: StateFlow<Boolean> = prefsDataStore.observeUpdateRequired()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    // Home screen visibility — gates the periodic ping loop so it doesn't
+    // keep opening TCP probes while the app is backgrounded.
+    private val screenActive = MutableStateFlow(false)
+
     private var initialized = false
     private var lastSyncTime = 0L
     private var pendingPurchaseRefreshJob: Job? = null
@@ -337,6 +341,7 @@ class MainViewModel @Inject constructor(
         launchGuarded("Periodic ping refresh") {
             while (true) {
                 delay(5000)
+                if (!screenActive.value) continue
                 val server = currentServer.value ?: continue
                 val ping = serverQualityRepository.measurePing(server, force = true)
                 _serverPing.value = ping
@@ -425,8 +430,14 @@ class MainViewModel @Inject constructor(
         _connectionPreparation.value = false
     }
 
+    /** Home left the foreground — pause the periodic ping loop. */
+    fun onPause() {
+        screenActive.value = false
+    }
+
     /** Re-sync subscription & servers when app returns to foreground (throttled to 5s). */
     fun onResume() {
+        screenActive.value = true
         if (!initialized) return
         launchGuarded("Resume sync") resume@{
             if (prefsDataStore.getPendingPurchaseState() != null) {
@@ -575,20 +586,20 @@ class MainViewModel @Inject constructor(
     }
 
     private fun hasPurchasablePlanShape(plans: PurchasePlansDto): Boolean {
-        return plans.plans.any { plan -> plan.durations.any { it.days > 0 } }
+        return plans.plans.orEmpty().any { plan -> plan.durations.orEmpty().any { it.days > 0 } }
     }
 
     private suspend fun cachePurchasePlanShape(telegramId: Long, plans: PurchasePlansDto) {
         runCatching {
             val shapeOnly = plans.copy(
-                plans = plans.plans
-                    .filter { plan -> plan.durations.any { it.days > 0 } }
+                plans = plans.plans.orEmpty()
+                    .filter { plan -> plan.durations.orEmpty().any { it.days > 0 } }
                     .map { plan ->
                         plan.copy(
                             description = null,
                             trafficLimit = 0,
                             deviceLimit = 0,
-                            durations = plan.durations
+                            durations = plan.durations.orEmpty()
                                 .filter { it.days > 0 }
                                 .map { duration ->
                                     duration.copy(

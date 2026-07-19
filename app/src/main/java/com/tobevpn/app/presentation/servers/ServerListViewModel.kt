@@ -32,6 +32,14 @@ class ServerListViewModel @Inject constructor(
     private val _pings = MutableStateFlow<Map<String, Long>>(emptyMap())
     private val refreshMutex = Mutex()
 
+    // Screen visibility — gates the 5s ping loop so it doesn't keep probing
+    // every server over TCP while the list isn't on screen.
+    private val screenActive = MutableStateFlow(false)
+
+    fun setScreenActive(active: Boolean) {
+        screenActive.value = active
+    }
+
     val servers: StateFlow<List<Server>> = vpnRepository.observeServers()
         .combine(_pings) { serverList, pingMap ->
             serverList.map { server ->
@@ -64,10 +72,11 @@ class ServerListViewModel @Inject constructor(
         // don't want re-entering the list (or coming back from foreground)
         // to count as an explicit "give me fresh data" request.
         refreshServers(force = false)
-        // Refresh pings every 5 seconds
+        // Refresh pings every 5 seconds while the screen is visible
         viewModelScope.launch {
             while (true) {
                 delay(5000)
+                if (!screenActive.value) continue
                 val serverList = servers.value
                 if (serverList.isNotEmpty()) {
                     measurePings(serverList)

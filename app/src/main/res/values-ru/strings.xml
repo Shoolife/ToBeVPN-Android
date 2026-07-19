@@ -228,10 +228,10 @@
     <string name="whats_new_version">Версия %1$s</string>
     <string name="whats_new_intro">Главные изменения установленной версии</string>
     <string name="whats_new_done">Понятно</string>
-    <string name="whats_new_settings_title">Обновлённые настройки</string>
-    <string name="whats_new_settings_desc">Настройки переработаны: категории, карточка аккаунта и персонализация.</string>
-    <string name="whats_new_about_title">Поддержка и «О приложении»</string>
-    <string name="whats_new_about_desc">Добавлен раздел частых вопросов и обновлённый экран «О приложении» с блоком «Что нового» прямо в приложении.</string>
+    <string name="whats_new_stability_title">Стабильнее VPN</string>
+    <string name="whats_new_stability_desc">Исправлены редкие сбои при запуске и остановке туннеля, надёжнее переподключение после смены фильтра приложений, а соединение теперь переживает смену языка.</string>
+    <string name="whats_new_fixes_title">Исправления интерфейса</string>
+    <string name="whats_new_fixes_desc">Читаемый график статистики и корректная недельная выборка, точные флаги серверов, баннер обновлений следует теме приложения.</string>
     <string name="version">Версия</string>
     <string name="xray">XRay</string>
     <string name="language">Язык</string>
@@ -360,6 +360,8 @@
     <string name="update_banner_install">Установить</string>
     <string name="update_banner_failed_title">Не удалось обновить</string>
     <string name="update_banner_retry">Повторить</string>
+    <string name="update_banner_progress_of">%1$s МБ / %2$s МБ</string>
+    <string name="update_banner_progress">%1$s МБ</string>
     <!-- Settings → О приложении → строка "Проверить обновления" -->
     <string name="update_check_button">Проверить</string>
     <string name="update_check_uptodate">Версия %1$s</string>

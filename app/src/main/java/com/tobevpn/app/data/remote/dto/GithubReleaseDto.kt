@@ -13,7 +13,9 @@ data class GithubReleaseDto(
     @SerializedName("html_url") val htmlUrl: String,
     val draft: Boolean = false,
     val prerelease: Boolean = false,
-    val assets: List<GithubAssetDto> = emptyList(),
+    // Gson does not apply Kotlin default values (no no-arg constructor here),
+    // so an omitted "assets" key yields null despite the non-null type.
+    val assets: List<GithubAssetDto>? = null,
 )
 
 data class GithubAssetDto(

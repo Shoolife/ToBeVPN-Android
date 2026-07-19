@@ -137,7 +137,9 @@ data class LinkedDeviceDto(
 data class LinkedDevicesDto(
     @SerializedName("current_count") val currentCount: Int? = null,
     @SerializedName("max_devices") val maxDevices: Int,
-    val devices: List<LinkedDeviceDto>,
+    // Gson leaves omitted keys null even on non-null Kotlin types — keep the
+    // list nullable and orEmpty() it at the call site.
+    val devices: List<LinkedDeviceDto>? = null,
 )
 
 // TV pairing — phone confirms with the code shown on TV; identity is taken from session.

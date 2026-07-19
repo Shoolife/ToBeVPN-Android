@@ -96,8 +96,13 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
-            Box(modifier = Modifier.fillMaxSize()) {
-                ToBeVPNTheme(themeMode = themeMode) {
+            // The theme wraps EVERYTHING mounted at the Activity level —
+            // including the update banner and the startup splash. They used
+            // to sit outside ToBeVPNTheme, so their isSystemInDarkTheme()
+            // calls ignored the in-app theme override and followed the
+            // system setting instead.
+            ToBeVPNTheme(themeMode = themeMode) {
+                Box(modifier = Modifier.fillMaxSize()) {
                     // Surface establishes the app's background color and
                     // LocalContentColor for screens that don't use Scaffold
                     // (e.g. Onboarding) — without it, headline Text renders
@@ -123,33 +128,33 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
                     }
-                }
 
-                // In-app updater banner. Mounted at the Activity level so it
-                // overlays every NavHost route — Home, Servers, Settings,
-                // Stats, etc. The state is owned by an Activity-scoped
-                // UpdateViewModel, so the Settings "Check for updates" button
-                // and this overlay stay in sync. The banner persists until
-                // the user dismisses it via the in-card "Later" button.
-                val updateRequired by prefsDataStore.observeUpdateRequired()
-                    .collectAsStateWithLifecycle(initialValue = false)
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .windowInsetsPadding(WindowInsets.statusBars)
-                        .padding(top = 8.dp),
-                    contentAlignment = Alignment.TopCenter,
-                ) {
-                    UpdateBannerCheck()
-                    // Hide the top banner when the block-update dialog is up —
-                    // the dialog already shows download progress in-place.
-                    if (!updateRequired) {
-                        UpdateBannerHost()
+                    // In-app updater banner. Mounted at the Activity level so it
+                    // overlays every NavHost route — Home, Servers, Settings,
+                    // Stats, etc. The state is owned by an Activity-scoped
+                    // UpdateViewModel, so the Settings "Check for updates" button
+                    // and this overlay stay in sync. The banner persists until
+                    // the user dismisses it via the in-card "Later" button.
+                    val updateRequired by prefsDataStore.observeUpdateRequired()
+                        .collectAsStateWithLifecycle(initialValue = false)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .windowInsetsPadding(WindowInsets.statusBars)
+                            .padding(top = 8.dp),
+                        contentAlignment = Alignment.TopCenter,
+                    ) {
+                        UpdateBannerCheck()
+                        // Hide the top banner when the block-update dialog is up —
+                        // the dialog already shows download progress in-place.
+                        if (!updateRequired) {
+                            UpdateBannerHost()
+                        }
                     }
-                }
 
-                if (showStartupSplash) {
-                    SplashScreen(onFinished = { showStartupSplash = false })
+                    if (showStartupSplash) {
+                        SplashScreen(onFinished = { showStartupSplash = false })
+                    }
                 }
             }
         }

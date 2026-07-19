@@ -48,10 +48,19 @@ class StatsViewModel @Inject constructor(
                     cal.set(Calendar.MINUTE, 0)
                     cal.set(Calendar.SECOND, 0)
                     cal.set(Calendar.MILLISECOND, 0)
+                    // set(DAY_OF_WEEK, MONDAY) is relative to the locale's
+                    // firstDayOfWeek: in Sunday-first locales it would jump
+                    // FORWARD to tomorrow on Sundays, pushing the whole week
+                    // window into the future. Pin the week to start on Monday
+                    // before resolving the field.
+                    cal.firstDayOfWeek = Calendar.MONDAY
                     cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
                     val weekStart = cal.timeInMillis / 1000
                     val weekEnd = weekStart + 7 * 86400
-                    val tzOffsetSec = TimeZone.getDefault().rawOffset.toLong() / 1000
+                    // getOffset(now) includes DST, unlike rawOffset which is
+                    // off by an hour for half the year in DST zones.
+                    val tzOffsetSec = TimeZone.getDefault()
+                        .getOffset(System.currentTimeMillis()).toLong() / 1000
                     trafficLogDao.getDeviceDailyStats(weekStart, weekEnd, tzOffsetSec)
                 }
                 StatsPeriod.MONTH -> {

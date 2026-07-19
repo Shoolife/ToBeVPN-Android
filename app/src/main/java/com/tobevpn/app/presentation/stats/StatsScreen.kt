@@ -54,6 +54,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -371,9 +372,12 @@ private fun EnhancedTrafficChart(
     modifier: Modifier = Modifier,
 ) {
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val labelColorArgb = labelColor.hashCode()
+    // toArgb(), not hashCode(): Color.hashCode() is a hash of the packed
+    // ULong, not an ARGB int — feeding it to android.graphics.Paint painted
+    // the axis labels an arbitrary colour.
+    val labelColorArgb = labelColor.toArgb()
     val scaleColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-    val scaleColorArgb = scaleColor.hashCode()
+    val scaleColorArgb = scaleColor.toArgb()
     val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
     val weekPrefixFormat = stringResource(R.string.stats_week_short)
 
@@ -554,6 +558,10 @@ private fun buildSlots(stats: List<TrafficStat>, period: StatsPeriod): List<Traf
             cal.set(Calendar.MINUTE, 0)
             cal.set(Calendar.SECOND, 0)
             cal.set(Calendar.MILLISECOND, 0)
+            // Must match StatsViewModel's week window: without pinning
+            // firstDayOfWeek, Sunday-first locales resolve MONDAY to
+            // tomorrow on Sundays and every slot lookup misses.
+            cal.firstDayOfWeek = Calendar.MONDAY
             cal.set(Calendar.DAY_OF_WEEK, Calendar.MONDAY)
             val weekStart = cal.timeInMillis / 1000
             val statsMap = stats.associateBy { it.period }
@@ -581,9 +589,11 @@ private fun slotLabel(
 ): String {
     return when (period) {
         StatsPeriod.DAY -> {
-            // Show every 3rd hour
-            val hour = ((slot.period % 86400) / 3600).toInt()
-            if (hour % 3 == 0) "${hour}:00" else ""
+            // Show every 3rd hour. The slot index IS the local hour (slots
+            // are built from local midnight); deriving the hour from the
+            // epoch value instead would print UTC hours — off by the
+            // timezone offset for everyone east/west of Greenwich.
+            if (index % 3 == 0) "${index}:00" else ""
         }
         StatsPeriod.WEEK -> {
             val sdf = SimpleDateFormat("EE", Locale.getDefault())

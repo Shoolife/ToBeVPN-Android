@@ -39,13 +39,16 @@ object LocaleManager {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
             } ?: return
 
+        // Recreate the task only — never kill the process (Runtime.exit
+        // would take the foreground VPN service down with it, silently
+        // dropping an active tunnel on a language change). AppCompat
+        // re-applies the per-app locale to the fresh activity instance.
         if (activity != null) {
             activity.startActivity(launchIntent)
             activity.finishAffinity()
         } else {
             context.startActivity(launchIntent)
         }
-        Runtime.getRuntime().exit(0)
     }
 
     private tailrec fun Context.findActivity(): Activity? = when (this) {
