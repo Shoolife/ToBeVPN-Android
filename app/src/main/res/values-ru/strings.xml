@@ -228,6 +228,8 @@
     <string name="whats_new_version">Версия %1$s</string>
     <string name="whats_new_intro">Главные изменения установленной версии</string>
     <string name="whats_new_done">Понятно</string>
+    <string name="whats_new_server_availability_title">Серверы не зависят от бота</string>
+    <string name="whats_new_server_availability_desc">Список серверов и проверка доступа теперь идут напрямую через подписку. Временные перебои с ботом больше не мешают подключиться, если подписка активна.</string>
     <string name="whats_new_stability_title">Стабильнее VPN</string>
     <string name="whats_new_stability_desc">Исправлены редкие сбои при запуске и остановке туннеля, надёжнее переподключение после смены фильтра приложений, а соединение теперь переживает смену языка.</string>
     <string name="whats_new_fixes_title">Исправления интерфейса</string>

@@ -22,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Shield
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -67,13 +66,8 @@ private data class WhatsNewHighlight(
 private val currentHighlights = listOf(
     WhatsNewHighlight(
         icon = Icons.Filled.Shield,
-        titleRes = R.string.whats_new_stability_title,
-        descriptionRes = R.string.whats_new_stability_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Filled.Tune,
-        titleRes = R.string.whats_new_fixes_title,
-        descriptionRes = R.string.whats_new_fixes_desc,
+        titleRes = R.string.whats_new_server_availability_title,
+        descriptionRes = R.string.whats_new_server_availability_desc,
     ),
 )
 
@@ -87,6 +81,14 @@ private val currentHighlights = listOf(
 fun WhatsNewDialog(onDismiss: () -> Unit) {
     val versionName = remember { BuildConfig.VERSION_NAME }
     val colors = MaterialTheme.colorScheme
+    // Light theme's colorScheme.primary is a washed-out neutral grey — the
+    // hero badge and primary button read as disabled. Follow the app-wide
+    // convention for filled controls on light (see the subscription
+    // "Перейти" / Telegram-login buttons): brand dark grey with white
+    // content. Dark theme keeps the scheme colours.
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val accentBase = if (isDark) colors.primary else Color(0xFF3F3F3F)
+    val onAccent = if (isDark) colors.onPrimary else Color.White
 
     // Subtle enter animation, matching the desktop scale/fade-in.
     var visible by remember { mutableStateOf(false) }
@@ -126,15 +128,15 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                             .shadow(
                                 elevation = 16.dp,
                                 shape = RoundedCornerShape(20.dp),
-                                spotColor = colors.primary,
-                                ambientColor = colors.primary,
+                                spotColor = accentBase,
+                                ambientColor = accentBase,
                             )
                             .clip(RoundedCornerShape(20.dp))
                             .background(
                                 Brush.linearGradient(
                                     listOf(
-                                        colors.primary,
-                                        lerp(colors.primary, Color.White, 0.28f),
+                                        accentBase,
+                                        lerp(accentBase, Color.White, 0.28f),
                                     ),
                                 ),
                             ),
@@ -143,7 +145,7 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                         Icon(
                             imageVector = Icons.Filled.AutoAwesome,
                             contentDescription = null,
-                            tint = colors.onPrimary,
+                            tint = onAccent,
                             modifier = Modifier.size(30.dp),
                         )
                     }
@@ -197,7 +199,7 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                             .fillMaxWidth()
                             .height(44.dp)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(colors.primary)
+                            .background(accentBase)
                             .clickable(onClick = onDismiss),
                         contentAlignment = Alignment.Center,
                     ) {
@@ -205,7 +207,7 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                             text = stringResource(R.string.whats_new_done),
                             fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = colors.onPrimary,
+                            color = onAccent,
                         )
                     }
                 }

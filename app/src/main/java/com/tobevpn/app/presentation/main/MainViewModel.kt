@@ -34,7 +34,9 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -232,8 +234,14 @@ class MainViewModel @Inject constructor(
             // the actual current plan. Otherwise a stale cached "FREE_TRIAL"
             // (e.g. from a transient panel hiccup that returned empty squads)
             // sticks for up to 12h until the next force-refresh.
-            authRepository.syncSubscription(force = true)
-            val servers = vpnRepository.refreshServers().getOrNull().orEmpty()
+            // Server availability is decided by the subscription response, not
+            // the bot — run the two concurrently instead of waiting out the
+            // bot's full timeout budget before ever asking the subscription.
+            val servers = coroutineScope {
+                val serversDeferred = async { vpnRepository.refreshServers() }
+                authRepository.syncSubscription(force = true)
+                serversDeferred.await().getOrNull().orEmpty()
+            }
             vpnToggleController.ensureAutomaticServerSelected(servers, forceSelection = true)
             lastSyncTime = System.currentTimeMillis()
             initialized = true
@@ -454,9 +462,15 @@ class MainViewModel @Inject constructor(
             val isActive = connectionState.value is ConnectionState.Connected ||
                 connectionState.value is ConnectionState.Connecting ||
                 _connectionPreparation.value
-            authRepository.syncSubscription(overwriteUsage = !isActive)
-            if (isActive) return@resume
-            val servers = vpnRepository.refreshServers().getOrNull().orEmpty()
+            if (isActive) {
+                authRepository.syncSubscription(overwriteUsage = false)
+                return@resume
+            }
+            val servers = coroutineScope {
+                val serversDeferred = async { vpnRepository.refreshServers() }
+                authRepository.syncSubscription(overwriteUsage = true)
+                serversDeferred.await().getOrNull().orEmpty()
+            }
             vpnToggleController.ensureAutomaticServerSelected(servers)
         }
     }
