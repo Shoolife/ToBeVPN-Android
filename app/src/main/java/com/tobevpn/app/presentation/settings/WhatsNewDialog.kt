@@ -20,8 +20,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,9 +67,19 @@ private data class WhatsNewHighlight(
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.Shield,
-        titleRes = R.string.whats_new_server_availability_title,
-        descriptionRes = R.string.whats_new_server_availability_desc,
+        icon = Icons.Filled.CardGiftcard,
+        titleRes = R.string.whats_new_referrals_title,
+        descriptionRes = R.string.whats_new_referrals_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.Groups,
+        titleRes = R.string.whats_new_invited_friends_title,
+        descriptionRes = R.string.whats_new_invited_friends_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.PersonAdd,
+        titleRes = R.string.whats_new_assign_inviter_title,
+        descriptionRes = R.string.whats_new_assign_inviter_desc,
     ),
 )
 

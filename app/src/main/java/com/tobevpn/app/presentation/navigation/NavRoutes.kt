@@ -40,3 +40,6 @@ object SupportRoute
 
 @Serializable
 object AboutRoute
+
+@Serializable
+object ReferralsRoute

@@ -15,6 +15,7 @@ import com.tobevpn.app.presentation.appfilter.AppFilterScreen
 import com.tobevpn.app.presentation.auth.AuthScreen
 import com.tobevpn.app.presentation.main.MainScreen
 import com.tobevpn.app.presentation.onboarding.OnboardingScreen
+import com.tobevpn.app.presentation.referrals.ReferralsScreen
 import com.tobevpn.app.presentation.servers.ServerListScreen
 import com.tobevpn.app.presentation.settings.AboutScreen
 import com.tobevpn.app.presentation.settings.AdvancedScreen
@@ -130,6 +131,7 @@ fun AppNavHost(
                 onNavigateToAdvanced = { navController.navigateSingleTop(AdvancedRoute) },
                 onNavigateToSupport = { navController.navigateSingleTop(SupportRoute) },
                 onNavigateToAbout = { navController.navigateSingleTop(AboutRoute) },
+                onNavigateToReferrals = { navController.navigateSingleTop(ReferralsRoute) },
             )
         }
         composable<PersonalizationRoute> { entry ->
@@ -160,6 +162,12 @@ fun AppNavHost(
             AboutScreen(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
                 viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+            )
+        }
+        composable<ReferralsRoute> {
+            ReferralsScreen(
+                onBack = { navController.popBackStackOrRecover(startDestination) },
+                onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
             )
         }
         composable<AppFilterRoute> {

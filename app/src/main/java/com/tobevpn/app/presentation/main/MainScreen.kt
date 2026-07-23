@@ -113,6 +113,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import com.tobevpn.app.data.remote.dto.PurchasePlanDto
 import com.tobevpn.app.domain.model.AuthState
@@ -514,7 +515,7 @@ fun MainScreen(
         BlockedDialog(onDismiss = { showBlockedDialog = false })
     }
 
-    if (updateRequired) {
+    if (updateRequired && BuildConfig.IN_APP_UPDATES_ENABLED) {
         UpdateRequiredDialog(
             onQuit = { activity?.finishAffinity() },
         )

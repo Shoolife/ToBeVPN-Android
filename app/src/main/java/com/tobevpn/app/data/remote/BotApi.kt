@@ -16,8 +16,11 @@ import com.tobevpn.app.data.remote.dto.PanelNodeDto
 import com.tobevpn.app.data.remote.dto.PanelResponse
 import com.tobevpn.app.data.remote.dto.PanelUserDto
 import com.tobevpn.app.data.remote.dto.PurchasePlansDto
+import com.tobevpn.app.data.remote.dto.ReferralsDto
 import com.tobevpn.app.data.remote.dto.RemoteConfigDto
 import com.tobevpn.app.data.remote.dto.SaveEmailRequestDto
+import com.tobevpn.app.data.remote.dto.SetReferrerRequestDto
+import com.tobevpn.app.data.remote.dto.SetReferrerResponseDto
 import com.tobevpn.app.data.remote.dto.TvPairConfirmRequestDto
 import com.tobevpn.app.data.remote.dto.TvPairCreateRequestDto
 import com.tobevpn.app.data.remote.dto.TvPairCreateResponseDto
@@ -115,4 +118,17 @@ interface BotApi {
 
     @GET("api/purchase/plans")
     suspend fun getPurchasePlans(): ApiResponse<PurchasePlansDto>
+
+    // Referral program — identity is resolved from the current device session.
+
+    @GET("api/referrals")
+    suspend fun getReferrals(
+        @Query("limit") limit: Int = 20,
+        @Query("offset") offset: Int = 0,
+    ): ApiResponse<ReferralsDto>
+
+    @POST("api/device/referrer")
+    suspend fun setReferrer(
+        @Body request: SetReferrerRequestDto,
+    ): ApiResponse<SetReferrerResponseDto>
 }

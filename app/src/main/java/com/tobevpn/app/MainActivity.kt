@@ -70,8 +70,10 @@ class MainActivity : AppCompatActivity() {
             val quickSettingsConnectRequest by quickSettingsConnectRequests.collectAsStateWithLifecycle()
             val notificationPermissionPrompted by prefsDataStore.notificationPermissionPrompted
                 .collectAsStateWithLifecycle(initialValue = true)
-            val themeMode by prefsDataStore.themeMode
-                .map { ThemeMode.fromName(it) }
+            val themeModeFlow = remember(prefsDataStore) {
+                prefsDataStore.themeMode.map { ThemeMode.fromName(it) }
+            }
+            val themeMode by themeModeFlow
                 .collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
             val notificationPermissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission(),
@@ -135,20 +137,22 @@ class MainActivity : AppCompatActivity() {
                     // UpdateViewModel, so the Settings "Check for updates" button
                     // and this overlay stay in sync. The banner persists until
                     // the user dismisses it via the in-card "Later" button.
-                    val updateRequired by prefsDataStore.observeUpdateRequired()
-                        .collectAsStateWithLifecycle(initialValue = false)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .windowInsetsPadding(WindowInsets.statusBars)
-                            .padding(top = 8.dp),
-                        contentAlignment = Alignment.TopCenter,
-                    ) {
-                        UpdateBannerCheck()
-                        // Hide the top banner when the block-update dialog is up —
-                        // the dialog already shows download progress in-place.
-                        if (!updateRequired) {
-                            UpdateBannerHost()
+                    if (BuildConfig.IN_APP_UPDATES_ENABLED) {
+                        val updateRequired by prefsDataStore.observeUpdateRequired()
+                            .collectAsStateWithLifecycle(initialValue = false)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .windowInsetsPadding(WindowInsets.statusBars)
+                                .padding(top = 8.dp),
+                            contentAlignment = Alignment.TopCenter,
+                        ) {
+                            UpdateBannerCheck()
+                            // Hide the top banner when the block-update dialog is up —
+                            // the dialog already shows download progress in-place.
+                            if (!updateRequired) {
+                                UpdateBannerHost()
+                            }
                         }
                     }
 

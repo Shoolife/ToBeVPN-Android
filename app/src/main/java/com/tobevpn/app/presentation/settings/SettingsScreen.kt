@@ -1,5 +1,8 @@
 package com.tobevpn.app.presentation.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -38,6 +41,7 @@ import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
@@ -68,6 +72,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -103,6 +108,7 @@ fun SettingsScreen(
     onNavigateToAdvanced: () -> Unit,
     onNavigateToSupport: () -> Unit,
     onNavigateToAbout: () -> Unit,
+    onNavigateToReferrals: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
@@ -183,13 +189,20 @@ fun SettingsScreen(
                         onClick = onNavigateToSupport,
                     )
                     SettingsCategoryTile(
-                        icon = Icons.Filled.Info,
-                        accent = VpnOrange,
-                        label = stringResource(R.string.about),
-                        description = stringResource(R.string.settings_about_desc),
-                        onClick = onNavigateToAbout,
+                        icon = Icons.Filled.GroupAdd,
+                        accent = ReferralAccent,
+                        label = stringResource(R.string.settings_referrals),
+                        description = stringResource(R.string.settings_referrals_desc),
+                        onClick = onNavigateToReferrals,
                     )
                 }
+                SettingsWideCategoryCard(
+                    icon = Icons.Filled.Info,
+                    accent = VpnOrange,
+                    label = stringResource(R.string.about),
+                    description = stringResource(R.string.settings_about_desc),
+                    onClick = onNavigateToAbout,
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -219,6 +232,28 @@ private fun LogoutConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val darkTheme = isSystemInDarkTheme()
+    val dialogTextColor = if (darkTheme) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        Color.Black
+    }
+    val secondaryButtonColors = ButtonDefaults.buttonColors(
+        containerColor = if (darkTheme) {
+            MaterialTheme.colorScheme.surfaceVariant
+        } else {
+            Color.White
+        },
+        contentColor = dialogTextColor,
+    )
+    val secondaryButtonBorder = BorderStroke(
+        width = 1.dp,
+        color = if (darkTheme) {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+        } else {
+            Color(0xFFD0D0D0)
+        },
+    )
     val transitionState = remember { MutableTransitionState(false) }
     transitionState.targetState = visible
     if (transitionState.currentState || transitionState.targetState) {
@@ -281,25 +316,37 @@ private fun LogoutConfirmDialog(
                             Text(
                                 text = stringResource(R.string.logout_confirm_title),
                                 style = MaterialTheme.typography.headlineSmall,
+                                color = dialogTextColor,
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
                                 text = stringResource(R.string.logout_confirm_message),
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                color = dialogTextColor,
                             )
                             Spacer(modifier = Modifier.height(24.dp))
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                OutlinedButton(onClick = onDismiss) {
+                                Button(
+                                    onClick = onDismiss,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(46.dp),
+                                    shape = RoundedCornerShape(13.dp),
+                                    colors = secondaryButtonColors,
+                                    border = secondaryButtonBorder,
+                                ) {
                                     Text(stringResource(R.string.cancel))
                                 }
-                                Spacer(modifier = Modifier.width(8.dp))
                                 Button(
                                     onClick = onConfirm,
-                                    colors = if (isSystemInDarkTheme()) {
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(46.dp),
+                                    shape = RoundedCornerShape(13.dp),
+                                    colors = if (darkTheme) {
                                         ButtonDefaults.buttonColors()
                                     } else {
                                         ButtonDefaults.buttonColors(
@@ -327,6 +374,7 @@ private fun AccountCard(
     onNavigateToAuth: () -> Unit,
     onNavigateToDevicePairingAuth: () -> Unit,
 ) {
+    val context = LocalContext.current
     // Accent colour drives the top glow, keyed to how much of the subscription
     // is left: green with plenty of time, orange when it's running low, red
     // when it's almost gone or expired. Plans without an expiry (e.g. admin)
@@ -491,6 +539,20 @@ private fun AccountCard(
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = "ID ${authState.telegramId}",
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            val clipboard = context.getSystemService(
+                                                Context.CLIPBOARD_SERVICE,
+                                            ) as ClipboardManager
+                                            clipboard.setPrimaryClip(
+                                                ClipData.newPlainText(
+                                                    "Telegram ID",
+                                                    authState.telegramId.toString(),
+                                                ),
+                                            )
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center,
@@ -692,6 +754,86 @@ private fun ProfileAvatar(photoUrl: String?, size: Dp, loading: Boolean = false)
 // Personalization has no matching brand accent, so it gets a soft violet that
 // still reads as on-brand next to the green/blue/orange of the other tiles.
 private val AccentViolet = Color(0xFF8B7CF6)
+private val ReferralAccent = Color(0xFFE65C9C)
+
+@Composable
+private fun SettingsWideCategoryCard(
+    icon: ImageVector,
+    accent: Color,
+    label: String,
+    description: String,
+    onClick: () -> Unit,
+) {
+    val titleColor = if (isSystemInDarkTheme()) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        Color.Black
+    }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(108.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(accent.copy(alpha = 0.18f), RoundedCornerShape(15.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = accent,
+                    modifier = Modifier.size(27.dp),
+                )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = titleColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(modifier = Modifier.width(10.dp))
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .background(
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+                        CircleShape,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+    }
+}
 
 @Composable
 private fun RowScope.SettingsCategoryTile(

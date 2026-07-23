@@ -27,6 +27,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import com.tobevpn.app.data.repository.UpdateCheckResult
 
@@ -107,42 +108,44 @@ fun SettingsUpdateCheckRow(
                 }
             }
         }
-        Spacer(Modifier.width(12.dp))
-        OutlinedButton(
-            onClick = { viewModel.forceCheck() },
-            enabled = !inFlight,
-            shape = RoundedCornerShape(10.dp),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                horizontal = 16.dp,
-                vertical = 8.dp,
-            ),
-            border = if (androidx.compose.foundation.isSystemInDarkTheme()) {
-                androidx.compose.material3.ButtonDefaults.outlinedButtonBorder
-            } else {
-                androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    androidx.compose.ui.graphics.Color(0xFFBDBDBD),
+        if (BuildConfig.IN_APP_UPDATES_ENABLED) {
+            Spacer(Modifier.width(12.dp))
+            OutlinedButton(
+                onClick = { viewModel.forceCheck() },
+                enabled = !inFlight,
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    horizontal = 16.dp,
+                    vertical = 8.dp,
+                ),
+                border = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                    androidx.compose.material3.ButtonDefaults.outlinedButtonBorder
+                } else {
+                    androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        androidx.compose.ui.graphics.Color(0xFFBDBDBD),
+                    )
+                },
+                colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                    androidx.compose.material3.ButtonDefaults.outlinedButtonColors()
+                } else {
+                    androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
+                        contentColor = androidx.compose.ui.graphics.Color.Black,
+                    )
+                },
+            ) {
+                if (inFlight) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text(
+                    text = stringResource(R.string.update_check_button),
+                    fontWeight = FontWeight.SemiBold,
                 )
-            },
-            colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
-                androidx.compose.material3.ButtonDefaults.outlinedButtonColors()
-            } else {
-                androidx.compose.material3.ButtonDefaults.outlinedButtonColors(
-                    contentColor = androidx.compose.ui.graphics.Color.Black,
-                )
-            },
-        ) {
-            if (inFlight) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                )
-                Spacer(Modifier.width(8.dp))
             }
-            Text(
-                text = stringResource(R.string.update_check_button),
-                fontWeight = FontWeight.SemiBold,
-            )
         }
     }
 }

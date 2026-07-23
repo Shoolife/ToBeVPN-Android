@@ -47,8 +47,13 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = versionCodeOverride ?: 55
-        versionName = "1.0.54"
+        versionCode = versionCodeOverride ?: 56
+        versionName = "1.0.55"
+
+        // Direct APK releases can use the GitHub self-updater. Google Play
+        // builds override this flag because Play policy requires updates to
+        // be delivered by Google Play instead of REQUEST_INSTALL_PACKAGES.
+        buildConfigField("boolean", "IN_APP_UPDATES_ENABLED", "true")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -148,6 +153,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        create("playRelease") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            buildConfigField("boolean", "IN_APP_UPDATES_ENABLED", "false")
         }
     }
 

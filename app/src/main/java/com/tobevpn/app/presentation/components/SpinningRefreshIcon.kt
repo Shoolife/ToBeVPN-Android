@@ -1,16 +1,14 @@
 package com.tobevpn.app.presentation.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
@@ -23,7 +21,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * Refresh icon that spins continuously while [spinning] is true, matching the
@@ -37,16 +38,40 @@ fun SpinningRefreshIcon(
     tint: Color = LocalContentColor.current,
     size: Dp = 24.dp,
 ) {
-    val transition = rememberInfiniteTransition(label = "refresh-spin")
-    val angle by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 900, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "refresh-angle",
-    )
+    val angle = remember { Animatable(0f) }
+    LaunchedEffect(spinning) {
+        if (spinning) {
+            while (currentCoroutineContext().isActive) {
+                val normalized = angle.value.normalizedDegrees()
+                angle.snapTo(normalized)
+                val remaining = if (normalized < ANGLE_EPSILON) {
+                    FULL_ROTATION
+                } else {
+                    FULL_ROTATION - normalized
+                }
+                angle.animateTo(
+                    targetValue = normalized + remaining,
+                    animationSpec = tween(
+                        durationMillis = rotationDuration(remaining),
+                        easing = LinearEasing,
+                    ),
+                )
+            }
+        } else {
+            val normalized = angle.value.normalizedDegrees()
+            if (normalized >= ANGLE_EPSILON) {
+                val remaining = FULL_ROTATION - normalized
+                angle.animateTo(
+                    targetValue = angle.value + remaining,
+                    animationSpec = tween(
+                        durationMillis = rotationDuration(remaining),
+                        easing = LinearEasing,
+                    ),
+                )
+            }
+            angle.snapTo(0f)
+        }
+    }
     val semanticsModifier = if (contentDescription != null) {
         Modifier.semantics { this.contentDescription = contentDescription }
     } else {
@@ -56,7 +81,7 @@ fun SpinningRefreshIcon(
         modifier = modifier
             .size(size)
             .then(semanticsModifier)
-            .rotate(if (spinning) angle else 0f),
+            .rotate(angle.value),
     ) {
         val canvasSize = this.size
         val path = desktopRefreshPath(canvasSize.width, canvasSize.height)
@@ -71,6 +96,17 @@ fun SpinningRefreshIcon(
         )
     }
 }
+
+private const val FULL_ROTATION = 360f
+private const val ANGLE_EPSILON = 0.5f
+private const val ROTATION_DURATION_MS = 900
+
+private fun Float.normalizedDegrees(): Float = ((this % FULL_ROTATION) + FULL_ROTATION) % FULL_ROTATION
+
+private fun rotationDuration(degrees: Float): Int =
+    (ROTATION_DURATION_MS * (degrees / FULL_ROTATION))
+        .roundToInt()
+        .coerceAtLeast(1)
 
 private fun desktopRefreshPath(width: Float, height: Float): Path {
     val scale = min(width, height) / 24f
