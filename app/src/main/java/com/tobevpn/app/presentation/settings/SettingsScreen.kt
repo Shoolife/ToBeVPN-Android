@@ -772,7 +772,7 @@ private fun SettingsWideCategoryCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(108.dp)
+            .height(80.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
     ) {
