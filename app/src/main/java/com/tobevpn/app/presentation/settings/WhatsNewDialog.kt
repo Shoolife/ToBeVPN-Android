@@ -20,10 +20,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CardGiftcard
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Groups
-import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -45,14 +45,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 
 // One highlight in the "What's new" dialog: an icon with a title and a short
 // description. All icons share the same accent, matching the desktop client.
@@ -67,19 +70,19 @@ private data class WhatsNewHighlight(
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.CardGiftcard,
-        titleRes = R.string.whats_new_referrals_title,
-        descriptionRes = R.string.whats_new_referrals_desc,
+        icon = Icons.Filled.Tune,
+        titleRes = R.string.whats_new_adaptive_layout_title,
+        descriptionRes = R.string.whats_new_adaptive_layout_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.Groups,
-        titleRes = R.string.whats_new_invited_friends_title,
-        descriptionRes = R.string.whats_new_invited_friends_desc,
+        icon = Icons.Filled.CheckCircle,
+        titleRes = R.string.whats_new_consistent_ui_title,
+        descriptionRes = R.string.whats_new_consistent_ui_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.PersonAdd,
-        titleRes = R.string.whats_new_assign_inviter_title,
-        descriptionRes = R.string.whats_new_assign_inviter_desc,
+        icon = Icons.Filled.BarChart,
+        titleRes = R.string.whats_new_traffic_dialogs_title,
+        descriptionRes = R.string.whats_new_traffic_dialogs_desc,
     ),
 )
 
@@ -165,8 +168,12 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
                         text = stringResource(R.string.whats_new_title),
-                        fontSize = 24.sp,
-                        lineHeight = 29.sp,
+                        style = fixedLayoutTextStyle(
+                            TextStyle(
+                                fontSize = 24.sp,
+                                lineHeight = 29.sp,
+                            ),
+                        ),
                         fontWeight = FontWeight.Bold,
                         color = colors.onSurface,
                         textAlign = TextAlign.Center,
@@ -182,7 +189,7 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                     ) {
                         Text(
                             text = stringResource(R.string.whats_new_version, versionName),
-                            fontSize = 12.sp,
+                            style = fixedLayoutTextStyle(TextStyle(fontSize = 12.sp)),
                             fontWeight = FontWeight.SemiBold,
                             color = colors.onSurfaceVariant,
                         )
@@ -191,8 +198,12 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                     Spacer(modifier = Modifier.height(18.dp))
                     Text(
                         text = stringResource(R.string.whats_new_intro),
-                        fontSize = 14.sp,
-                        lineHeight = 20.sp,
+                        style = fixedLayoutTextStyle(
+                            TextStyle(
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                            ),
+                        ),
                         color = colors.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
@@ -217,9 +228,12 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                     ) {
                         Text(
                             text = stringResource(R.string.whats_new_done),
-                            fontSize = 15.sp,
+                            style = fixedLayoutTextStyle(TextStyle(fontSize = 15.sp)),
                             fontWeight = FontWeight.Bold,
                             color = onAccent,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -274,16 +288,24 @@ private fun HighlightCard(highlight: WhatsNewHighlight, accent: Color) {
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = stringResource(highlight.titleRes),
-                fontSize = 15.sp,
-                lineHeight = 20.sp,
+                style = fixedLayoutTextStyle(
+                    TextStyle(
+                        fontSize = 15.sp,
+                        lineHeight = 20.sp,
+                    ),
+                ),
                 fontWeight = FontWeight.SemiBold,
                 color = colors.onSurface,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = stringResource(highlight.descriptionRes),
-                fontSize = 13.sp,
-                lineHeight = 19.sp,
+                style = fixedLayoutTextStyle(
+                    TextStyle(
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp,
+                    ),
+                ),
                 color = colors.onSurfaceVariant,
             )
         }

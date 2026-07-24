@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -63,6 +62,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -79,6 +79,7 @@ import com.tobevpn.app.data.remote.dto.LinkedDeviceDto
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.AuthState
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.theme.BrandCardFill
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
@@ -149,7 +150,16 @@ fun AdvancedScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.settings_advanced), fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        text = stringResource(R.string.settings_advanced),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -185,13 +195,16 @@ fun AdvancedScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.devices_title),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                             fontWeight = FontWeight.SemiBold,
                             color = if (isSystemInDarkTheme()) {
                                 MaterialTheme.colorScheme.onSurface
                             } else {
                                 Color.Black
                             },
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
@@ -200,7 +213,7 @@ fun AdvancedScreen(
                             } else {
                                 stringResource(R.string.devices_sign_in_hint)
                             },
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -262,14 +275,16 @@ fun AdvancedScreen(
             val isDark = isSystemInDarkTheme()
             AlertDialog(
                 onDismissRequest = { viewModel.clearTvPairResult() },
-                title = { Text(stringResource(R.string.link_tv_confirm_title)) },
+                title = {
+                    DialogTitleText(stringResource(R.string.link_tv_confirm_title))
+                },
                 text = {
                     Column {
-                        Text(stringResource(R.string.link_tv_confirm_text))
+                        DialogBodyText(stringResource(R.string.link_tv_confirm_text))
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = result.code,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                             fontWeight = FontWeight.Bold,
                         )
                     }
@@ -286,7 +301,7 @@ fun AdvancedScreen(
                             )
                         },
                     ) {
-                        Text(stringResource(R.string.link_tv_confirm_action))
+                        DialogButtonText(stringResource(R.string.link_tv_confirm_action))
                     }
                 },
                 dismissButton = {
@@ -298,7 +313,7 @@ fun AdvancedScreen(
                             ButtonDefaults.textButtonColors(contentColor = Color.Black)
                         },
                     ) {
-                        Text(stringResource(R.string.cancel))
+                        DialogButtonText(stringResource(R.string.cancel))
                     }
                 },
             )
@@ -307,12 +322,12 @@ fun AdvancedScreen(
         is TvPairResult.Loading -> {
             AlertDialog(
                 onDismissRequest = {},
-                title = { Text(stringResource(R.string.devices_scan_qr)) },
+                title = { DialogTitleText(stringResource(R.string.devices_scan_qr)) },
                 text = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(12.dp))
-                        Text(stringResource(R.string.link_tv_linking))
+                        DialogBodyText(stringResource(R.string.link_tv_linking))
                     }
                 },
                 confirmButton = {},
@@ -322,11 +337,11 @@ fun AdvancedScreen(
         is TvPairResult.Success -> {
             AlertDialog(
                 onDismissRequest = { viewModel.clearTvPairResult() },
-                title = { Text(stringResource(R.string.link_tv_success_title)) },
-                text = { Text(stringResource(R.string.link_tv_success_text)) },
+                title = { DialogTitleText(stringResource(R.string.link_tv_success_title)) },
+                text = { DialogBodyText(stringResource(R.string.link_tv_success_text)) },
                 confirmButton = {
                     Button(onClick = { viewModel.clearTvPairResult() }) {
-                        Text(stringResource(R.string.ok))
+                        DialogButtonText(stringResource(R.string.ok))
                     }
                 },
             )
@@ -335,11 +350,11 @@ fun AdvancedScreen(
         is TvPairResult.Error -> {
             AlertDialog(
                 onDismissRequest = { viewModel.clearTvPairResult() },
-                title = { Text(stringResource(R.string.link_tv_error_title)) },
-                text = { Text(result.message) },
+                title = { DialogTitleText(stringResource(R.string.link_tv_error_title)) },
+                text = { DialogBodyText(result.message) },
                 confirmButton = {
                     Button(onClick = { viewModel.clearTvPairResult() }) {
-                        Text(stringResource(R.string.ok))
+                        DialogButtonText(stringResource(R.string.ok))
                     }
                 },
             )
@@ -358,6 +373,33 @@ fun AdvancedScreen(
 }
 
 @Composable
+private fun DialogTitleText(text: String) {
+    Text(
+        text = text,
+        style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
+    )
+}
+
+@Composable
+private fun DialogBodyText(text: String) {
+    Text(
+        text = text,
+        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+    )
+}
+
+@Composable
+private fun DialogButtonText(text: String) {
+    Text(
+        text = text,
+        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
 private fun PairingCodeInputDialog(
     onDismiss: () -> Unit,
     onSubmit: (String) -> Unit,
@@ -369,12 +411,12 @@ private fun PairingCodeInputDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.devices_enter_code)) },
+        title = { DialogTitleText(stringResource(R.string.devices_enter_code)) },
         text = {
             Column {
                 Text(
                     text = stringResource(R.string.devices_enter_code_hint),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
@@ -388,10 +430,21 @@ private fun PairingCodeInputDialog(
                             .uppercase()
                     },
                     singleLine = true,
-                    label = { Text(stringResource(R.string.devices_pairing_code_label)) },
+                    textStyle = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
+                    label = {
+                        Text(
+                            text = stringResource(R.string.devices_pairing_code_label),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                        )
+                    },
                     isError = showCodeError,
                     supportingText = if (showCodeError) {
-                        { Text(stringResource(R.string.devices_pairing_code_required)) }
+                        {
+                            Text(
+                                text = stringResource(R.string.devices_pairing_code_required),
+                                style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                            )
+                        }
                     } else {
                         null
                     },
@@ -418,7 +471,7 @@ private fun PairingCodeInputDialog(
                     )
                 },
             ) {
-                Text(stringResource(R.string.continue_btn))
+                DialogButtonText(stringResource(R.string.continue_btn))
             }
         },
         dismissButton = {
@@ -430,7 +483,7 @@ private fun PairingCodeInputDialog(
                     ButtonDefaults.textButtonColors(contentColor = Color.Black)
                 },
             ) {
-                Text(stringResource(R.string.cancel))
+                DialogButtonText(stringResource(R.string.cancel))
             }
         },
     )
@@ -482,8 +535,11 @@ private fun LinkedDevicesBottomSheet(
         ) {
             Text(
                 text = stringResource(R.string.devices_title),
-                style = MaterialTheme.typography.headlineSmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
                 fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
@@ -496,7 +552,7 @@ private fun LinkedDevicesBottomSheet(
                         state.maxDevices,
                     )
                 },
-                style = MaterialTheme.typography.bodyMedium,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
@@ -554,7 +610,7 @@ private fun LinkedDevicesBottomSheet(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = stringResource(R.string.devices_limit_reached),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = MaterialTheme.colorScheme.error,
                 )
             }
@@ -563,7 +619,7 @@ private fun LinkedDevicesBottomSheet(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = message,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.clickable { onClearError() },
                 )
@@ -577,14 +633,20 @@ private fun LinkedDevicesBottomSheet(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CircularProgressIndicator(modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(12.dp))
-                    Text(stringResource(R.string.devices_loading))
+                    Text(
+                        text = stringResource(R.string.devices_loading),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                    )
                 }
             } else {
                 currentDevice?.let { device ->
                     Text(
                         text = stringResource(R.string.devices_this_device),
-                        style = MaterialTheme.typography.titleSmall,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                         fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     LinkedDeviceCard(
@@ -598,15 +660,18 @@ private fun LinkedDevicesBottomSheet(
 
                 Text(
                     text = stringResource(R.string.devices_other_devices),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
                 if (otherDevices.isEmpty()) {
                     Text(
                         text = stringResource(R.string.devices_empty),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else {
@@ -630,12 +695,7 @@ private fun DeviceActionText(text: String) {
     Text(
         text = text,
         modifier = Modifier.fillMaxWidth(),
-        style = MaterialTheme.typography.labelLarge,
-        autoSize = TextAutoSize.StepBased(
-            minFontSize = 9.sp,
-            maxFontSize = MaterialTheme.typography.labelLarge.fontSize,
-            stepSize = 0.5.sp,
-        ),
+        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
         maxLines = 1,
         softWrap = false,
         overflow = TextOverflow.Ellipsis,
@@ -666,19 +726,25 @@ private fun LinkedDeviceCard(
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
                 text = deviceTitle(device),
-                style = MaterialTheme.typography.titleSmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                 fontWeight = FontWeight.SemiBold,
                 color = if (isSystemInDarkTheme()) {
                     MaterialTheme.colorScheme.onSurface
                 } else {
                     Color.Black
                 },
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = deviceSubtitle(device),
-                style = MaterialTheme.typography.bodyMedium,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
 
             val timestamp = device.lastSeenAt ?: device.linkedAt
@@ -686,12 +752,7 @@ private fun LinkedDeviceCard(
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
                     text = stringResource(R.string.devices_last_active, formatDeviceDate(timestamp)),
-                    style = MaterialTheme.typography.bodySmall,
-                    autoSize = TextAutoSize.StepBased(
-                        minFontSize = 8.sp,
-                        maxFontSize = MaterialTheme.typography.bodySmall.fontSize,
-                        stepSize = 0.5.sp,
-                    ),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     softWrap = false,
@@ -703,7 +764,7 @@ private fun LinkedDeviceCard(
             if (isCurrent) {
                 Text(
                     text = stringResource(R.string.devices_current_badge),
-                    style = MaterialTheme.typography.labelMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
                     color = VpnGreen,
                 )
             } else {
@@ -738,8 +799,11 @@ private fun LinkedDeviceCard(
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
                             text = stringResource(R.string.devices_disconnect),
-                            style = MaterialTheme.typography.labelLarge,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
                             fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -775,19 +839,25 @@ private fun AppFilterRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     stringResource(R.string.settings_app_filter),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                     fontWeight = FontWeight.SemiBold,
                     color = if (isSystemInDarkTheme()) {
                         MaterialTheme.colorScheme.onSurface
                     } else {
                         Color.Black
                     },
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
                     subtitle,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Icon(
@@ -916,14 +986,17 @@ private fun SectionTitle(icon: ImageVector, accent: Color, title: String) {
         }
         Spacer(modifier = Modifier.width(12.dp))
         Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
+            text = title,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
             fontWeight = FontWeight.SemiBold,
             color = if (isSystemInDarkTheme()) {
                 MaterialTheme.colorScheme.onSurface
             } else {
                 Color.Black
             },
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -957,10 +1030,12 @@ private fun EmailInput(
         ) {
             Text(
                 savedEmail,
-                style = MaterialTheme.typography.bodyMedium,
-                fontSize = 15.sp,
+                style = fixedLayoutTextStyle(TextStyle(fontSize = 15.sp)),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             FilledTonalIconButton(
                 onClick = {
@@ -996,7 +1071,7 @@ private fun EmailInput(
     Spacer(modifier = Modifier.height(8.dp))
     Text(
         stringResource(R.string.email_subscription_hint),
-        style = MaterialTheme.typography.bodySmall,
+        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Spacer(modifier = Modifier.height(8.dp))
@@ -1011,7 +1086,13 @@ private fun EmailInput(
                 isError = false
                 if (emailSaveResult == EmailSaveResult.Error) onClearResult()
             },
-            placeholder = { Text(stringResource(R.string.email_label)) },
+            textStyle = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
+            placeholder = {
+                Text(
+                    text = stringResource(R.string.email_label),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                )
+            },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             isError = isError || emailSaveResult == EmailSaveResult.Error,
@@ -1047,7 +1128,7 @@ private fun EmailInput(
                     strokeWidth = 2.dp,
                 )
             } else {
-                Text(stringResource(R.string.ok))
+                DialogButtonText(stringResource(R.string.ok))
             }
         }
     }
@@ -1055,7 +1136,7 @@ private fun EmailInput(
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             stringResource(R.string.email_save_error),
-            style = MaterialTheme.typography.bodySmall,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
             color = MaterialTheme.colorScheme.error,
         )
     }
@@ -1072,7 +1153,7 @@ private fun EmailInput(
                 ButtonDefaults.textButtonColors(contentColor = Color.Black)
             },
         ) {
-            Text(stringResource(R.string.cancel))
+            DialogButtonText(stringResource(R.string.cancel))
         }
     }
 }

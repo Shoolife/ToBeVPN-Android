@@ -56,6 +56,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -63,6 +64,7 @@ import com.tobevpn.app.R
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ProfileNameDisplay
 import com.tobevpn.app.domain.model.ThemeMode
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.util.LocaleManager
@@ -85,8 +87,12 @@ fun PersonalizationScreen(
             TopAppBar(
                 title = {
                     Text(
-                        stringResource(R.string.settings_personalization),
+                        text = stringResource(R.string.settings_personalization),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
                         fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {
@@ -156,8 +162,18 @@ fun PersonalizationScreen(
     if (pending != null) {
         AlertDialog(
             onDismissRequest = { pendingLanguage = null },
-            title = { Text(stringResource(R.string.language_restart_title)) },
-            text = { Text(stringResource(R.string.language_restart_message)) },
+            title = {
+                Text(
+                    text = stringResource(R.string.language_restart_title),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
+                )
+            },
+            text = {
+                Text(
+                    text = stringResource(R.string.language_restart_message),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                )
+            },
             confirmButton = {
                 Button(
                     onClick = {
@@ -174,12 +190,24 @@ fun PersonalizationScreen(
                         )
                     },
                 ) {
-                    Text(stringResource(R.string.language_restart_button))
+                    Text(
+                        text = stringResource(R.string.language_restart_button),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingLanguage = null }) {
-                    Text(stringResource(R.string.cancel))
+                    Text(
+                        text = stringResource(R.string.cancel),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             },
         )
@@ -278,13 +306,16 @@ private fun ThemeTile(
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = stringResource(labelRes),
-            style = MaterialTheme.typography.labelLarge,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
             color = if (selected) {
                 MaterialTheme.colorScheme.onSurface
             } else {
                 MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
             },
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -333,10 +364,13 @@ private fun LabelTile(
             }
             Text(
                 text = stringResource(labelRes),
-                style = MaterialTheme.typography.titleSmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -419,14 +453,17 @@ private fun SectionTitle(icon: ImageVector, accent: Color, title: String) {
         }
         Spacer(modifier = Modifier.width(12.dp))
         Text(
-            title,
-            style = MaterialTheme.typography.titleMedium,
+            text = title,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
             fontWeight = FontWeight.SemiBold,
             color = if (isSystemInDarkTheme()) {
                 MaterialTheme.colorScheme.onSurface
             } else {
                 Color.Black
             },
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -438,7 +475,15 @@ private fun SelectChip(label: String, selected: Boolean, onClick: () -> Unit) {
     FilterChip(
         selected = selected,
         onClick = onClick,
-        label = { Text(label) },
+        label = {
+            Text(
+                text = label,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
         colors = if (isDark) {
             FilterChipDefaults.filterChipColors()
         } else {
@@ -458,4 +503,3 @@ private fun SelectChip(label: String, selected: Boolean, onClick: () -> Unit) {
         ),
     )
 }
-

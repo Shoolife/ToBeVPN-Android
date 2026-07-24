@@ -96,6 +96,7 @@ import com.tobevpn.app.R
 import com.tobevpn.app.data.remote.dto.ReferralListItemDto
 import com.tobevpn.app.data.remote.dto.ReferralsDto
 import com.tobevpn.app.presentation.components.SpinningRefreshIcon
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import java.text.DateFormat
@@ -123,7 +124,11 @@ fun ReferralsScreen(
                 title = {
                     Text(
                         text = stringResource(R.string.referrals_title),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
                         fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {
@@ -400,14 +405,14 @@ private fun ReferralHeroCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = stringResource(R.string.referrals_hero_title),
-                        style = MaterialTheme.typography.titleLarge,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
                         fontWeight = FontWeight.Bold,
                         color = primaryText,
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = stringResource(R.string.referrals_hero_description),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                         color = secondaryText,
                     )
                 }
@@ -430,7 +435,7 @@ private fun ReferralHeroCard(
                         Spacer(modifier = Modifier.width(7.dp))
                         Text(
                             text = stringResource(R.string.referrals_your_link),
-                            style = MaterialTheme.typography.labelLarge,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -439,7 +444,7 @@ private fun ReferralHeroCard(
                         text = referralUrl.ifBlank {
                             stringResource(R.string.referrals_link_unavailable)
                         },
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                         fontWeight = FontWeight.Medium,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -452,43 +457,80 @@ private fun ReferralHeroCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                FilledTonalButton(
+                ReferralCopyButton(
                     onClick = onCopy,
                     enabled = enabled,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = referralSecondaryButtonColors(),
-                ) {
-                    Icon(
-                        Icons.Filled.ContentCopy,
-                        contentDescription = null,
-                        modifier = Modifier.size(19.dp),
-                    )
-                    Spacer(modifier = Modifier.width(7.dp))
-                    Text(stringResource(R.string.referrals_copy))
-                }
-                Button(
+                    modifier = Modifier.weight(1f),
+                )
+                ReferralShareButton(
                     onClick = onShare,
                     enabled = enabled,
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(48.dp),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = referralPrimaryButtonColors(),
-                ) {
-                    Icon(
-                        Icons.Filled.Share,
-                        contentDescription = null,
-                        modifier = Modifier.size(19.dp),
-                    )
-                    Spacer(modifier = Modifier.width(7.dp))
-                    Text(stringResource(R.string.referrals_share))
-                }
+                    modifier = Modifier.weight(1f),
+                )
             }
         }
     }
+}
+
+@Composable
+private fun ReferralCopyButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    FilledTonalButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = referralSecondaryButtonColors(),
+    ) {
+        Icon(
+            Icons.Filled.ContentCopy,
+            contentDescription = null,
+            modifier = Modifier.size(19.dp),
+        )
+        Spacer(modifier = Modifier.width(7.dp))
+        ReferralActionText(text = stringResource(R.string.referrals_copy))
+    }
+}
+
+@Composable
+private fun ReferralShareButton(
+    onClick: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Button(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = modifier.height(48.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = referralPrimaryButtonColors(),
+    ) {
+        Icon(
+            Icons.Filled.Share,
+            contentDescription = null,
+            modifier = Modifier.size(19.dp),
+        )
+        Spacer(modifier = Modifier.width(7.dp))
+        ReferralActionText(text = stringResource(R.string.referrals_share))
+    }
+}
+
+@Composable
+private fun ReferralActionText(
+    text: String,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        modifier = modifier,
+        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable
@@ -527,7 +569,7 @@ private fun ReferralSummaryCard(
                 Column {
                     Text(
                         text = total.toString(),
-                        style = MaterialTheme.typography.headlineMedium,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.headlineMedium),
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
@@ -536,7 +578,7 @@ private fun ReferralSummaryCard(
                             total,
                             total,
                         ),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -552,7 +594,13 @@ private fun ReferralSummaryCard(
                 colors = referralOutlinedButtonColors(),
                 border = referralOutlinedButtonBorder(enabled = true),
             ) {
-                Text(stringResource(R.string.referrals_open_list))
+                Text(
+                    text = stringResource(R.string.referrals_open_list),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -598,7 +646,7 @@ private fun InvitedFriendsBottomSheet(
             ) {
                 Text(
                     text = stringResource(R.string.referrals_invited_title),
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
                     fontWeight = FontWeight.Bold,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
@@ -608,7 +656,7 @@ private fun InvitedFriendsBottomSheet(
                         total,
                         total,
                     ),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -675,7 +723,13 @@ private fun InvitedFriendsBottomSheet(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                             }
-                            Text(stringResource(R.string.referrals_load_more))
+                            Text(
+                                text = stringResource(R.string.referrals_load_more),
+                                style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
@@ -763,13 +817,13 @@ private fun ReferrerInputCard(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = stringResource(R.string.referrals_referrer_input_title),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                         fontWeight = FontWeight.SemiBold,
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = stringResource(R.string.referrals_referrer_input_description),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -781,7 +835,13 @@ private fun ReferrerInputCard(
                 onValueChange = onValueChange,
                 enabled = !isSubmitting,
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text(stringResource(R.string.referrals_referrer_id_label)) },
+                textStyle = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
+                label = {
+                    Text(
+                        text = stringResource(R.string.referrals_referrer_id_label),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    )
+                },
                 leadingIcon = {
                     Icon(
                         Icons.Filled.Person,
@@ -793,13 +853,19 @@ private fun ReferrerInputCard(
                 supportingText = when {
                     hasLocalError -> {
                         {
-                            Text(stringResource(R.string.referrals_referrer_id_invalid))
+                            Text(
+                                text = stringResource(R.string.referrals_referrer_id_invalid),
+                                style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                            )
                         }
                     }
 
                     error != null -> {
                         {
-                            Text(referrerAssignmentErrorText(error))
+                            Text(
+                                text = referrerAssignmentErrorText(error),
+                                style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                            )
                         }
                     }
 
@@ -832,13 +898,17 @@ private fun ReferrerInputCard(
                     Spacer(modifier = Modifier.width(8.dp))
                 }
                 Text(
-                    stringResource(
+                    text = stringResource(
                         if (isSubmitting) {
                             R.string.referrals_referrer_assigning
                         } else {
                             R.string.referrals_referrer_assign
                         },
                     ),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -878,7 +948,7 @@ private fun ReferrerCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.referrals_referred_by),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
@@ -888,7 +958,7 @@ private fun ReferrerCard(
                             stringResource(R.string.referrals_referrer_id_value, it)
                         }
                         ?: stringResource(R.string.referrals_unknown_user),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -942,14 +1012,17 @@ private fun ReferrerConfirmationDialog(
         title = {
             Text(
                 text = stringResource(R.string.referrals_referrer_confirm_title),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
                 fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = stringResource(R.string.referrals_referrer_confirm_description),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -964,7 +1037,7 @@ private fun ReferrerConfirmationDialog(
                     ) {
                         Text(
                             text = stringResource(R.string.referrals_referrer_id_value, referrerId),
-                            style = MaterialTheme.typography.titleMedium,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                             fontWeight = FontWeight.SemiBold,
                             color = if (darkTheme) {
                                 MaterialTheme.colorScheme.onSurface
@@ -992,7 +1065,13 @@ private fun ReferrerConfirmationDialog(
                     border = BorderStroke(1.dp, secondaryButtonBorderColor),
                     contentPadding = PaddingValues(horizontal = 12.dp),
                 ) {
-                    Text(stringResource(R.string.cancel))
+                    Text(
+                        text = stringResource(R.string.cancel),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 Button(
                     onClick = onConfirm,
@@ -1003,7 +1082,13 @@ private fun ReferrerConfirmationDialog(
                     colors = referralPrimaryButtonColors(),
                     contentPadding = PaddingValues(horizontal = 12.dp),
                 ) {
-                    Text(stringResource(R.string.referrals_referrer_confirm))
+                    Text(
+                        text = stringResource(R.string.referrals_referrer_confirm),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         },
@@ -1046,7 +1131,7 @@ private fun ReferralListRow(item: ReferralListItemDto) {
                         text = item.displayName
                             ?.takeIf { it.isNotBlank() }
                             ?: stringResource(R.string.referrals_unknown_user),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -1055,7 +1140,7 @@ private fun ReferralListRow(item: ReferralListItemDto) {
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = stringResource(R.string.referrals_joined, formattedDate),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
@@ -1070,7 +1155,7 @@ private fun ReferralListRow(item: ReferralListItemDto) {
                             R.string.referrals_level,
                             item.level.coerceAtLeast(1),
                         ),
-                        style = MaterialTheme.typography.labelMedium,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
                     )
@@ -1156,14 +1241,14 @@ private fun ReferralEmptyList() {
             Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = stringResource(R.string.referrals_empty_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = stringResource(R.string.referrals_empty_description),
-                style = MaterialTheme.typography.bodyMedium,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
             )
@@ -1192,7 +1277,7 @@ private fun ReferralInlineError(
             Text(
                 text = referralErrorText(error),
                 color = MaterialTheme.colorScheme.onErrorContainer,
-                style = MaterialTheme.typography.bodyMedium,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                 modifier = Modifier.weight(1f),
             )
             Spacer(modifier = Modifier.width(8.dp))
@@ -1206,7 +1291,13 @@ private fun ReferralInlineError(
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 ),
             ) {
-                Text(stringResource(R.string.retry))
+                Text(
+                    text = stringResource(R.string.retry),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -1246,14 +1337,14 @@ private fun ReferralAuthRequired(
         Spacer(modifier = Modifier.height(18.dp))
         Text(
             text = stringResource(R.string.referrals_auth_title),
-            style = MaterialTheme.typography.headlineSmall,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = stringResource(R.string.referrals_auth_description),
-            style = MaterialTheme.typography.bodyMedium,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
@@ -1267,7 +1358,13 @@ private fun ReferralAuthRequired(
             shape = RoundedCornerShape(14.dp),
             colors = referralPrimaryButtonColors(),
         ) {
-            Text(stringResource(R.string.login_via_telegram))
+            Text(
+                text = stringResource(R.string.login_via_telegram),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -1292,14 +1389,14 @@ private fun ReferralFullScreenError(
         Spacer(modifier = Modifier.height(14.dp))
         Text(
             text = stringResource(R.string.referrals_error_title),
-            style = MaterialTheme.typography.titleLarge,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(
             text = referralErrorText(error),
-            style = MaterialTheme.typography.bodyMedium,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
@@ -1308,7 +1405,13 @@ private fun ReferralFullScreenError(
             onClick = onRetry,
             colors = referralPrimaryButtonColors(),
         ) {
-            Text(stringResource(R.string.retry))
+            Text(
+                text = stringResource(R.string.retry),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -68,6 +69,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.presentation.components.countryFlagForUi
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import com.tobevpn.app.presentation.components.serverDisplayName
 import com.tobevpn.app.presentation.theme.VpnGreen
@@ -173,7 +175,11 @@ fun ServerListScreen(
                 title = {
                     Text(
                         stringResource(R.string.server_select),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
                         fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 },
                 navigationIcon = {
@@ -210,21 +216,28 @@ fun ServerListScreen(
                     Text(
                         text = error ?: stringResource(R.string.servers_load_error),
                         modifier = Modifier.align(Alignment.Center),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
                         color = MaterialTheme.colorScheme.error,
+                        textAlign = TextAlign.Center,
                     )
                 }
                 servers.isEmpty() -> {
                     Text(
                         text = stringResource(R.string.servers_empty),
                         modifier = Modifier.align(Alignment.Center),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
                     )
                 }
                 else -> {
                     val offlineText = stringResource(R.string.server_offline)
                     val unavailableText = stringResource(R.string.server_unavailable)
-                    val titleStyle = MaterialTheme.typography.titleMedium
-                    val labelStyle = MaterialTheme.typography.labelSmall
+                    val titleStyle = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium)
+                    val labelStyle = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall)
+                    val minimumServerNameFontSize = fixedLayoutTextStyle(
+                        TextStyle(fontSize = 13.sp),
+                    ).fontSize
                     val density = LocalDensity.current
                     val textMeasurer = rememberTextMeasurer()
 
@@ -279,10 +292,11 @@ fun ServerListScreen(
                             names,
                             nameWidthPx,
                             titleStyle,
+                            minimumServerNameFontSize,
                             density.fontScale,
                         ) {
                             var candidate = titleStyle.fontSize.value
-                            while (candidate > 13f) {
+                            while (candidate > minimumServerNameFontSize.value) {
                                 val widestNamePx = names.maxOf { name ->
                                     textMeasurer.measure(
                                         text = AnnotatedString(name),
@@ -297,7 +311,7 @@ fun ServerListScreen(
                                 if (widestNamePx <= nameWidthPx) break
                                 candidate -= 0.5f
                             }
-                            candidate.coerceAtLeast(13f).sp
+                            candidate.coerceAtLeast(minimumServerNameFontSize.value).sp
                         }
 
                         LazyColumn(
@@ -410,15 +424,19 @@ private fun AutomaticServerItem(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.server_auto),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = stringResource(R.string.server_auto_description),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -511,15 +529,18 @@ private fun ServerItem(
                 Text(
                     text = countryFlagForUi(server.country, server.name),
                     modifier = Modifier.width(metrics.flagColumnWidth),
-                    fontSize = metrics.flagFontSize,
+                    style = fixedLayoutTextStyle(
+                        TextStyle(fontSize = metrics.flagFontSize),
+                    ),
                     textAlign = TextAlign.Center,
                 )
                 Spacer(modifier = Modifier.width(metrics.flagTextGap))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         serverDisplayName(server.name, server.country),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontSize = serverNameFontSize,
+                        style = fixedLayoutTextStyle(
+                            MaterialTheme.typography.titleMedium,
+                        ).copy(fontSize = serverNameFontSize),
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         softWrap = false,
@@ -532,7 +553,7 @@ private fun ServerItem(
                             } else {
                                 countryName(serverCountryCodeForUi(server.country, server.name))
                             },
-                            style = MaterialTheme.typography.bodySmall,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                             color = if (!server.isSelectable) {
                                 VpnRed
                             } else {
@@ -588,10 +609,12 @@ private fun ServerEndpointRow(
         Text(
             text = server.address,
             modifier = Modifier.weight(1f),
-            style = MaterialTheme.typography.bodySmall.copy(
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
-                letterSpacing = 0.1.sp,
+            style = fixedLayoutTextStyle(
+                MaterialTheme.typography.bodySmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    letterSpacing = 0.1.sp,
+                ),
             ),
             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
             maxLines = 1,
@@ -667,7 +690,7 @@ private fun ServerStatusBlock(
         !server.isSelectable -> {
             Text(
                 text = stringResource(R.string.server_offline),
-                style = MaterialTheme.typography.labelSmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
                 color = VpnRed,
                 maxLines = 1,
                 softWrap = false,
@@ -678,7 +701,7 @@ private fun ServerStatusBlock(
         server.ping < 0 -> {
             Text(
                 text = stringResource(R.string.server_unavailable),
-                style = MaterialTheme.typography.labelSmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
                 fontWeight = FontWeight.SemiBold,
                 color = VpnRed,
                 maxLines = 1,
@@ -733,7 +756,7 @@ private fun PingChip(
     ) {
         Text(
             text = "$ping",
-            style = MaterialTheme.typography.titleMedium,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
             fontWeight = FontWeight.Bold,
             color = pingColor(ping),
             maxLines = 1,
@@ -741,7 +764,7 @@ private fun PingChip(
         )
         Text(
             text = "ms",
-            style = MaterialTheme.typography.labelSmall,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -763,9 +786,11 @@ private fun EndpointValueChip(
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = FontFamily.Monospace,
-                fontSize = 12.sp,
+            style = fixedLayoutTextStyle(
+                MaterialTheme.typography.labelSmall.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                ),
             ),
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -26,10 +26,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import com.tobevpn.app.data.repository.UpdateCheckResult
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 
 /**
  * "Check for updates" row inside the About card on Settings.
@@ -87,16 +89,23 @@ fun SettingsUpdateCheckRow(
         ) {
             Text(
                 text = statusText,
-                style = MaterialTheme.typography.bodyLarge,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
                 fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             if (onWhatsNew != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         text = stringResource(R.string.about_whats_new_current),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
                     Spacer(Modifier.width(2.dp))
                     Icon(
@@ -143,7 +152,11 @@ fun SettingsUpdateCheckRow(
                 }
                 Text(
                     text = stringResource(R.string.update_check_button),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }

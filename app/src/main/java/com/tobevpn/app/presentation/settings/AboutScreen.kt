@@ -43,10 +43,12 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.update.SettingsUpdateCheckRow
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -73,7 +75,16 @@ fun AboutScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.about), fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        text = stringResource(R.string.about),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -102,15 +113,21 @@ fun AboutScreen(
             Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = stringResource(R.string.app_name),
-                style = MaterialTheme.typography.headlineSmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
                 fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = stringResource(R.string.about_slogan),
-                style = MaterialTheme.typography.bodyMedium,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(24.dp))
 
@@ -153,8 +170,11 @@ fun AboutScreen(
             Spacer(modifier = Modifier.height(24.dp))
             Text(
                 text = stringResource(R.string.about_copyright),
-                style = MaterialTheme.typography.bodySmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(24.dp))
         }
@@ -173,17 +193,23 @@ private fun SpecRow(label: String, value: String) {
     ) {
         Text(
             text = label,
-            style = MaterialTheme.typography.bodyLarge,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
             modifier = Modifier.weight(1f),
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
         Spacer(modifier = Modifier.size(12.dp))
         Text(
             text = value,
-            style = MaterialTheme.typography.bodyMedium,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.End,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -210,8 +236,11 @@ private fun AboutLinkRow(
         Spacer(modifier = Modifier.size(14.dp))
         Text(
             text = title,
-            style = MaterialTheme.typography.bodyLarge,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
             modifier = Modifier.weight(1f),
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
         Icon(
             imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,

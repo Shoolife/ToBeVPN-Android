@@ -75,10 +75,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -93,6 +95,7 @@ import java.io.File
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ProfileNameDisplay
 import com.tobevpn.app.domain.model.UserPlan
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
@@ -119,7 +122,13 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.settings), fontWeight = FontWeight.Bold) },
+                title = {
+                    SettingsSingleLineText(
+                        text = stringResource(R.string.settings),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -315,13 +324,17 @@ private fun LogoutConfirmDialog(
                         Column(modifier = Modifier.padding(24.dp)) {
                             Text(
                                 text = stringResource(R.string.logout_confirm_title),
-                                style = MaterialTheme.typography.headlineSmall,
+                                style = fixedLayoutTextStyle(
+                                    MaterialTheme.typography.headlineSmall,
+                                ),
                                 color = dialogTextColor,
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
                                 text = stringResource(R.string.logout_confirm_message),
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = fixedLayoutTextStyle(
+                                    MaterialTheme.typography.bodyMedium,
+                                ),
                                 color = dialogTextColor,
                             )
                             Spacer(modifier = Modifier.height(24.dp))
@@ -338,7 +351,15 @@ private fun LogoutConfirmDialog(
                                     colors = secondaryButtonColors,
                                     border = secondaryButtonBorder,
                                 ) {
-                                    Text(stringResource(R.string.cancel))
+                                    Text(
+                                        text = stringResource(R.string.cancel),
+                                        style = fixedLayoutTextStyle(
+                                            MaterialTheme.typography.labelLarge,
+                                        ),
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
                                 }
                                 Button(
                                     onClick = onConfirm,
@@ -355,7 +376,15 @@ private fun LogoutConfirmDialog(
                                         )
                                     },
                                 ) {
-                                    Text(stringResource(R.string.logout))
+                                    Text(
+                                        text = stringResource(R.string.logout),
+                                        style = fixedLayoutTextStyle(
+                                            MaterialTheme.typography.labelLarge,
+                                        ),
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
                                 }
                             }
                         }
@@ -430,10 +459,15 @@ private fun AccountCard(
                             Spacer(modifier = Modifier.width(16.dp))
                             Text(
                                 text = stringResource(R.string.not_authorized),
-                                style = MaterialTheme.typography.titleSmall,
+                                style = fixedLayoutTextStyle(
+                                    MaterialTheme.typography.titleSmall,
+                                ),
                                 fontWeight = FontWeight.SemiBold,
                                 color = titleColor,
                                 modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                         Spacer(modifier = Modifier.height(16.dp))
@@ -450,8 +484,9 @@ private fun AccountCard(
                                 )
                             },
                         ) {
-                            Text(
+                            SettingsSingleLineText(
                                 text = stringResource(R.string.login_via_telegram),
+                                style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Medium,
                             )
                         }
@@ -474,8 +509,9 @@ private fun AccountCard(
                                 BorderStroke(1.dp, Color(0xFFD6D6D6))
                             },
                         ) {
-                            Text(
+                            SettingsSingleLineText(
                                 text = stringResource(R.string.auth_open_device_pairing),
+                                style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Medium,
                             )
                         }
@@ -553,17 +589,27 @@ private fun AccountCard(
                                             )
                                         }
                                         .padding(horizontal = 8.dp, vertical = 4.dp),
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = fixedLayoutTextStyle(
+                                        MaterialTheme.typography.bodySmall,
+                                    ),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     textAlign = TextAlign.Center,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                                 if (authState.plan == UserPlan.EXPIRED) {
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
                                         text = stringResource(R.string.renew_in_bot),
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = fixedLayoutTextStyle(
+                                            MaterialTheme.typography.bodySmall,
+                                        ),
                                         color = VpnRed,
                                         textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 } else if (
                                     (authState.plan == UserPlan.ADMIN || authState.plan == UserPlan.PAID) &&
@@ -572,9 +618,14 @@ private fun AccountCard(
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
                                         text = "${stringResource(R.string.expires)} ${formatDate(authState.planExpiresAt)}",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        style = fixedLayoutTextStyle(
+                                            MaterialTheme.typography.bodySmall,
+                                        ),
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         textAlign = TextAlign.Center,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
                                     )
                                 }
                             }
@@ -593,11 +644,16 @@ private fun ProfileNameText(text: String, color: Color) {
     Text(
         text = text,
         modifier = Modifier.fillMaxWidth(),
-        style = MaterialTheme.typography.titleLarge,
-        fontSize = 20.sp,
+        style = fixedLayoutTextStyle(
+            MaterialTheme.typography.titleLarge.copy(
+                fontSize = 20.sp,
+                lineHeight = TextUnit.Unspecified,
+            ),
+        ),
         fontWeight = FontWeight.SemiBold,
         color = color,
         maxLines = 1,
+        softWrap = false,
         overflow = TextOverflow.Ellipsis,
         textAlign = TextAlign.Center,
     )
@@ -622,9 +678,14 @@ private fun ProfileNameBlock(
                 Text(
                     text = handle,
                     modifier = Modifier.fillMaxWidth(),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = fixedLayoutTextStyle(
+                        MaterialTheme.typography.bodyMedium.copy(
+                            lineHeight = TextUnit.Unspecified,
+                        ),
+                    ),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
+                    softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
                 )
@@ -681,9 +742,16 @@ private fun PlanPill(text: String, color: Color) {
     ) {
         Text(
             text = text,
-            style = MaterialTheme.typography.titleSmall,
+            style = fixedLayoutTextStyle(
+                MaterialTheme.typography.titleSmall.copy(
+                    lineHeight = TextUnit.Unspecified,
+                ),
+            ),
             fontWeight = FontWeight.SemiBold,
             color = color,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -797,21 +865,17 @@ private fun SettingsWideCategoryCard(
             }
             Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
+                SettingsSingleLineText(
                     text = label,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                     color = titleColor,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(modifier = Modifier.height(3.dp))
-                Text(
+                SettingsSingleLineText(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Spacer(modifier = Modifier.width(10.dp))
@@ -898,24 +962,42 @@ private fun RowScope.SettingsCategoryTile(
                 }
             }
             Spacer(modifier = Modifier.weight(1f))
-            Text(
+            SettingsSingleLineText(
                 text = label,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = titleColor,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(2.dp))
-            Text(
+            SettingsSingleLineText(
                 text = description,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
+}
+
+@Composable
+private fun SettingsSingleLineText(
+    text: String,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    fontWeight: FontWeight? = null,
+    color: Color = Color.Unspecified,
+    textAlign: TextAlign? = null,
+) {
+    Text(
+        text = text,
+        modifier = modifier,
+        style = fixedLayoutTextStyle(style),
+        fontWeight = fontWeight,
+        color = color,
+        textAlign = textAlign,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 @Composable

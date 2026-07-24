@@ -122,6 +122,7 @@ import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.presentation.components.countryFlagForUi
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import com.tobevpn.app.presentation.components.serverDisplayName
 import com.tobevpn.app.presentation.theme.VpnGreen
@@ -248,20 +249,27 @@ fun MainScreen(
                     Row {
                         Text(
                             "ToBeVPN",
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.alignByBaseline(),
+                            maxLines = 1,
+                            softWrap = false,
                         )
                         // Co-brand label. Sets the user's expectation that the
                         // partner's domain shows up at purchase, so the redirect
                         // doesn't read as a phishing/wrong-payment surprise.
                         Text(
                             text = stringResource(R.string.app_partner),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                             fontWeight = FontWeight.Medium,
-                            fontSize = 14.sp,
                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                             modifier = Modifier
+                                .weight(1f)
                                 .alignByBaseline()
                                 .padding(start = 8.dp),
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 },
@@ -398,18 +406,24 @@ fun MainScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.speed_test_title),
-                            style = MaterialTheme.typography.titleSmall,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                             fontWeight = FontWeight.SemiBold,
                             color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
                                 MaterialTheme.colorScheme.onSurface
                             } else {
                                 Color.Black
                             },
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             text = stringResource(R.string.speed_test_subtitle),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     Icon(
@@ -446,18 +460,28 @@ fun MainScreen(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     stringResource(R.string.subscription),
-                                    style = MaterialTheme.typography.titleSmall,
+                                    style = fixedLayoutTextStyle(
+                                        MaterialTheme.typography.titleSmall,
+                                    ),
                                     fontWeight = FontWeight.SemiBold,
                                     color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
                                         MaterialTheme.colorScheme.onSurface
                                     } else {
                                         Color.Black
                                     },
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                                 Text(
                                     stringResource(R.string.free_tier_hint),
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = fixedLayoutTextStyle(
+                                        MaterialTheme.typography.bodySmall,
+                                    ),
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                             SubscriptionUsageSummary(usageInfo = usageInfo)
@@ -849,9 +873,12 @@ private fun StatusText(
     }
     Text(
         text = text,
-        style = MaterialTheme.typography.titleLarge,
+        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
         fontWeight = FontWeight.SemiBold,
         color = color,
+        maxLines = 1,
+        softWrap = false,
+        overflow = TextOverflow.Ellipsis,
     )
 }
 
@@ -897,7 +924,7 @@ private fun ErrorCard(message: String) {
             Spacer(modifier = Modifier.width(12.dp))
             Text(
                 text = message,
-                style = MaterialTheme.typography.bodyMedium,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                 color = onSurfaceStrong,
                 modifier = Modifier.weight(1f),
             )
@@ -1067,19 +1094,14 @@ private fun ServerSelectorCard(
             // Country flag
             Text(
                 text = if (server != null) countryFlagForUi(server.country, server.name) else "\uD83C\uDF10",
-                fontSize = 32.sp,
+                style = fixedLayoutTextStyle(TextStyle(fontSize = 32.sp)),
             )
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = server?.let { serverDisplayName(it.name, it.country) }
                         ?: stringResource(R.string.server_choose),
-                    style = MaterialTheme.typography.titleMedium,
-                    autoSize = TextAutoSize.StepBased(
-                        minFontSize = 10.sp,
-                        maxFontSize = MaterialTheme.typography.titleMedium.fontSize,
-                        stepSize = 0.5.sp,
-                    ),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     softWrap = false,
@@ -1094,8 +1116,11 @@ private fun ServerSelectorCard(
                     if (!server.isSelectable) {
                         Text(
                             text = stringResource(R.string.server_unavailable),
-                            style = MaterialTheme.typography.bodySmall,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                             color = VpnRed,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     } else {
                         Text(
@@ -1104,8 +1129,11 @@ private fun ServerSelectorCard(
                             } else {
                                 countryName(serverCountryCodeForUi(server.country, server.name))
                             },
-                            style = MaterialTheme.typography.bodySmall,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -1115,13 +1143,13 @@ private fun ServerSelectorCard(
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = "${server.ping}",
-                        style = MaterialTheme.typography.titleMedium,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                         fontWeight = FontWeight.Bold,
                         color = pingColor(server.ping),
                     )
                     Text(
                         text = "ms",
-                        style = MaterialTheme.typography.labelSmall,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
@@ -1129,7 +1157,7 @@ private fun ServerSelectorCard(
             } else if (server != null && server.ping < 0) {
                 Text(
                     text = stringResource(R.string.server_unavailable),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
                     color = VpnRed,
                 )
                 Spacer(modifier = Modifier.width(8.dp))
@@ -1168,13 +1196,16 @@ private fun TrafficCard(
             ) {
                 Text(
                     text = stringResource(R.string.current_session),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                     fontWeight = FontWeight.SemiBold,
                     color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
                         MaterialTheme.colorScheme.onSurface
                     } else {
                         Color.Black
                     },
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Icon(
                     Icons.Default.KeyboardArrowRight,
@@ -1215,15 +1246,21 @@ private fun StatItem(
     ) {
         Text(
             text = value,
-            style = MaterialTheme.typography.titleMedium,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
             fontWeight = FontWeight.Bold,
             textAlign = TextAlign.Center,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -1236,6 +1273,12 @@ private fun SubscriptionUsageSummary(
     if (usageInfo.bytesLimit <= 0L) return
 
     val progress = usageInfo.trafficProgress
+    val minimumUsageFontSize = fixedLayoutTextStyle(
+        TextStyle(fontSize = 11.sp),
+    ).fontSize
+    val maximumUsageFontSize = fixedLayoutTextStyle(
+        TextStyle(fontSize = 15.sp),
+    ).fontSize
     Column(
         modifier = modifier
             .widthIn(min = 116.dp, max = 148.dp)
@@ -1244,15 +1287,16 @@ private fun SubscriptionUsageSummary(
     ) {
         Text(
             text = "${formatBytes(usageInfo.bytesUsed)} / ${formatBytes(usageInfo.bytesLimit)}",
-            style = MaterialTheme.typography.titleSmall,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
+            softWrap = false,
             autoSize = TextAutoSize.StepBased(
-                minFontSize = 11.sp,
-                maxFontSize = 15.sp,
+                minFontSize = minimumUsageFontSize,
+                maxFontSize = maximumUsageFontSize,
             ),
         )
         Spacer(modifier = Modifier.height(4.dp))
@@ -1306,26 +1350,33 @@ private fun PlanCard(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = stringResource(R.string.subscription),
-                    style = MaterialTheme.typography.labelSmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
                     color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
                         MaterialTheme.colorScheme.onSurfaceVariant
                     } else {
                         Color.Black
                     },
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     text = planLabel,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                     fontWeight = FontWeight.Bold,
                     color = planColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    softWrap = false,
                 )
                 if (expiresText.isNotEmpty()) {
                     Text(
                         text = expiresText,
-                        style = MaterialTheme.typography.bodySmall,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -1502,6 +1553,7 @@ private fun UpdateRequiredDialog(onQuit: () -> Unit) {
         title = {
             Text(
                 text = title,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -1542,6 +1594,7 @@ private fun UpdateRequiredDialog(onQuit: () -> Unit) {
                 }
                 Text(
                     text = message,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                     textAlign = TextAlign.Center,
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -1553,13 +1606,27 @@ private fun UpdateRequiredDialog(onQuit: () -> Unit) {
                     onClick = confirmAction,
                     enabled = !manualCheckInFlight,
                 ) {
-                    Text(confirmText, color = buttonTextColor)
+                    Text(
+                        text = confirmText,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                        color = buttonTextColor,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         },
         dismissButton = {
             TextButton(onClick = onQuit) {
-                Text(stringResource(R.string.update_required_quit), color = buttonTextColor)
+                Text(
+                    text = stringResource(R.string.update_required_quit),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                    color = buttonTextColor,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         },
         properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
@@ -1637,9 +1704,12 @@ private fun SubscriptionBottomSheet(
             // Header
             Text(
                 text = stringResource(R.string.subscription),
-                style = MaterialTheme.typography.headlineSmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(bottom = 16.dp),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
 
             // Current plan info
@@ -1692,12 +1762,7 @@ private fun SubscriptionBottomSheet(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = stringResource(R.string.current_plan),
-                            style = MaterialTheme.typography.labelMedium,
-                            autoSize = TextAutoSize.StepBased(
-                                minFontSize = 9.sp,
-                                maxFontSize = MaterialTheme.typography.labelMedium.fontSize,
-                                stepSize = 0.5.sp,
-                            ),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             softWrap = false,
@@ -1776,8 +1841,10 @@ private fun SubscriptionBottomSheet(
                                 )
                                 Text(
                                     text = "·",
+                                    style = fixedLayoutTextStyle(
+                                        TextStyle(fontSize = 22.sp),
+                                    ),
                                     fontWeight = FontWeight.Bold,
-                                    fontSize = 22.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 LimitStat(
@@ -1797,9 +1864,12 @@ private fun SubscriptionBottomSheet(
             // Available plans
             Text(
                 text = stringResource(R.string.available_plans),
-                style = MaterialTheme.typography.titleMedium,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.padding(bottom = 12.dp),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
 
             data class PlanInfo(
@@ -2038,9 +2108,12 @@ private fun SubscriptionBottomSheet(
                 // How to buy hint
                 Text(
                     text = stringResource(R.string.payment_via_telegram),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 16.dp),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
 
                 if (authState is AuthState.Anonymous) {
@@ -2066,7 +2139,7 @@ private fun SubscriptionBottomSheet(
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = stringResource(R.string.login_required_for_purchase),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.fillMaxWidth(),
@@ -2158,8 +2231,9 @@ private fun TariffTabs(
 
     val textMeasurer = rememberTextMeasurer()
     val density = LocalDensity.current
-    val tabTextStyle = MaterialTheme.typography.titleMedium
-    val maxFontSp = 18f
+    val tabTextStyle = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium)
+    val tabFontSize = tabTextStyle.fontSize
+    val maxFontSp = tabFontSize.value
     val horizontalTextPadding = 12.dp
     val minTabWidth = 56.dp
 
@@ -2201,7 +2275,6 @@ private fun TariffTabs(
         }
         val tabStripWidthPx = tabWidthsPx.sum()
         val tabStripWidth = with(density) { tabStripWidthPx.toDp() }
-        val tabFontSize = maxFontSp.sp
         val scrollState = rememberScrollState()
         val scrollable = tabStripWidthPx > maxWidthPx
         val startFadeAlpha by animateFloatAsState(
@@ -2443,12 +2516,7 @@ private fun measureTabTitleWidthPx(
 private fun CurrentPlanName(text: String, color: Color) {
     Text(
         text = text,
-        style = MaterialTheme.typography.titleLarge,
-        autoSize = TextAutoSize.StepBased(
-            minFontSize = 12.sp,
-            maxFontSize = MaterialTheme.typography.titleLarge.fontSize,
-            stepSize = 0.5.sp,
-        ),
+        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
         fontWeight = FontWeight.Bold,
         color = color,
         maxLines = 1,
@@ -2461,12 +2529,7 @@ private fun CurrentPlanName(text: String, color: Color) {
 private fun CurrentPlanDescription(text: String, maxLines: Int = 1) {
     Text(
         text = text,
-        style = MaterialTheme.typography.bodyMedium,
-        autoSize = TextAutoSize.StepBased(
-            minFontSize = 9.sp,
-            maxFontSize = MaterialTheme.typography.bodyMedium.fontSize,
-            stepSize = 0.5.sp,
-        ),
+        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = maxLines,
         softWrap = maxLines > 1,
@@ -2479,12 +2542,7 @@ private fun SubscriptionActionText(text: String) {
     Text(
         text = text,
         modifier = Modifier.fillMaxWidth(),
-        style = MaterialTheme.typography.labelLarge,
-        autoSize = TextAutoSize.StepBased(
-            minFontSize = 10.sp,
-            maxFontSize = MaterialTheme.typography.labelLarge.fontSize,
-            stepSize = 0.5.sp,
-        ),
+        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
         maxLines = 1,
         softWrap = false,
         overflow = TextOverflow.Ellipsis,
@@ -2504,8 +2562,11 @@ private fun LoadingInline(text: String) {
         )
         Text(
             text = text,
-            style = MaterialTheme.typography.bodySmall,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -2600,12 +2661,7 @@ private fun PlanOption(
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    style = MaterialTheme.typography.titleSmall,
-                    autoSize = TextAutoSize.StepBased(
-                        minFontSize = 10.sp,
-                        maxFontSize = MaterialTheme.typography.titleSmall.fontSize,
-                        stepSize = 0.5.sp,
-                    ),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                     fontWeight = FontWeight.SemiBold,
                     color = contentColor,
                     maxLines = 1,
@@ -2614,12 +2670,7 @@ private fun PlanOption(
                 )
                 Text(
                     text = description,
-                    style = MaterialTheme.typography.bodySmall,
-                    autoSize = TextAutoSize.StepBased(
-                        minFontSize = 9.sp,
-                        maxFontSize = MaterialTheme.typography.bodySmall.fontSize,
-                        stepSize = 0.5.sp,
-                    ),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = contentColor.copy(alpha = 0.7f),
                     maxLines = 1,
                     softWrap = false,
@@ -2628,16 +2679,12 @@ private fun PlanOption(
             }
             Text(
                 text = priceDisplay,
-                style = MaterialTheme.typography.titleMedium,
-                autoSize = TextAutoSize.StepBased(
-                    minFontSize = 11.sp,
-                    maxFontSize = MaterialTheme.typography.titleMedium.fontSize,
-                    stepSize = 0.5.sp,
-                ),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                 fontWeight = FontWeight.Bold,
                 color = contentColor,
                 maxLines = 1,
                 softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -2680,13 +2727,8 @@ private fun LimitStat(value: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
-            autoSize = TextAutoSize.StepBased(
-                minFontSize = 11.sp,
-                maxFontSize = 18.sp,
-                stepSize = 0.5.sp,
-            ),
+            style = fixedLayoutTextStyle(TextStyle(fontSize = 18.sp)),
             fontWeight = FontWeight.Bold,
-            fontSize = 18.sp,
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             softWrap = false,
@@ -2694,12 +2736,7 @@ private fun LimitStat(value: String, label: String) {
         )
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
-            autoSize = TextAutoSize.StepBased(
-                minFontSize = 8.sp,
-                maxFontSize = MaterialTheme.typography.labelSmall.fontSize,
-                stepSize = 0.5.sp,
-            ),
+            style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             softWrap = false,

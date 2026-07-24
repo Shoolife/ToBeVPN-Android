@@ -60,11 +60,13 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.dao.TrafficStat
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import java.text.SimpleDateFormat
@@ -89,7 +91,16 @@ fun StatsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.stats_title), fontWeight = FontWeight.Bold) },
+                title = {
+                    Text(
+                        text = stringResource(R.string.stats_title),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
@@ -134,11 +145,17 @@ fun StatsScreen(
                             onClick = { viewModel.setPeriod(p) },
                             label = {
                                 Text(
-                                    when (p) {
+                                    text = when (p) {
                                         StatsPeriod.DAY -> stringResource(R.string.stats_period_day)
                                         StatsPeriod.WEEK -> stringResource(R.string.stats_period_week)
                                         StatsPeriod.MONTH -> stringResource(R.string.stats_period_month)
-                                    }
+                                    },
+                                    style = fixedLayoutTextStyle(
+                                        MaterialTheme.typography.labelLarge,
+                                    ),
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
                             },
                             colors = FilterChipDefaults.filterChipColors(
@@ -159,8 +176,10 @@ fun StatsScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            stringResource(R.string.stats_no_data),
+                            text = stringResource(R.string.stats_no_data),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
                         )
                     }
                 } else {
@@ -181,9 +200,12 @@ fun StatsScreen(
                             StatsPeriod.WEEK -> stringResource(R.string.stats_week_by_day)
                             StatsPeriod.MONTH -> stringResource(R.string.stats_month_by_week)
                         },
-                        style = MaterialTheme.typography.titleSmall,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 6.dp),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
 
                     val maxRowBytes = remember(stats) {
@@ -270,22 +292,31 @@ private fun HeroStatsCard(
                     Column {
                         Text(
                             stringResource(R.string.stats_total_used),
-                            style = MaterialTheme.typography.labelMedium,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
                             color = secondaryContentColor,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             text = stringResource(R.string.stats_context_device),
-                            style = MaterialTheme.typography.labelSmall,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
                             color = tertiaryContentColor,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
                 Spacer(Modifier.height(12.dp))
                 Text(
                     text = formatBytes(totalBytes),
-                    style = MaterialTheme.typography.displaySmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.displaySmall),
                     fontWeight = FontWeight.Bold,
                     color = primaryContentColor,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(Modifier.height(16.dp))
                 Row(
@@ -343,14 +374,20 @@ private fun HeroMetric(
         Spacer(Modifier.height(4.dp))
         Text(
             text = value,
-            style = MaterialTheme.typography.titleSmall,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
             fontWeight = FontWeight.SemiBold,
             color = primaryContentColor,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
         Text(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
             color = secondaryContentColor,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
@@ -634,22 +671,31 @@ private fun EnhancedStatRow(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = formatPeriodLabel(stat.period, period),
-                        style = MaterialTheme.typography.titleSmall,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                         fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Text(
                         text = stringResource(R.string.stats_sessions_short, stat.sessions) +
                             "  •  " + formatTime(stat.totalSeconds),
-                        style = MaterialTheme.typography.bodySmall,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
                 Text(
                     text = formatBytes(stat.totalBytes),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                     fontWeight = FontWeight.Bold,
                     color = VpnGreen,
                     textAlign = TextAlign.End,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Spacer(Modifier.height(10.dp))

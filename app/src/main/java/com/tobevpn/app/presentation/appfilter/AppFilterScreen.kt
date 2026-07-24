@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
@@ -56,6 +55,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -68,6 +68,7 @@ import com.tobevpn.app.R
 import com.tobevpn.app.data.InstalledAppItem
 import com.tobevpn.app.data.InstalledAppsProvider
 import com.tobevpn.app.domain.model.AppFilterMode
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -83,7 +84,14 @@ fun AppFilterScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(stringResource(R.string.app_filter_title), fontWeight = FontWeight.Bold)
+                    Text(
+                        text = stringResource(R.string.app_filter_title),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -159,7 +167,7 @@ private fun ReconnectBanner(visible: Boolean, modifier: Modifier = Modifier) {
             Text(
                 text = stringResource(R.string.app_filter_reconnect_hint),
                 color = fg,
-                style = MaterialTheme.typography.bodySmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
             )
         }
     }
@@ -197,15 +205,28 @@ private fun ModeSelector(
     val horizontalLabelPadding = 6.dp
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
-    val labelStyle = MaterialTheme.typography.labelLarge
+    val labelStyle = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge)
+    val maximumLabelFontSize = fixedLayoutTextStyle(
+        TextStyle(fontSize = 12.sp),
+    ).fontSize
+    val minimumLabelFontSize = fixedLayoutTextStyle(
+        TextStyle(fontSize = 8.sp),
+    ).fontSize
 
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val labelWidthPx = with(density) {
             (maxWidth / options.size - horizontalLabelPadding * 2).roundToPx()
         }
-        val labelFontSize = remember(labels, labelWidthPx, labelStyle, density.fontScale) {
-            var candidate = 12f
-            while (candidate > 8f) {
+        val labelFontSize = remember(
+            labels,
+            labelWidthPx,
+            labelStyle,
+            maximumLabelFontSize,
+            minimumLabelFontSize,
+            density.fontScale,
+        ) {
+            var candidate = maximumLabelFontSize.value
+            while (candidate > minimumLabelFontSize.value) {
                 val widestLabelPx = labels.maxOf { label ->
                     textMeasurer.measure(
                         text = AnnotatedString(label),
@@ -220,7 +241,7 @@ private fun ModeSelector(
                 if (widestLabelPx <= labelWidthPx) break
                 candidate -= 0.25f
             }
-            candidate.sp
+            candidate.coerceAtLeast(minimumLabelFontSize.value).sp
         }
 
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
@@ -281,7 +302,7 @@ private fun OffExplainer() {
         Text(
             text = stringResource(R.string.app_filter_off_explainer),
             modifier = Modifier.padding(16.dp),
-            style = MaterialTheme.typography.bodyMedium,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
             color = textColor,
         )
     }
@@ -364,7 +385,16 @@ private fun AppListSection(
                 onValueChange = onSearchChange,
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
-                placeholder = { Text(stringResource(R.string.app_filter_search_hint)) },
+                textStyle = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
+                placeholder = {
+                    Text(
+                        text = stringResource(R.string.app_filter_search_hint),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 shape = RoundedCornerShape(12.dp),
                 colors = textFieldColors,
@@ -377,7 +407,7 @@ private fun AppListSection(
                 Text(
                     stringResource(R.string.app_filter_show_system),
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                     color = onSurfaceStrong,
                 )
                 Switch(
@@ -399,12 +429,7 @@ private fun AppListSection(
                         state.visibleApps.size,
                     ),
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodySmall,
-                    autoSize = TextAutoSize.StepBased(
-                        minFontSize = 8.sp,
-                        maxFontSize = MaterialTheme.typography.bodySmall.fontSize,
-                        stepSize = 0.5.sp,
-                    ),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = mutedText,
                     maxLines = 1,
                     softWrap = false,
@@ -432,7 +457,7 @@ private fun AppListSection(
             if (state.mode == AppFilterMode.WHITELIST && state.selected.isEmpty()) {
                 Text(
                     text = stringResource(R.string.app_filter_empty_warning),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.padding(top = 4.dp),
                 )
@@ -471,12 +496,7 @@ private fun AppFilterActionText(text: String) {
     Text(
         text = text,
         modifier = Modifier.fillMaxWidth(),
-        style = MaterialTheme.typography.labelLarge,
-        autoSize = TextAutoSize.StepBased(
-            minFontSize = 8.sp,
-            maxFontSize = MaterialTheme.typography.labelLarge.fontSize,
-            stepSize = 0.5.sp,
-        ),
+        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
         maxLines = 1,
         softWrap = false,
         overflow = TextOverflow.Ellipsis,
@@ -506,14 +526,20 @@ private fun AppRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 app.label,
-                style = MaterialTheme.typography.bodyLarge,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
                 fontWeight = FontWeight.Medium,
                 color = titleColor,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 app.packageName,
-                style = MaterialTheme.typography.bodySmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                 color = subtitleColor,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         // onCheckedChange = null delegates the click + accessibility to

@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,6 +49,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
@@ -70,8 +72,10 @@ fun SpeedTestScreen(
                 title = {
                     Text(
                         text = stringResource(R.string.speed_test_title),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
+                        softWrap = false,
                         overflow = TextOverflow.Ellipsis,
                     )
                 },
@@ -122,8 +126,9 @@ fun SpeedTestScreen(
                     state.phase == SpeedTestPhase.Done -> stringResource(R.string.speed_done)
                     else -> ""
                 },
-                style = MaterialTheme.typography.bodyLarge,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
                 color = if (state.errorRes != null) VpnRed else MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
             )
 
             Spacer(modifier = Modifier.height(36.dp))
@@ -186,8 +191,11 @@ fun SpeedTestScreen(
                         SpeedTestPhase.Idle, SpeedTestPhase.Done -> stringResource(R.string.speed_start_test)
                         else -> stringResource(R.string.speed_stop)
                     },
-                    style = MaterialTheme.typography.titleMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                     modifier = Modifier.padding(vertical = 4.dp),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -232,9 +240,10 @@ private fun SpeedRouteBadge(
                 text = stringResource(
                     if (viaVpn) R.string.speed_via_vpn else R.string.speed_direct,
                 ),
-                style = MaterialTheme.typography.labelSmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
+                softWrap = false,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -348,14 +357,20 @@ private fun SpeedGauge(
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 text = if (phase == SpeedTestPhase.Idle) "0" else "%.1f".format(speed),
-                fontSize = 40.sp,
+                style = fixedLayoutTextStyle(TextStyle(fontSize = 40.sp)),
                 fontWeight = FontWeight.Bold,
                 color = textColor,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = stringResource(R.string.speed_unit_mbps),
-                style = MaterialTheme.typography.bodySmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -384,21 +399,30 @@ private fun ResultCard(
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = value,
-                fontSize = 22.sp,
+                style = fixedLayoutTextStyle(TextStyle(fontSize = 22.sp)),
                 fontWeight = FontWeight.Bold,
                 color = color,
                 textAlign = TextAlign.Center,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 text = unit,
-                style = MaterialTheme.typography.labelSmall,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }

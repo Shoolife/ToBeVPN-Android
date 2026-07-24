@@ -69,9 +69,11 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tobevpn.app.R
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -110,7 +112,14 @@ fun SupportScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(stringResource(R.string.settings_support), fontWeight = FontWeight.Bold)
+                    Text(
+                        text = stringResource(R.string.settings_support),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -131,7 +140,7 @@ fun SupportScreen(
             // Fixed intro — stays put above the scrolling list.
             Text(
                 text = stringResource(R.string.support_faq_intro),
-                style = MaterialTheme.typography.bodyMedium,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
@@ -260,7 +269,11 @@ fun SupportScreen(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = stringResource(R.string.support_contact_button),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
                         fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -317,7 +330,7 @@ private fun FaqItem(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = stringResource(questionRes),
-                    style = MaterialTheme.typography.titleSmall,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                     fontWeight = FontWeight.SemiBold,
                     color = titleColor,
                     modifier = Modifier.weight(1f),
@@ -345,7 +358,7 @@ private fun FaqItem(
             AnimatedVisibility(visible = expanded) {
                 Text(
                     text = stringResource(answerRes),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 10.dp),
                 )
