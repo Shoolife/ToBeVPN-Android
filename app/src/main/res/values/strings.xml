@@ -273,7 +273,7 @@
     <string name="whats_new_intro">Highlights in the installed version</string>
     <string name="whats_new_done">Got it</string>
     <string name="whats_new_adaptive_layout_title">Adaptive layout</string>
-    <string name="whats_new_adaptive_layout_desc">Text and controls now scale correctly on compact displays with increased system sizing while retaining their original proportions on wider phones.</string>
+    <string name="whats_new_adaptive_layout_desc">The whole interface — text, cards, buttons, icons and spacing — now scales proportionally on compact displays while retaining its original size on wider phones.</string>
     <string name="whats_new_consistent_ui_title">Consistent screen layout</string>
     <string name="whats_new_consistent_ui_desc">Settings, servers, statistics, speed test, referrals and app selection now use a consistent text hierarchy without clipped labels.</string>
     <string name="whats_new_traffic_dialogs_title">Clear dialogs and traffic usage</string>

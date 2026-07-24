@@ -10,7 +10,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import com.tobevpn.app.domain.model.ThemeMode
+import com.tobevpn.app.presentation.components.compactLayoutScale
 
 // ──────────────────────────────────────────────────────────────────────────
 // Light theme is hand-tuned to brand-approved values; we deliberately don't
@@ -135,6 +138,19 @@ fun ToBeVPNTheme(
         ThemeMode.LIGHT -> false
     }
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val baseConfig = LocalConfiguration.current
+    val baseDensity = LocalDensity.current
+    val layoutScale = compactLayoutScale(baseConfig.smallestScreenWidthDp)
+    val effectiveDensity = remember(baseDensity, layoutScale) {
+        if (layoutScale == 1f) {
+            baseDensity
+        } else {
+            Density(
+                density = baseDensity.density * layoutScale,
+                fontScale = baseDensity.fontScale,
+            )
+        }
+    }
 
     // Force the theme app-wide by overriding LocalConfiguration's night mode,
     // so the ~70 places that call isSystemInDarkTheme() directly resolve to the
@@ -143,7 +159,6 @@ fun ToBeVPNTheme(
     // provided value, never the composition structure. A structural change here
     // would discard the whole subtree, resetting the NavHost back stack and
     // bouncing the user to the start screen.
-    val baseConfig = LocalConfiguration.current
     val effectiveConfig = remember(baseConfig, themeMode, darkTheme) {
         if (themeMode == ThemeMode.SYSTEM) {
             baseConfig
@@ -154,7 +169,10 @@ fun ToBeVPNTheme(
             }
         }
     }
-    CompositionLocalProvider(LocalConfiguration provides effectiveConfig) {
+    CompositionLocalProvider(
+        LocalConfiguration provides effectiveConfig,
+        LocalDensity provides effectiveDensity,
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,

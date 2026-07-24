@@ -279,7 +279,7 @@
     <string name="whats_new_intro">Главные изменения установленной версии</string>
     <string name="whats_new_done">Понятно</string>
     <string name="whats_new_adaptive_layout_title">Адаптивный интерфейс</string>
-    <string name="whats_new_adaptive_layout_desc">На компактных экранах с увеличенным системным масштабом текст и элементы теперь уменьшаются аккуратно, а на широких телефонах сохраняют исходные пропорции.</string>
+    <string name="whats_new_adaptive_layout_desc">На компактных экранах весь интерфейс — текст, карточки, кнопки, иконки и отступы — теперь уменьшается пропорционально, а на широких телефонах сохраняет исходный размер.</string>
     <string name="whats_new_consistent_ui_title">Единое оформление экранов</string>
     <string name="whats_new_consistent_ui_desc">Настройки, серверы, статистика, проверка скорости, рефералы и выбор приложений получили согласованные размеры текста без съехавших и обрезанных подписей.</string>
     <string name="whats_new_traffic_dialogs_title">Диалоги и статистика трафика</string>
