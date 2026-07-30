@@ -67,6 +67,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.dao.TrafficStat
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.theme.responsiveMaxWidth
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import java.text.SimpleDateFormat
@@ -81,6 +82,7 @@ fun StatsScreen(
     onBack: () -> Unit,
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
+    val pageMaxWidth = responsiveMaxWidth(560.dp)
     val period by viewModel.period.collectAsStateWithLifecycle()
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val totalBytes by viewModel.totalBytes.collectAsStateWithLifecycle()
@@ -120,7 +122,7 @@ fun StatsScreen(
         ) {
             Column(
                 modifier = Modifier
-                    .widthIn(max = 560.dp)
+                    .widthIn(max = pageMaxWidth)
                     .fillMaxSize(),
             ) {
                 Spacer(Modifier.height(8.dp))

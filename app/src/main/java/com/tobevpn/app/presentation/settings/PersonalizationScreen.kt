@@ -18,17 +18,25 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -37,20 +45,30 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -58,21 +76,40 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.util.lerp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
+import com.tobevpn.app.data.repository.CurrentSubscriptionPlanInfo
+import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.domain.model.AuthState
+import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
+import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
+import com.tobevpn.app.domain.model.INTERFACE_SCALE_SLIDER_STEPS
+import com.tobevpn.app.domain.model.INTERFACE_SCALE_STEP
+import com.tobevpn.app.domain.model.MAX_INTERFACE_SCALE
+import com.tobevpn.app.domain.model.MIN_INTERFACE_SCALE
 import com.tobevpn.app.domain.model.ProfileNameDisplay
 import com.tobevpn.app.domain.model.ThemeMode
+import com.tobevpn.app.domain.model.UserPlan
+import com.tobevpn.app.domain.model.normalizeFontScale
+import com.tobevpn.app.domain.model.normalizeInterfaceScale
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.servers.ServerListScalePreview
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
+import com.tobevpn.app.presentation.theme.VpnOrange
+import com.tobevpn.app.presentation.theme.VpnRed
 import com.tobevpn.app.util.LocaleManager
+import kotlin.math.absoluteValue
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PersonalizationScreen(
     onBack: () -> Unit,
+    onNavigateToDisplayScaleText: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
@@ -146,6 +183,11 @@ fun PersonalizationScreen(
                 onSelect = { viewModel.setThemeMode(it) },
             )
 
+            Spacer(modifier = Modifier.height(16.dp))
+            DisplayScaleNavigationCard(
+                onClick = onNavigateToDisplayScaleText,
+            )
+
             if (authState is AuthState.Authenticated) {
                 Spacer(modifier = Modifier.height(16.dp))
                 ProfileDisplayCard(
@@ -160,7 +202,7 @@ fun PersonalizationScreen(
 
     val pending = pendingLanguage
     if (pending != null) {
-        AlertDialog(
+        AppAlertDialog(
             onDismissRequest = { pendingLanguage = null },
             title = {
                 Text(
@@ -210,6 +252,772 @@ fun PersonalizationScreen(
                     )
                 }
             },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun DisplayScaleTextScreen(
+    onBack: () -> Unit,
+    viewModel: SettingsViewModel = hiltViewModel(),
+) {
+    val interfaceScale by viewModel.interfaceScale.collectAsStateWithLifecycle()
+    val fontScale by viewModel.fontScale.collectAsStateWithLifecycle()
+    val boldText by viewModel.boldText.collectAsStateWithLifecycle()
+    val outlinedText by viewModel.outlinedText.collectAsStateWithLifecycle()
+    val authState by viewModel.authState.collectAsStateWithLifecycle()
+    val currentSubscriptionPlan by viewModel.currentSubscriptionPlan.collectAsStateWithLifecycle()
+    val profileNameDisplay by viewModel.profileNameDisplay.collectAsStateWithLifecycle()
+    val avatarLoading by viewModel.avatarLoading.collectAsStateWithLifecycle()
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(R.string.display_and_text_scale_title),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.back),
+                        )
+                    }
+                },
+            )
+        },
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(horizontal = 16.dp)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            DisplaySettingsPreview(
+                authState = authState,
+                currentSubscriptionPlan = currentSubscriptionPlan,
+                profileNameDisplay = profileNameDisplay,
+                avatarLoading = avatarLoading,
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            DisplayScaleAndTextControls(
+                interfaceScale = interfaceScale,
+                fontScale = fontScale,
+                boldText = boldText,
+                outlinedText = outlinedText,
+                onInterfaceScaleChange = viewModel::setInterfaceScale,
+                onFontScaleChange = viewModel::setFontScale,
+                onBoldTextChange = viewModel::setBoldText,
+                onOutlinedTextChange = viewModel::setOutlinedText,
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            ResetDisplaySettingsButton(
+                enabled = interfaceScale != DEFAULT_INTERFACE_SCALE ||
+                    fontScale != DEFAULT_FONT_SCALE ||
+                    boldText ||
+                    outlinedText,
+                onClick = viewModel::resetDisplayPreferences,
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun ResetDisplaySettingsButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier.fillMaxWidth(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Button(
+            onClick = onClick,
+            enabled = enabled,
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f),
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f),
+                disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.34f),
+            ),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = 18.dp,
+                vertical = 12.dp,
+            ),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Restore,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.display_settings_reset),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DisplaySettingsPreview(
+    authState: AuthState,
+    currentSubscriptionPlan: CurrentSubscriptionPlanInfo?,
+    profileNameDisplay: ProfileNameDisplay,
+    avatarLoading: Boolean,
+) {
+    val isDark = isSystemInDarkTheme()
+    val previewBackground = if (isDark) {
+        Color.Black
+    } else {
+        Color(0xFFF3F3F6)
+    }
+    val pagerState = rememberPagerState(pageCount = { DISPLAY_PREVIEW_PAGE_COUNT })
+    val coroutineScope = rememberCoroutineScope()
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(previewBackground)
+                .padding(horizontal = 16.dp, vertical = 18.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(
+                text = stringResource(R.string.display_preview_label),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(252.dp),
+                beyondViewportPageCount = 1,
+                pageSpacing = 16.dp,
+            ) { page ->
+                val pageOffset = (
+                    (pagerState.currentPage - page) +
+                        pagerState.currentPageOffsetFraction
+                    ).absoluteValue.coerceIn(0f, 1f)
+                val transitionProgress = 1f - pageOffset
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            alpha = lerp(0.35f, 1f, transitionProgress)
+                        }
+                        .clip(RoundedCornerShape(20.dp)),
+                ) {
+                    when (page) {
+                        0 -> DisplayPreviewProfilePage(
+                            authState = authState,
+                            profileNameDisplay = profileNameDisplay,
+                            avatarLoading = avatarLoading,
+                        )
+                        1 -> DisplayPreviewServersPage()
+                        else -> DisplayPreviewSubscriptionPage(
+                            authState = authState,
+                            currentSubscriptionPlan = currentSubscriptionPlan,
+                        )
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(pagerState.currentPage - 1)
+                        }
+                    },
+                    enabled = pagerState.currentPage > 0,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                        contentDescription = stringResource(R.string.display_preview_previous),
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                repeat(DISPLAY_PREVIEW_PAGE_COUNT) { index ->
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 4.dp)
+                            .size(if (index == pagerState.currentPage) 7.dp else 6.dp)
+                            .clip(CircleShape)
+                            .background(
+                                MaterialTheme.colorScheme.onSurface.copy(
+                                    alpha = if (index == pagerState.currentPage) 0.72f else 0.28f,
+                                ),
+                            ),
+                    )
+                }
+                Spacer(modifier = Modifier.width(14.dp))
+                IconButton(
+                    onClick = {
+                        coroutineScope.launch {
+                            pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                        }
+                    },
+                    enabled = pagerState.currentPage < DISPLAY_PREVIEW_PAGE_COUNT - 1,
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = stringResource(R.string.display_preview_next),
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DisplayPreviewProfilePage(
+    authState: AuthState,
+    profileNameDisplay: ProfileNameDisplay,
+    avatarLoading: Boolean,
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        AccountCard(
+            authState = authState,
+            nameDisplay = profileNameDisplay,
+            avatarLoading = avatarLoading,
+            onNavigateToAuth = {},
+            onNavigateToDevicePairingAuth = {},
+        )
+    }
+}
+
+@Composable
+private fun DisplayPreviewServersPage() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        ServerListScalePreview()
+    }
+}
+
+@Composable
+private fun DisplayPreviewSubscriptionPage(
+    authState: AuthState,
+    currentSubscriptionPlan: CurrentSubscriptionPlanInfo?,
+) {
+    val authenticated = authState as? AuthState.Authenticated
+    val planName = currentSubscriptionPlan?.displayName
+        ?.takeIf { it.isNotBlank() }
+        ?: authenticated?.planDisplayName?.takeIf { it.isNotBlank() }
+        ?: when (authenticated?.plan) {
+            UserPlan.ADMIN -> stringResource(R.string.plan_admin)
+            UserPlan.PAID -> stringResource(R.string.plan_standard)
+            UserPlan.EXPIRED -> stringResource(R.string.plan_expired)
+            UserPlan.FREE_TRIAL, null -> stringResource(R.string.plan_free)
+        }
+    val expired = currentSubscriptionPlan?.isExpired == true ||
+        authenticated?.plan == UserPlan.EXPIRED
+    val trial = currentSubscriptionPlan?.isTrial == true ||
+        authenticated?.plan == UserPlan.FREE_TRIAL ||
+        authState is AuthState.Anonymous
+    val planColor = when {
+        expired -> VpnRed
+        trial -> VpnOrange
+        else -> VpnGreen
+    }
+    val expiresAt = currentSubscriptionPlan?.expiresAtMillis
+        ?: authenticated?.planExpiresAt
+    val planDescription = when {
+        expired -> stringResource(R.string.plan_renew_full)
+        expiresAt != null -> stringResource(R.string.plan_active_until, formatDate(expiresAt))
+        trial -> stringResource(R.string.plan_limited_traffic)
+        else -> stringResource(R.string.plan_active)
+    }
+    val trafficLimitBytes = currentSubscriptionPlan?.trafficLimitBytes
+    val deviceLimit = currentSubscriptionPlan?.deviceLimit
+    val unlimited = currentSubscriptionPlan?.isUnlimited == true
+    val trafficLimitValue = when {
+        unlimited -> "∞"
+        trafficLimitBytes == null -> "—"
+        trafficLimitBytes <= 0L -> "∞"
+        else -> "${trafficLimitBytes / BYTES_PER_GIB} ${stringResource(R.string.unit_gb)}"
+    }
+    val deviceLimitValue = when {
+        unlimited -> "∞"
+        deviceLimit == null -> "—"
+        deviceLimit <= 0 -> "∞"
+        else -> deviceLimit.toString()
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1.12f)) {
+                    Text(
+                        text = stringResource(R.string.current_plan),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                    )
+                    Text(
+                        text = planName,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
+                        fontWeight = FontWeight.Bold,
+                        color = planColor,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        autoSize = TextAutoSize.StepBased(
+                            minFontSize = 13.sp,
+                            maxFontSize = 22.sp,
+                        ),
+                    )
+                    Text(
+                        text = planDescription,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        autoSize = TextAutoSize.StepBased(
+                            minFontSize = 11.sp,
+                            maxFontSize = 16.sp,
+                        ),
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Row(
+                    modifier = Modifier.weight(0.88f),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceEvenly,
+                ) {
+                    DisplayPreviewLimit(
+                        value = trafficLimitValue,
+                        label = stringResource(R.string.per_month_short),
+                    )
+                    Text(
+                        text = "·",
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    DisplayPreviewLimit(
+                        value = deviceLimitValue,
+                        label = stringResource(R.string.devices_label),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DisplayPreviewLimit(
+    value: String,
+    label: String,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = value,
+            style = fixedLayoutTextStyle(
+                MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp),
+            ),
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+        )
+        Text(
+            text = label,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun DisplayScaleNavigationCard(
+    onClick: () -> Unit,
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(AccentViolet.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.AspectRatio,
+                    contentDescription = null,
+                    tint = AccentViolet,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.display_and_text_scale_title),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = stringResource(R.string.display_and_text_scale_description),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DisplayScaleAndTextControls(
+    interfaceScale: Float,
+    fontScale: Float,
+    boldText: Boolean,
+    outlinedText: Boolean,
+    onInterfaceScaleChange: (Float) -> Unit,
+    onFontScaleChange: (Float) -> Unit,
+    onBoldTextChange: (Boolean) -> Unit,
+    onOutlinedTextChange: (Boolean) -> Unit,
+) {
+    val isDark = isSystemInDarkTheme()
+    val groupColor = if (isDark) {
+        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)
+    } else {
+        Color(0xFFF4F4F6)
+    }
+    val dividerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.09f)
+
+    Text(
+        text = stringResource(R.string.display_size_section_title),
+        style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(groupColor),
+    ) {
+        DiscreteScaleSetting(
+            title = stringResource(R.string.font_scale_title),
+            description = stringResource(R.string.font_scale_description),
+            value = fontScale,
+            normalize = ::normalizeFontScale,
+            decreaseDescription = stringResource(R.string.font_scale_decrease),
+            increaseDescription = stringResource(R.string.font_scale_increase),
+            onValueChange = onFontScaleChange,
+        )
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            color = dividerColor,
+        )
+        DiscreteScaleSetting(
+            title = stringResource(R.string.interface_scale_title),
+            description = stringResource(R.string.interface_scale_description),
+            value = interfaceScale,
+            normalize = ::normalizeInterfaceScale,
+            decreaseDescription = stringResource(R.string.interface_scale_decrease),
+            increaseDescription = stringResource(R.string.interface_scale_increase),
+            onValueChange = onInterfaceScaleChange,
+        )
+    }
+
+    Spacer(modifier = Modifier.height(24.dp))
+
+    Text(
+        text = stringResource(R.string.text_style_section_title),
+        style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp, bottom = 10.dp),
+    )
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(groupColor),
+    ) {
+        TextStyleToggleRow(
+            title = stringResource(R.string.bold_text_title),
+            description = null,
+            checked = boldText,
+            onCheckedChange = onBoldTextChange,
+        )
+        HorizontalDivider(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            color = dividerColor,
+        )
+        TextStyleToggleRow(
+            title = stringResource(R.string.outlined_text_title),
+            description = stringResource(R.string.outlined_text_description),
+            checked = outlinedText,
+            onCheckedChange = onOutlinedTextChange,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DiscreteScaleSetting(
+    title: String,
+    description: String,
+    value: Float,
+    normalize: (Float) -> Float,
+    decreaseDescription: String,
+    increaseDescription: String,
+    onValueChange: (Float) -> Unit,
+) {
+    var sliderValue by remember(value) {
+        mutableFloatStateOf(normalize(value))
+    }
+    val normalizedValue = normalize(sliderValue)
+    val canDecrease = normalizedValue > MIN_INTERFACE_SCALE
+    val canIncrease = normalizedValue < MAX_INTERFACE_SCALE
+    val sliderColors = SliderDefaults.colors(
+        thumbColor = AccentViolet,
+        activeTrackColor = AccentViolet,
+        activeTickColor = Color.White,
+        inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
+        inactiveTickColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+    )
+
+    fun select(valueToSelect: Float) {
+        val normalized = normalize(valueToSelect)
+        if (normalized == normalizedValue) return
+        sliderValue = normalized
+        onValueChange(normalized)
+    }
+
+    Column(
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = description,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Spacer(modifier = Modifier.width(12.dp))
+            Text(
+                text = stringResource(R.string.interface_scale_value, normalizedValue),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                fontWeight = FontWeight.Bold,
+                color = AccentViolet,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ScaleStepButton(
+                icon = Icons.Filled.Remove,
+                contentDescription = decreaseDescription,
+                enabled = canDecrease,
+                onClick = {
+                    select(normalizedValue - INTERFACE_SCALE_STEP)
+                },
+            )
+            Slider(
+                value = normalizedValue,
+                onValueChange = ::select,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 6.dp),
+                valueRange = MIN_INTERFACE_SCALE..MAX_INTERFACE_SCALE,
+                steps = INTERFACE_SCALE_SLIDER_STEPS,
+                colors = sliderColors,
+                track = { sliderState ->
+                    SliderDefaults.Track(
+                        sliderState = sliderState,
+                        colors = sliderColors,
+                        drawStopIndicator = null,
+                        drawTick = { offset, color ->
+                            val edgeInset = center.y
+                            val isEndpoint = offset.x <= edgeInset + 0.5f ||
+                                offset.x >= size.width - edgeInset - 0.5f
+                            if (!isEndpoint) {
+                                drawCircle(
+                                    color = color,
+                                    center = offset,
+                                    radius = SliderDefaults.TickSize.toPx() / 2f,
+                                )
+                            }
+                        },
+                    )
+                },
+            )
+            ScaleStepButton(
+                icon = Icons.Filled.Add,
+                contentDescription = increaseDescription,
+                enabled = canIncrease,
+                onClick = {
+                    select(normalizedValue + INTERFACE_SCALE_STEP)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScaleStepButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(40.dp),
+        colors = IconButtonDefaults.iconButtonColors(
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            disabledContainerColor = Color.Transparent,
+            disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+        ),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+@Composable
+private fun TextStyleToggleRow(
+    title: String,
+    description: String?,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    val switchColors = if (isSystemInDarkTheme()) {
+        SwitchDefaults.colors()
+    } else {
+        SwitchDefaults.colors(
+            checkedThumbColor = Color.White,
+            checkedTrackColor = AccentViolet,
+            checkedBorderColor = AccentViolet,
+            uncheckedThumbColor = Color.White,
+            uncheckedTrackColor = Color(0xFFBDBDBD),
+            uncheckedBorderColor = Color(0xFFBDBDBD),
+        )
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            description?.let {
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = it,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(16.dp))
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            colors = switchColors,
         )
     }
 }
@@ -431,6 +1239,8 @@ private fun SelectionCard(
 
 // Soft violet for the Theme block — no brand colour maps to "appearance".
 private val AccentViolet = Color(0xFF8B7CF6)
+private const val DISPLAY_PREVIEW_PAGE_COUNT = 3
+private const val BYTES_PER_GIB = 1024L * 1024L * 1024L
 
 // A block header: a small tinted icon badge next to the title, matching the
 // look of the category tiles on the main Settings screen.

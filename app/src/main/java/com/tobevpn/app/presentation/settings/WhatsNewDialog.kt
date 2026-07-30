@@ -20,7 +20,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Tune
@@ -56,6 +55,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.theme.AppScaledContent
 
 // One highlight in the "What's new" dialog: an icon with a title and a short
 // description. All icons share the same accent, matching the desktop client.
@@ -71,18 +71,18 @@ private data class WhatsNewHighlight(
 private val currentHighlights = listOf(
     WhatsNewHighlight(
         icon = Icons.Filled.Tune,
-        titleRes = R.string.whats_new_adaptive_layout_title,
-        descriptionRes = R.string.whats_new_adaptive_layout_desc,
+        titleRes = R.string.whats_new_display_scale_title,
+        descriptionRes = R.string.whats_new_display_scale_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.AutoAwesome,
+        titleRes = R.string.whats_new_text_accessibility_title,
+        descriptionRes = R.string.whats_new_text_accessibility_desc,
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.CheckCircle,
-        titleRes = R.string.whats_new_consistent_ui_title,
-        descriptionRes = R.string.whats_new_consistent_ui_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Filled.BarChart,
-        titleRes = R.string.whats_new_traffic_dialogs_title,
-        descriptionRes = R.string.whats_new_traffic_dialogs_desc,
+        titleRes = R.string.whats_new_adaptive_ui_title,
+        descriptionRes = R.string.whats_new_adaptive_ui_desc,
     ),
 )
 
@@ -118,24 +118,25 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        Surface(
-            modifier = Modifier
-                .padding(24.dp)
-                .widthIn(max = 390.dp)
-                .fillMaxWidth()
-                .scale(0.96f + 0.04f * progress),
-            shape = RoundedCornerShape(24.dp),
-            color = colors.surface,
-            border = androidx.compose.foundation.BorderStroke(1.dp, colors.outlineVariant),
-            tonalElevation = 0.dp,
-        ) {
-            Box {
-                Column(
-                    modifier = Modifier
-                        .verticalScroll(rememberScrollState())
-                        .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 22.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
+        AppScaledContent {
+            Surface(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .widthIn(max = 390.dp)
+                    .fillMaxWidth()
+                    .scale(0.96f + 0.04f * progress),
+                shape = RoundedCornerShape(24.dp),
+                color = colors.surface,
+                border = androidx.compose.foundation.BorderStroke(1.dp, colors.outlineVariant),
+                tonalElevation = 0.dp,
+            ) {
+                Box {
+                    Column(
+                        modifier = Modifier
+                            .verticalScroll(rememberScrollState())
+                            .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 22.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
                     // Hero badge with a gradient fill and a soft coloured shadow.
                     Box(
                         modifier = Modifier
@@ -238,20 +239,21 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                     }
                 }
 
-                // Close (×) in the top-end corner.
-                IconButton(
-                    onClick = onDismiss,
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(6.dp)
-                        .size(36.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = stringResource(R.string.whats_new_done),
-                        tint = colors.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
-                    )
+                    // Close (×) in the top-end corner.
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
+                            .size(36.dp),
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Close,
+                            contentDescription = stringResource(R.string.whats_new_done),
+                            tint = colors.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
                 }
             }
         }

@@ -32,6 +32,8 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.rememberNavController
 import com.tobevpn.app.data.local.PrefsDataStore
+import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
+import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
 import com.tobevpn.app.presentation.navigation.AppNavHost
 import com.tobevpn.app.presentation.splash.SplashScreen
 import com.tobevpn.app.domain.model.ThemeMode
@@ -75,6 +77,14 @@ class MainActivity : AppCompatActivity() {
             }
             val themeMode by themeModeFlow
                 .collectAsStateWithLifecycle(initialValue = ThemeMode.SYSTEM)
+            val interfaceScale by prefsDataStore.interfaceScale
+                .collectAsStateWithLifecycle(initialValue = DEFAULT_INTERFACE_SCALE)
+            val fontScale by prefsDataStore.fontScale
+                .collectAsStateWithLifecycle(initialValue = DEFAULT_FONT_SCALE)
+            val boldText by prefsDataStore.boldText
+                .collectAsStateWithLifecycle(initialValue = false)
+            val outlinedText by prefsDataStore.outlinedText
+                .collectAsStateWithLifecycle(initialValue = false)
             val notificationPermissionLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestPermission(),
             ) {}
@@ -103,7 +113,13 @@ class MainActivity : AppCompatActivity() {
             // to sit outside ToBeVPNTheme, so their isSystemInDarkTheme()
             // calls ignored the in-app theme override and followed the
             // system setting instead.
-            ToBeVPNTheme(themeMode = themeMode) {
+            ToBeVPNTheme(
+                themeMode = themeMode,
+                interfaceScale = interfaceScale,
+                fontScale = fontScale,
+                boldText = boldText,
+                outlinedText = outlinedText,
+            ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     // Surface establishes the app's background color and
                     // LocalContentColor for screens that don't use Scaffold

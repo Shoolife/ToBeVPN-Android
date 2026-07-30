@@ -71,7 +71,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -125,9 +124,12 @@ import com.tobevpn.app.presentation.components.countryFlagForUi
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import com.tobevpn.app.presentation.components.serverDisplayName
+import com.tobevpn.app.presentation.theme.AppScaledContent
+import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.presentation.theme.VpnRed
+import com.tobevpn.app.presentation.theme.responsiveMaxWidth
 import kotlin.math.ceil
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -159,6 +161,7 @@ fun MainScreen(
     val subscriptionUsageBlocked by viewModel.subscriptionUsageBlocked.collectAsStateWithLifecycle()
     val updateRequired by viewModel.updateRequired.collectAsStateWithLifecycle()
     val activity = LocalActivity.current
+    val pageMaxWidth = responsiveMaxWidth(560.dp)
 
     // Re-sync on every resume (e.g. after payment in Telegram)
     LifecycleResumeEffect(Unit) {
@@ -300,7 +303,7 @@ fun MainScreen(
         ) {
         Column(
             modifier = Modifier
-                .widthIn(max = 560.dp)
+                .widthIn(max = pageMaxWidth)
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -512,7 +515,7 @@ fun MainScreen(
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .widthIn(max = 560.dp)
+                    .widthIn(max = pageMaxWidth)
                     .padding(top = 8.dp),
             ) {
                 PaymentSuccessBanner(onDismiss = viewModel::dismissPaymentSuccess)
@@ -669,6 +672,7 @@ private fun TemporaryAccessTopDialog(
     onDismiss: () -> Unit,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val dialogMaxWidth = responsiveMaxWidth(520.dp)
 
     Box(
         modifier = Modifier
@@ -681,7 +685,7 @@ private fun TemporaryAccessTopDialog(
     ) {
         Card(
             modifier = Modifier
-                .widthIn(max = 520.dp)
+                .widthIn(max = dialogMaxWidth)
                 .fillMaxWidth()
                 .clickable(
                     interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
@@ -1443,7 +1447,7 @@ private fun BlockedDialog(onDismiss: () -> Unit) {
     val link = stringResource(R.string.block_appeal_link)
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val buttonTextColor = if (isDark) MaterialTheme.colorScheme.onSurface else Color.Black
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = onDismiss,
         icon = {
             Icon(
@@ -1540,7 +1544,7 @@ private fun UpdateRequiredDialog(onQuit: () -> Unit) {
 
     val showProgress = updateState is com.tobevpn.app.update.UpdateUiState.Downloading
 
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = {},
         icon = {
             Icon(
@@ -1682,6 +1686,11 @@ private fun SubscriptionBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        dragHandle = {
+            AppScaledContent {
+                androidx.compose.material3.BottomSheetDefaults.DragHandle()
+            }
+        },
         // Pure white sheet on light theme so it reads as a clean modal
         // surface against the off-white app background. Dark theme keeps
         // the M3 default surfaceContainerLow.
@@ -1691,16 +1700,17 @@ private fun SubscriptionBottomSheet(
             Color.White
         },
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .offset(y = sheetContentOffset)
-                .alpha(sheetContentAlpha)
-                .verticalScroll(rememberScrollState())
-                .navigationBarsPadding()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp),
-        ) {
+        AppScaledContent {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .offset(y = sheetContentOffset)
+                    .alpha(sheetContentAlpha)
+                    .verticalScroll(rememberScrollState())
+                    .navigationBarsPadding()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp),
+            ) {
             // Header
             Text(
                 text = stringResource(R.string.subscription),
@@ -2215,6 +2225,7 @@ private fun SubscriptionBottomSheet(
                         )
                     }
                 }
+            }
             }
         }
     }

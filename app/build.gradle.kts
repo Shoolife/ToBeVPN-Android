@@ -47,13 +47,14 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = versionCodeOverride ?: 57
-        versionName = "1.0.56"
+        versionCode = versionCodeOverride ?: 61
+        versionName = "1.0.60"
 
         // Direct APK releases can use the GitHub self-updater. Google Play
         // builds override this flag because Play policy requires updates to
         // be delivered by Google Play instead of REQUEST_INSTALL_PACKAGES.
         buildConfigField("boolean", "IN_APP_UPDATES_ENABLED", "true")
+        buildConfigField("boolean", "PLAY_DISTRIBUTION", "false")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -127,6 +128,12 @@ android {
 
     buildTypes {
         debug {
+            // Keep local UI/test builds installable next to the Google Play app.
+            // Play App Signing uses a different certificate, so sharing the
+            // production package name would otherwise require deleting the
+            // user's installed app and all of its data before every test.
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
             isMinifyEnabled = false
             isShrinkResources = false
             ndk {
@@ -158,6 +165,7 @@ android {
             initWith(getByName("release"))
             matchingFallbacks += listOf("release")
             buildConfigField("boolean", "IN_APP_UPDATES_ENABLED", "false")
+            buildConfigField("boolean", "PLAY_DISTRIBUTION", "true")
         }
     }
 
@@ -218,6 +226,8 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.appcompat)
+    implementation("com.google.android.play:app-update:2.1.0")
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
 
     // Lifecycle
     implementation(libs.androidx.lifecycle.runtime.compose)

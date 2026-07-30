@@ -11,6 +11,10 @@
 # Retrofit
 -keepattributes Signature
 -keepattributes *Annotation*
+# Retrofit creates these service interfaces through java.lang.reflect.Proxy.
+# Keep their identity and annotated methods stable under R8 full-mode; otherwise
+# a minified release can fail with ClassCastException in Retrofit.create().
+-keep interface com.tobevpn.app.data.remote.*Api { *; }
 -keep class com.tobevpn.app.data.remote.dto.** { *; }
 -keep class com.tobevpn.app.data.remote.ExchangeRateResponse { *; }
 -keepclassmembers,allowshrinking,allowobfuscation interface * {

@@ -76,7 +76,7 @@ jobs:
           FALLBACK_SUBS_DOMAIN: ${{ secrets.FALLBACK_SUBS_DOMAIN }}
         run: ./gradlew assembleRelease --no-daemon
 
-      - name: Build release AAB (no splits)
+      - name: Build Google Play AAB (no splits)
         # AAB ships every ABI inside one bundle; splits would conflict.
         # The -PdisableAbiSplits property is read by app/build.gradle.kts
         # to flip splits.abi.isEnable to false for this run.
@@ -85,7 +85,7 @@ jobs:
           SUBSCRIPTION_URL: ${{ secrets.SUBSCRIPTION_URL }}
           FALLBACK_BOT_DOMAIN: ${{ secrets.FALLBACK_BOT_DOMAIN }}
           FALLBACK_SUBS_DOMAIN: ${{ secrets.FALLBACK_SUBS_DOMAIN }}
-        run: ./gradlew bundleRelease -PdisableAbiSplits --no-daemon
+        run: ./gradlew bundlePlayRelease -PdisableAbiSplits --no-daemon
 
       - name: Locate and rename artifacts
         # The splits {} block in app/build.gradle.kts produces one APK per
@@ -107,13 +107,13 @@ jobs:
             cp "$apk" "artifacts/ToBeVPN-${VERSION}-${abi}-${SHA}.apk"
           done
 
-          AAB=$(find app/build/outputs/bundle/release -name "*.aab" | head -1)
+          AAB=$(find app/build/outputs/bundle/playRelease -name "*.aab" | head -1)
           if [ -z "$AAB" ]; then
             echo "::error::AAB missing"
             ls -R app/build/outputs/
             exit 1
           fi
-          cp "$AAB" "artifacts/ToBeVPN-${VERSION}-${SHA}.aab"
+          cp "$AAB" "artifacts/ToBeVPN-${VERSION}-GooglePlay-${SHA}.aab"
 
           echo "--- artifacts/ ---"
           ls -la artifacts/

@@ -26,7 +26,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.LinkOff
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -80,6 +79,8 @@ import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.theme.AppScaledContent
+import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.BrandCardFill
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
@@ -273,7 +274,7 @@ fun AdvancedScreen(
         null -> {}
         is TvPairResult.PendingConfirmation -> {
             val isDark = isSystemInDarkTheme()
-            AlertDialog(
+            AppAlertDialog(
                 onDismissRequest = { viewModel.clearTvPairResult() },
                 title = {
                     DialogTitleText(stringResource(R.string.link_tv_confirm_title))
@@ -320,7 +321,7 @@ fun AdvancedScreen(
         }
 
         is TvPairResult.Loading -> {
-            AlertDialog(
+            AppAlertDialog(
                 onDismissRequest = {},
                 title = { DialogTitleText(stringResource(R.string.devices_scan_qr)) },
                 text = {
@@ -335,7 +336,7 @@ fun AdvancedScreen(
         }
 
         is TvPairResult.Success -> {
-            AlertDialog(
+            AppAlertDialog(
                 onDismissRequest = { viewModel.clearTvPairResult() },
                 title = { DialogTitleText(stringResource(R.string.link_tv_success_title)) },
                 text = { DialogBodyText(stringResource(R.string.link_tv_success_text)) },
@@ -348,7 +349,7 @@ fun AdvancedScreen(
         }
 
         is TvPairResult.Error -> {
-            AlertDialog(
+            AppAlertDialog(
                 onDismissRequest = { viewModel.clearTvPairResult() },
                 title = { DialogTitleText(stringResource(R.string.link_tv_error_title)) },
                 text = { DialogBodyText(result.message) },
@@ -409,7 +410,7 @@ private fun PairingCodeInputDialog(
     var showCodeError by remember { mutableStateOf(false) }
     val isDark = isSystemInDarkTheme()
 
-    AlertDialog(
+    AppAlertDialog(
         onDismissRequest = onDismiss,
         title = { DialogTitleText(stringResource(R.string.devices_enter_code)) },
         text = {
@@ -520,19 +521,25 @@ private fun LinkedDevicesBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        dragHandle = {
+            AppScaledContent {
+                BottomSheetDefaults.DragHandle()
+            }
+        },
         containerColor = if (isDark) {
             BottomSheetDefaults.ContainerColor
         } else {
             Color.White
         },
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp)
-                .verticalScroll(rememberScrollState()),
-        ) {
+        AppScaledContent {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 32.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
             Text(
                 text = stringResource(R.string.devices_title),
                 style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
@@ -685,6 +692,7 @@ private fun LinkedDevicesBottomSheet(
                         Spacer(modifier = Modifier.height(12.dp))
                     }
                 }
+            }
             }
         }
     }

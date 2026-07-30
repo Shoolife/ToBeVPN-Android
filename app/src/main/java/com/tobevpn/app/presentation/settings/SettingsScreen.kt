@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -96,6 +97,7 @@ import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ProfileNameDisplay
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
@@ -270,58 +272,59 @@ private fun LogoutConfirmDialog(
             onDismissRequest = onDismiss,
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
-            // Kill the Dialog window's built-in dim. It isn't animated and only
-            // clears when the window is torn down (after our fade finishes), so
-            // leaving it on makes the scrim linger a beat after the card is gone
-            // — reads as a two-step, laggy close. We draw our own animated scrim
-            // below instead, so everything fades out together.
-            val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
-            SideEffect {
-                dialogWindow?.setDimAmount(0f)
-            }
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    // Tap outside the card dismisses; no ripple on the scrim.
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                        onClick = onDismiss,
-                    ),
-                contentAlignment = Alignment.Center,
-            ) {
-                AnimatedVisibility(
-                    visibleState = transitionState,
-                    enter = fadeIn(tween(180)),
-                    exit = fadeOut(tween(180)),
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(Color.Black.copy(alpha = 0.5f)),
-                    )
+            AppScaledContent {
+                // Kill the Dialog window's built-in dim. It isn't animated and only
+                // clears when the window is torn down (after our fade finishes), so
+                // leaving it on makes the scrim linger a beat after the card is gone
+                // — reads as a two-step, laggy close. We draw our own animated scrim
+                // below instead, so everything fades out together.
+                val dialogWindow = (LocalView.current.parent as? DialogWindowProvider)?.window
+                SideEffect {
+                    dialogWindow?.setDimAmount(0f)
                 }
-                AnimatedVisibility(
-                    visibleState = transitionState,
-                    enter = fadeIn(tween(180)) + scaleIn(tween(180), initialScale = 0.9f),
-                    // Match the scrim's exit duration exactly so the card and the
-                    // dimming fade out together instead of in two visible steps.
-                    exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.9f),
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        // Tap outside the card dismisses; no ripple on the scrim.
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = onDismiss,
+                        ),
+                    contentAlignment = Alignment.Center,
                 ) {
-                    Surface(
-                        modifier = Modifier
-                            .padding(horizontal = 40.dp)
-                            // Swallow taps so clicking the card doesn't dismiss it.
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                onClick = {},
-                            ),
-                        shape = RoundedCornerShape(28.dp),
-                        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                        tonalElevation = 6.dp,
+                    AnimatedVisibility(
+                        visibleState = transitionState,
+                        enter = fadeIn(tween(180)),
+                        exit = fadeOut(tween(180)),
                     ) {
-                        Column(modifier = Modifier.padding(24.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Black.copy(alpha = 0.5f)),
+                        )
+                    }
+                    AnimatedVisibility(
+                        visibleState = transitionState,
+                        enter = fadeIn(tween(180)) + scaleIn(tween(180), initialScale = 0.9f),
+                        // Match the scrim's exit duration exactly so the card and the
+                        // dimming fade out together instead of in two visible steps.
+                        exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.9f),
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .padding(horizontal = 40.dp)
+                                // Swallow taps so clicking the card doesn't dismiss it.
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = {},
+                                ),
+                            shape = RoundedCornerShape(28.dp),
+                            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            tonalElevation = 6.dp,
+                        ) {
+                            Column(modifier = Modifier.padding(24.dp)) {
                             Text(
                                 text = stringResource(R.string.logout_confirm_title),
                                 style = fixedLayoutTextStyle(
@@ -387,6 +390,7 @@ private fun LogoutConfirmDialog(
                                     )
                                 }
                             }
+                            }
                         }
                     }
                 }
@@ -396,7 +400,7 @@ private fun LogoutConfirmDialog(
 }
 
 @Composable
-private fun AccountCard(
+internal fun AccountCard(
     authState: AuthState,
     nameDisplay: ProfileNameDisplay,
     avatarLoading: Boolean,
@@ -840,13 +844,13 @@ private fun SettingsWideCategoryCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(80.dp)
+            .heightIn(min = 80.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(20.dp),
     ) {
         Row(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {

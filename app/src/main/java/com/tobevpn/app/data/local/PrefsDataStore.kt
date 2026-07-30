@@ -10,6 +10,10 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.tobevpn.app.BuildConfig
+import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
+import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
+import com.tobevpn.app.domain.model.normalizeFontScale
+import com.tobevpn.app.domain.model.normalizeInterfaceScale
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -50,6 +54,10 @@ class PrefsDataStore @Inject constructor(
         val LANGUAGE = stringPreferencesKey("language")
         val PROFILE_NAME_DISPLAY = stringPreferencesKey("profile_name_display")
         val THEME_MODE = stringPreferencesKey("theme_mode")
+        val INTERFACE_SCALE = doublePreferencesKey("interface_scale")
+        val FONT_SCALE = doublePreferencesKey("font_scale")
+        val BOLD_TEXT = booleanPreferencesKey("bold_text")
+        val OUTLINED_TEXT = booleanPreferencesKey("outlined_text")
         val USD_RATE = doublePreferencesKey("usd_rate")
         val USD_RATE_TIMESTAMP = longPreferencesKey("usd_rate_timestamp")
         val ANON_SERVER_BYTES = longPreferencesKey("anon_server_bytes")
@@ -106,6 +114,57 @@ class PrefsDataStore @Inject constructor(
 
     suspend fun setThemeMode(value: String) {
         context.dataStore.edit { it[Keys.THEME_MODE] = value }
+    }
+
+    val interfaceScale: Flow<Float> = context.dataStore.data
+        .map {
+            normalizeInterfaceScale(
+                (it[Keys.INTERFACE_SCALE] ?: DEFAULT_INTERFACE_SCALE.toDouble()).toFloat(),
+            )
+        }
+        .distinctUntilChanged()
+
+    suspend fun setInterfaceScale(value: Float) {
+        val normalized = normalizeInterfaceScale(value)
+        context.dataStore.edit { it[Keys.INTERFACE_SCALE] = normalized.toDouble() }
+    }
+
+    val fontScale: Flow<Float> = context.dataStore.data
+        .map {
+            normalizeFontScale(
+                (it[Keys.FONT_SCALE] ?: DEFAULT_FONT_SCALE.toDouble()).toFloat(),
+            )
+        }
+        .distinctUntilChanged()
+
+    suspend fun setFontScale(value: Float) {
+        val normalized = normalizeFontScale(value)
+        context.dataStore.edit { it[Keys.FONT_SCALE] = normalized.toDouble() }
+    }
+
+    val boldText: Flow<Boolean> = context.dataStore.data
+        .map { it[Keys.BOLD_TEXT] ?: false }
+        .distinctUntilChanged()
+
+    suspend fun setBoldText(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.BOLD_TEXT] = enabled }
+    }
+
+    val outlinedText: Flow<Boolean> = context.dataStore.data
+        .map { it[Keys.OUTLINED_TEXT] ?: false }
+        .distinctUntilChanged()
+
+    suspend fun setOutlinedText(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.OUTLINED_TEXT] = enabled }
+    }
+
+    suspend fun resetDisplayPreferences() {
+        context.dataStore.edit {
+            it.remove(Keys.INTERFACE_SCALE)
+            it.remove(Keys.FONT_SCALE)
+            it.remove(Keys.BOLD_TEXT)
+            it.remove(Keys.OUTLINED_TEXT)
+        }
     }
 
     suspend fun getCachedUsdRate(): Pair<Double, Long>? {

@@ -12,8 +12,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
+import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
 import com.tobevpn.app.domain.model.ThemeMode
-import com.tobevpn.app.presentation.components.compactLayoutScale
+import com.tobevpn.app.domain.model.normalizeFontScale
+import com.tobevpn.app.domain.model.normalizeInterfaceScale
 
 // ──────────────────────────────────────────────────────────────────────────
 // Light theme is hand-tuned to brand-approved values; we deliberately don't
@@ -130,6 +133,10 @@ private val DarkColorScheme = darkColorScheme(
 @Composable
 fun ToBeVPNTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
+    interfaceScale: Float = DEFAULT_INTERFACE_SCALE,
+    fontScale: Float = DEFAULT_FONT_SCALE,
+    boldText: Boolean = false,
+    outlinedText: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val darkTheme = when (themeMode) {
@@ -140,16 +147,31 @@ fun ToBeVPNTheme(
     val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
     val baseConfig = LocalConfiguration.current
     val baseDensity = LocalDensity.current
-    val layoutScale = compactLayoutScale(baseConfig.smallestScreenWidthDp)
-    val effectiveDensity = remember(baseDensity, layoutScale) {
-        if (layoutScale == 1f) {
+    val normalizedInterfaceScale = normalizeInterfaceScale(interfaceScale)
+    val normalizedFontScale = normalizeFontScale(fontScale)
+    val effectiveDensity = remember(
+        baseDensity,
+        normalizedInterfaceScale,
+        normalizedFontScale,
+    ) {
+        if (
+            normalizedInterfaceScale == DEFAULT_INTERFACE_SCALE &&
+            normalizedFontScale == DEFAULT_FONT_SCALE
+        ) {
             baseDensity
         } else {
             Density(
-                density = baseDensity.density * layoutScale,
-                fontScale = baseDensity.fontScale,
+                density = baseDensity.density * normalizedInterfaceScale,
+                fontScale = baseDensity.fontScale * normalizedFontScale,
             )
         }
+    }
+    val appTypography = remember(boldText, outlinedText, darkTheme) {
+        accessibleTypography(
+            boldText = boldText,
+            outlinedText = outlinedText,
+            darkTheme = darkTheme,
+        )
     }
 
     // Force the theme app-wide by overriding LocalConfiguration's night mode,
@@ -171,11 +193,17 @@ fun ToBeVPNTheme(
     }
     CompositionLocalProvider(
         LocalConfiguration provides effectiveConfig,
+        LocalAppBaseDensity provides baseDensity,
+        LocalAppInterfaceScale provides normalizedInterfaceScale,
+        LocalAppFontScale provides normalizedFontScale,
+        LocalAppBoldText provides boldText,
+        LocalAppOutlinedText provides outlinedText,
+        LocalAppTextOutlineColor provides if (darkTheme) Color.Black else Color.White,
         LocalDensity provides effectiveDensity,
     ) {
         MaterialTheme(
             colorScheme = colorScheme,
-            typography = Typography,
+            typography = appTypography,
             content = content,
         )
     }

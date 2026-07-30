@@ -1,69 +1,52 @@
 package com.tobevpn.app.presentation.components
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.unit.TextUnit
-import androidx.compose.ui.unit.sp
+import androidx.compose.ui.text.font.FontWeight
+import com.tobevpn.app.presentation.theme.LocalAppBoldText
+import com.tobevpn.app.presentation.theme.LocalAppOutlinedText
+import com.tobevpn.app.presentation.theme.LocalAppTextOutlineColor
 
 /**
- * Cancels an increased system font scale in compact phone layouts.
+ * Shared text-style entry point used throughout the phone UI.
  *
- * Compact width scaling itself is applied once to the whole Compose hierarchy
- * by [compactLayoutScale]. Applying it to text here as well would make text
- * shrink twice relative to cards, icons, controls, and spacing.
+ * Interface and font scaling are applied once through
+ * [androidx.compose.ui.unit.Density] at the theme root. This shared entry point
+ * also covers custom one-off TextStyles that are not part of Material
+ * typography when accessibility bold/outline options are enabled.
  */
 @Composable
 internal fun fixedLayoutTextStyle(style: TextStyle): TextStyle {
-    val configuration = LocalConfiguration.current
-    val scaleDivisor = fixedLayoutTextScaleDivisor(
-        smallestScreenWidthDp = configuration.smallestScreenWidthDp,
-        fontScale = LocalDensity.current.fontScale,
-    )
-
-    return style.copy(
-        fontSize = style.fontSize.scaledDown(scaleDivisor),
-        lineHeight = style.lineHeight.scaledDown(scaleDivisor),
-    )
-}
-
-private const val COMPACT_LAYOUT_WIDTH_THRESHOLD_DP = 480
-private const val MIN_COMPACT_LAYOUT_SCALE = 0.77f
-
-/**
- * Scales every dp/sp based element together on compact phone layouts.
- *
- * A Galaxy S23+ at its common 384 dp layout width receives a 0.8 scale, while
- * a 502 dp Pixel layout remains completely unchanged. Extremely narrow layouts
- * are capped so controls do not become unusably small.
- */
-internal fun compactLayoutScale(smallestScreenWidthDp: Int): Float {
-    if (
-        smallestScreenWidthDp <= 0 ||
-        smallestScreenWidthDp > COMPACT_LAYOUT_WIDTH_THRESHOLD_DP
+    val currentWeight = style.fontWeight ?: FontWeight.Normal
+    val adjustedWeight = if (
+        LocalAppBoldText.current &&
+        currentWeight.weight < FontWeight.Bold.weight
     ) {
-        return 1f
+        FontWeight.Bold
+    } else {
+        style.fontWeight
+    }
+    val adjustedShadow = if (LocalAppOutlinedText.current) {
+        Shadow(
+            color = LocalAppTextOutlineColor.current,
+            offset = Offset.Zero,
+            blurRadius = 3f,
+        )
+    } else {
+        style.shadow
     }
 
-    return (smallestScreenWidthDp.toFloat() / COMPACT_LAYOUT_WIDTH_THRESHOLD_DP)
-        .coerceIn(MIN_COMPACT_LAYOUT_SCALE, 1f)
-}
-
-internal fun fixedLayoutTextScaleDivisor(
-    smallestScreenWidthDp: Int,
-    fontScale: Float,
-): Float {
-    if (
-        smallestScreenWidthDp <= 0 ||
-        smallestScreenWidthDp > COMPACT_LAYOUT_WIDTH_THRESHOLD_DP
+    return if (
+        adjustedWeight == style.fontWeight &&
+        adjustedShadow == style.shadow
     ) {
-        return 1f
+        style
+    } else {
+        style.copy(
+            fontWeight = adjustedWeight,
+            shadow = adjustedShadow,
+        )
     }
-
-    val safeFontScale = if (fontScale.isFinite()) fontScale.coerceAtLeast(1f) else 1f
-    return safeFontScale
 }
-
-private fun TextUnit.scaledDown(scaleDivisor: Float): TextUnit =
-    if (this == TextUnit.Unspecified) this else (value / scaleDivisor).sp

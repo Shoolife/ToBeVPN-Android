@@ -11,11 +11,14 @@ import com.tobevpn.app.data.remote.dto.LinkedDeviceDto
 import com.tobevpn.app.data.remote.dto.TvPairConfirmRequestDto
 import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.data.repository.AuthRepository
+import com.tobevpn.app.data.repository.CurrentSubscriptionPlanInfo
 import com.tobevpn.app.data.repository.VpnRepository
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ConnectionState
+import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
+import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
 import com.tobevpn.app.domain.model.ProfileNameDisplay
 import com.tobevpn.app.domain.model.ThemeMode
 import com.tobevpn.app.util.DeepLinkBus
@@ -64,6 +67,10 @@ class SettingsViewModel @Inject constructor(
 
     val avatarLoading: StateFlow<Boolean> = authRepository.avatarLoading
 
+    private val _currentSubscriptionPlan = MutableStateFlow<CurrentSubscriptionPlanInfo?>(null)
+    val currentSubscriptionPlan: StateFlow<CurrentSubscriptionPlanInfo?> =
+        _currentSubscriptionPlan.asStateFlow()
+
     // Loaded off the main thread — XRayCore.getVersion() is a native (JNI) call
     // whose first invocation would otherwise stall the Settings navigation.
     private val _xrayVersion = MutableStateFlow<String?>(null)
@@ -92,6 +99,46 @@ class SettingsViewModel @Inject constructor(
 
     fun setThemeMode(mode: ThemeMode) {
         viewModelScope.launch { prefsDataStore.setThemeMode(mode.name) }
+    }
+
+    val interfaceScale: StateFlow<Float> = prefsDataStore.interfaceScale
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            DEFAULT_INTERFACE_SCALE,
+        )
+
+    fun setInterfaceScale(value: Float) {
+        viewModelScope.launch { prefsDataStore.setInterfaceScale(value) }
+    }
+
+    val fontScale: StateFlow<Float> = prefsDataStore.fontScale
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            DEFAULT_FONT_SCALE,
+        )
+
+    fun setFontScale(value: Float) {
+        viewModelScope.launch { prefsDataStore.setFontScale(value) }
+    }
+
+    val boldText: StateFlow<Boolean> = prefsDataStore.boldText
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun setBoldText(enabled: Boolean) {
+        viewModelScope.launch { prefsDataStore.setBoldText(enabled) }
+    }
+
+    val outlinedText: StateFlow<Boolean> = prefsDataStore.outlinedText
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun setOutlinedText(enabled: Boolean) {
+        viewModelScope.launch { prefsDataStore.setOutlinedText(enabled) }
+    }
+
+    fun resetDisplayPreferences() {
+        viewModelScope.launch { prefsDataStore.resetDisplayPreferences() }
     }
 
     private val _tvPairResult = MutableStateFlow<TvPairResult?>(null)
@@ -123,6 +170,7 @@ class SettingsViewModel @Inject constructor(
             // active — sync only the plan/limits, not the traffic number.
             val isConnected = connectionManager.connectionState.value is ConnectionState.Connected
             authRepository.syncSubscription(overwriteUsage = !isConnected)
+            _currentSubscriptionPlan.value = authRepository.getCurrentSubscriptionPlan()
         }
         launchGuarded("Settings auth observer") {
             authState.collectLatest { state ->
@@ -164,6 +212,7 @@ class SettingsViewModel @Inject constructor(
             authRepository.logout()
             // Refresh servers so VPN uses the anonymous panel user's VLESS UUID
             vpnRepository.refreshServers()
+            _currentSubscriptionPlan.value = authRepository.getCurrentSubscriptionPlan()
         }
     }
 

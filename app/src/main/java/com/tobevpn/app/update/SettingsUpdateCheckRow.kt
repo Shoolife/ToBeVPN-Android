@@ -17,6 +17,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -30,6 +31,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
+import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.data.repository.UpdateCheckResult
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 
@@ -48,12 +50,22 @@ import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 @Composable
 fun SettingsUpdateCheckRow(
     onWhatsNew: (() -> Unit)? = null,
-    viewModel: UpdateViewModel = rememberAppUpdateViewModel(),
 ) {
-    val state by viewModel.state.collectAsState()
-    val inFlight by viewModel.manualCheckInFlight.collectAsState()
-    val versionName = remember { com.tobevpn.app.BuildConfig.VERSION_NAME }
+    if (BuildConfig.PLAY_DISTRIBUTION) {
+        PlayStoreSettingsUpdateCheckRow(onWhatsNew = onWhatsNew)
+    } else {
+        GithubSettingsUpdateCheckRow(onWhatsNew = onWhatsNew)
+    }
+}
 
+@Composable
+private fun GithubSettingsUpdateCheckRow(
+    onWhatsNew: (() -> Unit)?,
+) {
+    val viewModel = rememberAppUpdateViewModel()
+    val state by viewModel.state.collectAsState()
+    val checkInFlight by viewModel.manualCheckInFlight.collectAsState()
+    val versionName = remember { com.tobevpn.app.BuildConfig.VERSION_NAME }
     val statusText = when (val s = state) {
         is UpdateUiState.Available ->
             stringResource(R.string.update_available_short, versionName, s.info.versionName)
@@ -64,6 +76,73 @@ fun SettingsUpdateCheckRow(
             stringResource(R.string.update_check_uptodate, versionName)
     }
 
+    SettingsUpdateCheckRowContent(
+        onWhatsNew = onWhatsNew,
+        statusText = statusText,
+        checkInFlight = checkInFlight,
+        showCheckButton = BuildConfig.IN_APP_UPDATES_ENABLED,
+        onCheck = viewModel::forceCheck,
+    )
+}
+
+@Composable
+private fun PlayStoreSettingsUpdateCheckRow(
+    onWhatsNew: (() -> Unit)?,
+) {
+    val versionName = remember { com.tobevpn.app.BuildConfig.VERSION_NAME }
+    val playUpdateState = rememberPlayStoreUpdateState(enabled = true)
+    val statusText = when (val phase = playUpdateState.phase) {
+        PlayStoreUpdatePhase.Checking ->
+            stringResource(R.string.update_play_checking)
+        is PlayStoreUpdatePhase.Downloading ->
+            phase.percent?.let {
+                stringResource(R.string.update_play_downloading, it)
+            } ?: stringResource(R.string.update_play_downloading_indeterminate)
+        PlayStoreUpdatePhase.Ready ->
+            stringResource(R.string.update_play_ready)
+        PlayStoreUpdatePhase.Idle ->
+            stringResource(R.string.update_check_uptodate, versionName)
+    }
+
+    SettingsUpdateCheckRowContent(
+        onWhatsNew = onWhatsNew,
+        statusText = statusText,
+        checkInFlight = playUpdateState.busy,
+        showCheckButton = true,
+        onCheck = playUpdateState::check,
+    )
+
+    if (playUpdateState.showReadyPrompt) {
+        AppAlertDialog(
+            onDismissRequest = playUpdateState::dismissReadyPrompt,
+            title = {
+                Text(text = stringResource(R.string.update_play_ready_title))
+            },
+            text = {
+                Text(text = stringResource(R.string.update_play_ready_message))
+            },
+            confirmButton = {
+                TextButton(onClick = playUpdateState::installDownloadedUpdate) {
+                    Text(text = stringResource(R.string.update_play_restart))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = playUpdateState::dismissReadyPrompt) {
+                    Text(text = stringResource(R.string.update_play_later))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SettingsUpdateCheckRowContent(
+    onWhatsNew: (() -> Unit)?,
+    statusText: String,
+    checkInFlight: Boolean,
+    showCheckButton: Boolean,
+    onCheck: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -117,11 +196,11 @@ fun SettingsUpdateCheckRow(
                 }
             }
         }
-        if (BuildConfig.IN_APP_UPDATES_ENABLED) {
+        if (showCheckButton) {
             Spacer(Modifier.width(12.dp))
             OutlinedButton(
-                onClick = { viewModel.forceCheck() },
-                enabled = !inFlight,
+                onClick = onCheck,
+                enabled = !checkInFlight,
                 shape = RoundedCornerShape(10.dp),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     horizontal = 16.dp,
@@ -143,7 +222,7 @@ fun SettingsUpdateCheckRow(
                     )
                 },
             ) {
-                if (inFlight) {
+                if (checkInFlight) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp,

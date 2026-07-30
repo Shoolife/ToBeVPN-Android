@@ -15,9 +15,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -362,6 +364,51 @@ fun ServerListScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+internal fun ServerListScalePreview(
+    modifier: Modifier = Modifier,
+) {
+    val metrics = serverListMetrics(isTv = false).copy(cardHorizontalPadding = 0.dp)
+    val previewServers = listOf(
+        Server(
+            id = "preview-ru",
+            name = stringResource(R.string.display_preview_server_russia),
+            address = "preview-ru.tobevpn.local",
+            port = 443,
+            uuid = "preview-ru",
+            country = "RU",
+            ping = 36,
+        ),
+        Server(
+            id = "preview-gb",
+            name = stringResource(R.string.display_preview_server_uk),
+            address = "preview-gb.tobevpn.local",
+            port = 443,
+            uuid = "preview-gb",
+            country = "GB",
+            ping = 35,
+        ),
+    )
+    val serverNameFontSize = fixedLayoutTextStyle(
+        MaterialTheme.typography.titleMedium,
+    ).fontSize
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        previewServers.forEach { server ->
+            ServerItem(
+                server = server,
+                selected = false,
+                enabled = false,
+                showEndpoint = false,
+                serverNameFontSize = serverNameFontSize,
+                metrics = metrics,
+                isTv = false,
+                onClick = {},
+            )
         }
     }
 }
@@ -751,7 +798,7 @@ private fun PingChip(
     width: Dp,
 ) {
     EndpointChipContainer(
-        modifier = Modifier.width(width),
+        modifier = Modifier.widthIn(min = width),
         shape = RoundedCornerShape(10.dp),
     ) {
         Text(
@@ -780,8 +827,8 @@ private fun EndpointValueChip(
 ) {
     EndpointChipContainer(
         modifier = Modifier
-            .width(width)
-            .height(24.dp),
+            .widthIn(min = width)
+            .heightIn(min = 24.dp),
         shape = RoundedCornerShape(99.dp),
     ) {
         Text(

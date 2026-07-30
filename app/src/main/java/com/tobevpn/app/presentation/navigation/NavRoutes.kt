@@ -33,6 +33,9 @@ object AppFilterRoute
 object PersonalizationRoute
 
 @Serializable
+object DisplayScaleTextRoute
+
+@Serializable
 object AdvancedRoute
 
 @Serializable

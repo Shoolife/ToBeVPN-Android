@@ -19,6 +19,7 @@ import com.tobevpn.app.presentation.referrals.ReferralsScreen
 import com.tobevpn.app.presentation.servers.ServerListScreen
 import com.tobevpn.app.presentation.settings.AboutScreen
 import com.tobevpn.app.presentation.settings.AdvancedScreen
+import com.tobevpn.app.presentation.settings.DisplayScaleTextScreen
 import com.tobevpn.app.presentation.settings.PersonalizationScreen
 import com.tobevpn.app.presentation.settings.SettingsScreen
 import com.tobevpn.app.presentation.settings.SettingsViewModel
@@ -140,6 +141,16 @@ fun AppNavHost(
             // once, not once per sub-screen.
             val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
             PersonalizationScreen(
+                onBack = { navController.popBackStackOrRecover(startDestination) },
+                onNavigateToDisplayScaleText = {
+                    navController.navigateSingleTop(DisplayScaleTextRoute)
+                },
+                viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+            )
+        }
+        composable<DisplayScaleTextRoute> { entry ->
+            val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
+            DisplayScaleTextScreen(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
                 viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
             )
