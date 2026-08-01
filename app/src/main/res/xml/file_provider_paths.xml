@@ -4,4 +4,6 @@
     <external-files-path name="updates" path="Download/" />
     <!-- Fallback: emulators / devices without shared storage land here. -->
     <files-path name="updates_internal" path="updates/" />
+    <!-- User-initiated export of locally retained diagnostic journals. -->
+    <files-path name="diagnostic_logs" path="diagnostic_logs/" />
 </paths>

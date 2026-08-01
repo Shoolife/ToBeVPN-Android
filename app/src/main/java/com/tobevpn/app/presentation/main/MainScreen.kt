@@ -46,6 +46,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.SystemUpdateAlt
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
@@ -105,6 +106,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -1655,9 +1657,13 @@ private fun SubscriptionBottomSheet(
     val context = LocalContext.current
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Fetch plans for the authenticated user when the sheet appears.
-    androidx.compose.runtime.LaunchedEffect(authState) {
-        if (authState is AuthState.Authenticated) onLoadPurchasePlans()
+    // Fetch when the sheet appears and again after returning from Telegram,
+    // where the user may have activated a promo code.
+    LifecycleResumeEffect(authState) {
+        if (authState is AuthState.Authenticated) {
+            onLoadPurchasePlans()
+        }
+        onPauseOrDispose {}
     }
 
     var sheetContentVisible by remember { mutableStateOf(false) }
@@ -1888,6 +1894,8 @@ private fun SubscriptionBottomSheet(
                 val priceDisplay: String,
                 val description: String,
                 val botPaymentUrl: String? = null,
+                val originalPriceDisplay: String? = null,
+                val discountPercent: Int = 0,
             )
             data class TariffInfo(
                 val key: String,
@@ -1933,30 +1941,55 @@ private fun SubscriptionBottomSheet(
                 return "${value.toInt()} \u2B50"
             }
 
-            // Format a duration's displayed price. Falls back across currencies
-            // so UI always has something to show even if the preferred one is missing.
-            fun formatDurationPrice(
-                duration: com.tobevpn.app.data.remote.dto.PurchaseDurationDto,
-            ): String {
-                if (purchasePlansFromCache) return unknownPlanData
-                val prices = duration.prices.orEmpty().associateBy { it.currency }
-                return when {
-                    isRussian -> prices["RUB"]?.amount?.let(::formatRubAmount)
-                        ?: prices["USD"]?.amount?.let(::formatUsdAmount)
-                        ?: prices["XTR"]?.amount?.let(::formatXtrAmount)
-                        ?: unknownPlanData
-                    else -> prices["USD"]?.amount?.let(::formatUsdAmount)
-                        ?: prices["RUB"]?.amount?.let { rub ->
-                            val rubValue = rub.toDoubleOrNull()
+            data class DurationPriceDisplay(
+                val finalPrice: String,
+                val originalPrice: String? = null,
+                val discountPercent: Int = 0,
+            )
+
+            fun formatAmount(currency: String, amount: String): String {
+                return when (currency.uppercase()) {
+                    "RUB" -> {
+                        if (!isRussian) {
+                            val rubValue = amount.toDoubleOrNull()
                             if (rubValue != null && rubToUsdRate != null) {
                                 "$%.2f".format(rubValue * rubToUsdRate)
                             } else {
-                                formatRubAmount(rub)
+                                formatRubAmount(amount)
                             }
+                        } else {
+                            formatRubAmount(amount)
                         }
-                        ?: prices["XTR"]?.amount?.let(::formatXtrAmount)
-                        ?: unknownPlanData
+                    }
+                    "USD" -> formatUsdAmount(amount)
+                    "XTR" -> formatXtrAmount(amount)
+                    else -> "$amount $currency".trim()
                 }
+            }
+
+            // Prefer final_amount calculated by Remnashop. The legacy prices[]
+            // value is used only when payment_methods[] is unavailable.
+            fun formatDurationPrice(
+                duration: com.tobevpn.app.data.remote.dto.PurchaseDurationDto,
+            ): DurationPriceDisplay {
+                if (purchasePlansFromCache) {
+                    return DurationPriceDisplay(finalPrice = unknownPlanData)
+                }
+                val preferredCurrencies = if (isRussian) {
+                    listOf("RUB", "USD", "XTR")
+                } else {
+                    listOf("USD", "RUB", "XTR")
+                }
+                val resolved = resolvePurchasePrice(duration, preferredCurrencies)
+                    ?: return DurationPriceDisplay(finalPrice = unknownPlanData)
+                val hasDiscount = resolved.hasDiscount
+                return DurationPriceDisplay(
+                    finalPrice = formatAmount(resolved.currency, resolved.finalAmount),
+                    originalPrice = resolved.originalAmount
+                        .takeIf { hasDiscount }
+                        ?.let { formatAmount(resolved.currency, it) },
+                    discountPercent = resolved.discountPercent.takeIf { hasDiscount } ?: 0,
+                )
             }
 
             // Map server-side `days` to the deeplink key / localized title resource.
@@ -2003,12 +2036,15 @@ private fun SubscriptionBottomSheet(
                                 .filter { it.days > 0 }
                                 .sortedBy { it.orderIndex }
                                 .map { d ->
+                                    val displayedPrice = formatDurationPrice(d)
                                     PlanInfo(
                                         key = "${sourcePlan.id}:${planKey(d.days)}",
                                         title = planTitle(d.days),
-                                        priceDisplay = formatDurationPrice(d),
+                                        priceDisplay = displayedPrice.finalPrice,
                                         description = description,
                                         botPaymentUrl = d.botPaymentUrl.takeUnless { purchasePlansFromCache },
+                                        originalPriceDisplay = displayedPrice.originalPrice,
+                                        discountPercent = displayedPrice.discountPercent,
                                     )
                                 },
                         )
@@ -2038,6 +2074,17 @@ private fun SubscriptionBottomSheet(
             if (plansLoading) {
                 LoadingBlock(text = stringResource(R.string.plans_loading))
             } else {
+                val effectiveDiscountPercent = purchasePlans
+                    ?.effectiveDiscountPercent
+                    ?.coerceIn(0, 100)
+                    ?.takeIf { it > 0 && !purchasePlansFromCache && hasServerPlans }
+                if (effectiveDiscountPercent != null) {
+                    AppliedDiscountBanner(
+                        discountPercent = effectiveDiscountPercent,
+                        modifier = Modifier.padding(bottom = 12.dp),
+                    )
+                }
+
                 var selectedTariffKey by remember(tariffs) {
                     mutableStateOf(tariffs.firstOrNull()?.key ?: "fallback")
                 }
@@ -2103,6 +2150,8 @@ private fun SubscriptionBottomSheet(
                                 PlanOption(
                                     title = plan.title,
                                     priceDisplay = plan.priceDisplay,
+                                    originalPriceDisplay = plan.originalPriceDisplay,
+                                    discountPercent = plan.discountPercent,
                                     description = plan.description,
                                     selected = selectedPlan == plan.key,
                                     onClick = { selectedPlan = plan.key },
@@ -2595,9 +2644,51 @@ private fun LoadingBlock(text: String) {
 }
 
 @Composable
+private fun AppliedDiscountBanner(
+    discountPercent: Int,
+    modifier: Modifier = Modifier,
+) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val accentColor = if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32)
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = accentColor.copy(alpha = if (isDark) 0.16f else 0.10f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.LocalOffer,
+                contentDescription = null,
+                tint = accentColor,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = stringResource(R.string.purchase_discount_applied, discountPercent),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                fontWeight = FontWeight.SemiBold,
+                color = accentColor,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
 private fun PlanOption(
     title: String,
     priceDisplay: String,
+    originalPriceDisplay: String?,
+    discountPercent: Int,
     description: String,
     selected: Boolean,
     onClick: () -> Unit,
@@ -2688,15 +2779,41 @@ private fun PlanOption(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text(
-                text = priceDisplay,
-                style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
-                fontWeight = FontWeight.Bold,
-                color = contentColor,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column(horizontalAlignment = Alignment.End) {
+                if (originalPriceDisplay != null && discountPercent > 0) {
+                    val discountColor = if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    ) {
+                        Text(
+                            text = originalPriceDisplay,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
+                            color = contentColor.copy(alpha = 0.58f),
+                            textDecoration = TextDecoration.LineThrough,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                        Text(
+                            text = stringResource(R.string.purchase_discount_percent, discountPercent),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
+                            fontWeight = FontWeight.Bold,
+                            color = discountColor,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                    }
+                }
+                Text(
+                    text = priceDisplay,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+                    fontWeight = FontWeight.Bold,
+                    color = contentColor,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }

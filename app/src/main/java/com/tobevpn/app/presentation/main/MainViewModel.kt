@@ -606,6 +606,10 @@ class MainViewModel @Inject constructor(
     private suspend fun cachePurchasePlanShape(telegramId: Long, plans: PurchasePlansDto) {
         runCatching {
             val shapeOnly = plans.copy(
+                // Discounts and payable amounts must always come from a live
+                // authenticated response. The cache only preserves the tariff
+                // layout for an offline placeholder.
+                effectiveDiscountPercent = 0,
                 plans = plans.plans.orEmpty()
                     .filter { plan -> plan.durations.orEmpty().any { it.days > 0 } }
                     .map { plan ->
@@ -639,6 +643,7 @@ class MainViewModel @Inject constructor(
         return runCatching {
             val json = prefsDataStore.getPurchasePlansCache(telegramId) ?: return null
             purchasePlansGson.fromJson(json, PurchasePlansDto::class.java)
+                ?.copy(effectiveDiscountPercent = 0)
                 ?.takeIf(::hasPurchasablePlanShape)
         }.onFailure { error ->
             SafeDiagnostics.warn(TAG, "Purchase plans shape cache read failed: ${SafeDiagnostics.failureCategory(error)}")

@@ -12,8 +12,40 @@ import javax.net.ssl.SSLException
  * contain endpoint URLs, request paths, account identifiers or tokens.
  */
 object SafeDiagnostics {
+    @Volatile
+    private var sink: ((level: Int, tag: String, message: String) -> Unit)? = null
+    @Volatile
+    private var detailedLoggingEnabled: (() -> Boolean)? = null
+
+    fun installSink(
+        value: (level: Int, tag: String, message: String) -> Unit,
+        isDetailedLoggingEnabled: () -> Boolean,
+    ) {
+        sink = value
+        detailedLoggingEnabled = isDetailedLoggingEnabled
+    }
+
+    fun info(tag: String, message: String) {
+        write(Log.INFO, tag, message)
+    }
+
     fun warn(tag: String, message: String) {
-        Log.println(Log.WARN, tag, message)
+        write(Log.WARN, tag, message)
+    }
+
+    /**
+     * High-volume operational detail. Unlike state changes and warnings, this
+     * does not enter logcat or allocate a journal event unless the user has
+     * explicitly started diagnostic collection.
+     */
+    fun trace(tag: String, message: String) {
+        if (detailedLoggingEnabled?.invoke() != true) return
+        write(Log.DEBUG, tag, message)
+    }
+
+    private fun write(level: Int, tag: String, message: String) {
+        Log.println(level, tag, message)
+        sink?.invoke(level, tag, message)
     }
 
     fun failureCategory(error: Throwable): String = when (error) {
@@ -23,5 +55,20 @@ object SafeDiagnostics {
         is SSLException -> "TLS"
         is IOException -> "IO"
         else -> "OTHER"
+    }
+
+    fun failureSummary(error: Throwable): String {
+        val types = generateSequence(error) { it.cause }
+            .take(3)
+            .joinToString(separator = "->") { cause ->
+                cause::class.java.simpleName.ifBlank { "Throwable" }
+            }
+        val origin = error.stackTrace
+            .firstOrNull { frame -> frame.className.startsWith("com.tobevpn.app.") }
+            ?.let { frame ->
+                "${frame.className.substringAfterLast('.')}.${frame.methodName}:${frame.lineNumber}"
+            }
+            ?: "external"
+        return "category=${failureCategory(error)} types=$types origin=$origin"
     }
 }

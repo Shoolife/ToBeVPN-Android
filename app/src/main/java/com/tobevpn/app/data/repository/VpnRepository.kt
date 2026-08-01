@@ -1,5 +1,6 @@
 package com.tobevpn.app.data.repository
 
+import android.os.SystemClock
 import com.tobevpn.app.data.local.dao.ServerDao
 import com.tobevpn.app.data.local.dao.SessionDao
 import com.tobevpn.app.data.local.entity.ServerEntity
@@ -47,11 +48,17 @@ class VpnRepository @Inject constructor(
     }
 
     suspend fun refreshServers(forceRefresh: Boolean = false): Result<List<Server>> {
+        val startedAt = SystemClock.elapsedRealtime()
         val session = sessionDao.getSession()
         val shortUuid = session?.shortUuid
         if (shortUuid.isNullOrBlank()) {
+            SafeDiagnostics.warn(TAG, "Server refresh skipped: SUBSCRIPTION_MISSING")
             return Result.failure(Exception("Нет подписки"))
         }
+        SafeDiagnostics.trace(
+            TAG,
+            "Server refresh started: force=$forceRefresh",
+        )
 
         return try {
             val profile = subscriptionPinger.fetchProfile(
@@ -65,16 +72,40 @@ class VpnRepository @Inject constructor(
                 throw IOException("Subscription profile unavailable")
             }
             if (profile.isUsageBlocked) {
+                SafeDiagnostics.warn(TAG, "Server refresh blocked by subscription profile")
                 clearServerCache()
                 return Result.failure(Exception("Доступ к подписке ограничен"))
             }
-            updateServersFromLinks(shortUuid, profile.links)
+            updateServersFromLinks(shortUuid, profile.links).also { result ->
+                result.onSuccess { servers ->
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "Server refresh completed: source=NETWORK count=${servers.size} " +
+                            "duration_ms=${SystemClock.elapsedRealtime() - startedAt}",
+                    )
+                }
+                result.onFailure { error ->
+                    SafeDiagnostics.warn(
+                        TAG,
+                        "Server profile processing failed: ${SafeDiagnostics.failureSummary(error)}",
+                    )
+                }
+            }
         } catch (e: Exception) {
-            SafeDiagnostics.warn(TAG, "Server refresh failed; checking local cache: ${SafeDiagnostics.failureCategory(e)}")
+            SafeDiagnostics.warn(
+                TAG,
+                "Server refresh failed; checking local cache: ${SafeDiagnostics.failureSummary(e)}",
+            )
             val cached = getOwnedCachedServers(shortUuid)
             if (cached.isNotEmpty()) {
+                SafeDiagnostics.trace(
+                    TAG,
+                    "Server refresh completed: source=CACHE count=${cached.size} " +
+                        "duration_ms=${SystemClock.elapsedRealtime() - startedAt}",
+                )
                 Result.success(cached)
             } else {
+                SafeDiagnostics.warn(TAG, "Server refresh cache fallback unavailable")
                 clearServerCache()
                 Result.failure(e)
             }
@@ -93,6 +124,12 @@ class VpnRepository @Inject constructor(
 
         val parsedServers = links.mapNotNull { link -> VlessUrlParser.parse(link) }
         val servers = parsedServers.filterNot { it.isSentinel }
+        SafeDiagnostics.trace(
+            TAG,
+            "Subscription server profile parsed: links=${links.size} " +
+                "parsed=${parsedServers.size} sentinel=${parsedServers.count(Server::isSentinel)} " +
+                "usable=${servers.size}",
+        )
         // Drop the panel's "subscription expired" placeholder link so it
         // never appears in the UI or reaches xray.
         if (servers.isEmpty()) {
@@ -121,6 +158,10 @@ class VpnRepository @Inject constructor(
         val generation = refreshGeneration.incrementAndGet()
         serverDao.replaceAll(entities)
         prefsDataStore.setServerCacheOwner(shortUuid)
+        SafeDiagnostics.trace(
+            TAG,
+            "Server cache replaced: previous=${cachedServers.size} current=${entities.size}",
+        )
         enrichMetadataInBackground(shortUuid, generation, stableServers)
         return Result.success(entities.map { it.toDomain() })
     }
@@ -166,9 +207,20 @@ class VpnRepository @Inject constructor(
                 if (refreshGeneration.get() == generation && currentShortUuid == shortUuid) {
                     serverDao.replaceAll(enriched)
                     prefsDataStore.setServerCacheOwner(shortUuid)
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "Server metadata applied: count=${enriched.size} " +
+                            "online=${enriched.count(ServerEntity::isOnline)} " +
+                            "offline=${enriched.count { !it.isOnline }}",
+                    )
+                } else {
+                    SafeDiagnostics.trace(TAG, "Stale server metadata result discarded")
                 }
             } catch (error: Exception) {
-                SafeDiagnostics.warn(TAG, "Node metadata refresh failed: ${SafeDiagnostics.failureCategory(error)}")
+                SafeDiagnostics.warn(
+                    TAG,
+                    "Node metadata refresh failed: ${SafeDiagnostics.failureSummary(error)}",
+                )
             }
         }
     }
@@ -177,6 +229,7 @@ class VpnRepository @Inject constructor(
         refreshGeneration.incrementAndGet()
         serverDao.deleteAll()
         prefsDataStore.clearServerCacheOwner()
+        SafeDiagnostics.trace(TAG, "Server cache cleared")
     }
 
     private fun keepStableServerOrder(

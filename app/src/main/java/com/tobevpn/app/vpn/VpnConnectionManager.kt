@@ -5,6 +5,7 @@ import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
+import android.os.SystemClock
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.local.dao.SessionDao
@@ -22,6 +23,7 @@ import com.tobevpn.app.presentation.servers.serverSelectionKey
 import com.tobevpn.app.presentation.servers.stableServerId
 import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.util.SafeDiagnostics
+import com.tobevpn.app.util.diagnosticServerDescriptor
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -86,7 +88,10 @@ class VpnConnectionManager @Inject constructor(
     private var healthCheckJob: Job? = null
     private var networkRecheckJob: Job? = null
     private var connectionStartTime = 0L
+    private var connectionAttemptStartedAt = 0L
     private var sessionBytesAccumulated = 0L
+    private var sessionUplinkBytesAccumulated = 0L
+    private var sessionDownlinkBytesAccumulated = 0L
     private var sessionStartUsageBytes = 0L
     private var trafficQualityConfirmed = false
     private var lastTunnelTrafficAt = 0L
@@ -188,6 +193,11 @@ class VpnConnectionManager @Inject constructor(
 
 
     fun startVpn(server: Server, onAttemptHandled: (() -> Unit)? = null) {
+        SafeDiagnostics.info(
+            TAG,
+            "VPN connect requested: ${diagnosticServerDescriptor(server)} " +
+                "previous_state=${connectionStateName(_connectionState.value)}",
+        )
         startVpnInternal(
             server = server,
             resetWatchdogRecovery = true,
@@ -211,6 +221,10 @@ class VpnConnectionManager @Inject constructor(
                 }
                 val current = _connectionState.value
                 if (current is ConnectionState.Connecting || current is ConnectionState.Connected) {
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "VPN connect request ignored: current_state=${connectionStateName(current)}",
+                    )
                     onAttemptHandled?.invoke()
                     return@launch
                 }
@@ -221,6 +235,7 @@ class VpnConnectionManager @Inject constructor(
                 // error instead and bail before the service is even
                 // started.
                 if (server.isSentinel) {
+                    SafeDiagnostics.warn(TAG, "VPN connect blocked: SUBSCRIPTION_EXPIRED")
                     _connectionState.value = ConnectionState.Error(
                         context.getString(R.string.error_subscription_expired)
                     )
@@ -228,6 +243,7 @@ class VpnConnectionManager @Inject constructor(
                     return@launch
                 }
                 if (!server.isAvailable && !prefsDataStore.isAutomaticServerSelection()) {
+                    SafeDiagnostics.warn(TAG, "VPN connect blocked: NO_AVAILABLE_SERVER")
                     _connectionState.value = ConnectionState.Error(
                         context.getString(R.string.error_no_servers)
                     )
@@ -235,7 +251,9 @@ class VpnConnectionManager @Inject constructor(
                     return@launch
                 }
 
-                if (!isPaidUser() && usageRepository.isExhausted()) {
+                val paidUser = isPaidUser()
+                if (!paidUser && usageRepository.isExhausted()) {
+                    SafeDiagnostics.warn(TAG, "VPN connect blocked: USAGE_LIMIT")
                     _connectionState.value = ConnectionState.Error(context.getString(R.string.error_limit_exhausted))
                     onAttemptHandled?.invoke()
                     return@launch
@@ -247,7 +265,14 @@ class VpnConnectionManager @Inject constructor(
                 // out here so the user gets a clear error instead of a
                 // silently-broken connection.
                 val filterCheck = appFilterRepository.getSnapshot()
+                SafeDiagnostics.trace(
+                    TAG,
+                    "VPN connection guards: paid=$paidUser " +
+                        "filter=${filterCheck.mode.name} " +
+                        "selected_apps=${filterCheck.selectedPackages.size}",
+                )
                 if (filterCheck.mode == AppFilterMode.WHITELIST && filterCheck.selectedPackages.isEmpty()) {
+                    SafeDiagnostics.warn(TAG, "VPN connect blocked: APP_FILTER_EMPTY")
                     _connectionState.value = ConnectionState.Error(
                         context.getString(R.string.app_filter_empty_warning),
                     )
@@ -261,6 +286,12 @@ class VpnConnectionManager @Inject constructor(
                 }
                 _currentServer.value = server
                 _connectionState.value = ConnectionState.Connecting
+                connectionAttemptStartedAt = SystemClock.elapsedRealtime()
+                SafeDiagnostics.info(
+                    TAG,
+                    "VPN state changed: CONNECTING generation=$gen " +
+                        diagnosticServerDescriptor(server),
+                )
                 permittedServiceStartGeneration.set(gen)
                 onAttemptHandled?.invoke()
             }
@@ -294,6 +325,10 @@ class VpnConnectionManager @Inject constructor(
                 putExtra(ToBeVpnService.EXTRA_SERVER_CONFIG, VpnConfig.buildConfigJson(serverToStart))
                 putExtra(ToBeVpnService.EXTRA_SERVER_NAME, serverToStart.name)
                 putExtra(ToBeVpnService.EXTRA_SERVER_COUNTRY, serverToStart.country)
+                putExtra(
+                    ToBeVpnService.EXTRA_SERVER_DIAGNOSTIC,
+                    diagnosticServerDescriptor(serverToStart),
+                )
                 putExtra(ToBeVpnService.EXTRA_GENERATION, gen)
             }
             launchTunnelService(intent, request, gen)
@@ -309,6 +344,10 @@ class VpnConnectionManager @Inject constructor(
     private suspend fun launchTunnelService(intent: Intent, request: Int, generation: Int) {
         try {
             context.startForegroundService(intent)
+            SafeDiagnostics.trace(
+                TAG,
+                "VPN foreground service start submitted: generation=$generation request=$request",
+            )
         } catch (error: Exception) {
             SafeDiagnostics.warn(
                 TAG,
@@ -327,6 +366,11 @@ class VpnConnectionManager @Inject constructor(
      * manually stop and start. If VPN is not currently active, just starts.
      */
     fun switchServer(server: Server, allowStaleOnRefreshMiss: Boolean = true) {
+        SafeDiagnostics.info(
+            TAG,
+            "VPN server switch requested: ${diagnosticServerDescriptor(server)} " +
+                "previous_state=${connectionStateName(_connectionState.value)}",
+        )
         permittedServiceStartGeneration.set(-1)
         val request = requestedOperation.incrementAndGet()
         scope.launch {
@@ -364,7 +408,12 @@ class VpnConnectionManager @Inject constructor(
                 watchdogRecoveryAttempts = 0
                 _currentServer.value = server
                 _connectionState.value = ConnectionState.Connecting
+                connectionAttemptStartedAt = SystemClock.elapsedRealtime()
                 permittedServiceStartGeneration.set(restartGeneration)
+                SafeDiagnostics.info(
+                    TAG,
+                    "VPN state changed: CONNECTING generation=$restartGeneration reason=SERVER_SWITCH",
+                )
                 stopUsageTracking()
                 flushPendingUsage()
                 saveSessionLog()
@@ -420,6 +469,10 @@ class VpnConnectionManager @Inject constructor(
                 putExtra(ToBeVpnService.EXTRA_SERVER_CONFIG, VpnConfig.buildConfigJson(serverToStart))
                 putExtra(ToBeVpnService.EXTRA_SERVER_NAME, serverToStart.name)
                 putExtra(ToBeVpnService.EXTRA_SERVER_COUNTRY, serverToStart.country)
+                putExtra(
+                    ToBeVpnService.EXTRA_SERVER_DIAGNOSTIC,
+                    diagnosticServerDescriptor(serverToStart),
+                )
                 putExtra(ToBeVpnService.EXTRA_GENERATION, restartGeneration)
             }
             launchTunnelService(startIntent, request, restartGeneration)
@@ -427,6 +480,11 @@ class VpnConnectionManager @Inject constructor(
     }
 
     fun stopVpn() {
+        SafeDiagnostics.info(
+            TAG,
+            "VPN disconnect requested: state=${connectionStateName(_connectionState.value)} " +
+                "xray_running=${XRayCore.isRunning}",
+        )
         permittedServiceStartGeneration.set(-1)
         val request = requestedOperation.incrementAndGet()
         if (_connectionState.value !is ConnectionState.Disconnected ||
@@ -464,8 +522,24 @@ class VpnConnectionManager @Inject constructor(
         }
 
     private suspend fun rejectBlockedConnection(request: Int, generation: Int): Boolean {
-        val blocked = runCatching { authRepository.pingHwidOnly() }.getOrDefault(false)
+        SafeDiagnostics.trace(
+            TAG,
+            "VPN access guard started: generation=$generation request=$request",
+        )
+        val result = runCatching { authRepository.pingHwidOnly() }
+        result.exceptionOrNull()?.let { error ->
+            SafeDiagnostics.warn(
+                TAG,
+                "VPN access guard unavailable: ${SafeDiagnostics.failureSummary(error)}",
+            )
+        }
+        val blocked = result.getOrDefault(false)
+        SafeDiagnostics.trace(
+            TAG,
+            "VPN access guard completed: generation=$generation blocked=$blocked",
+        )
         if (!blocked) return false
+        SafeDiagnostics.warn(TAG, "VPN connect blocked: SERVER_ACCESS_RESTRICTED")
         mutex.withLock {
             if (request == requestedOperation.get() &&
                 generation == connectionGeneration &&
@@ -486,12 +560,17 @@ class VpnConnectionManager @Inject constructor(
         avoidCurrentInAuto: Boolean = false,
         allowStaleOnRefreshMiss: Boolean = true,
     ): Server? {
-        val resolved = vpnRepository.refreshServers(forceRefresh = true)
-            .getOrNull()
-            .orEmpty()
-            .let { refreshed ->
+        SafeDiagnostics.trace(
+            TAG,
+            "VPN server revalidation started: auto=${prefsDataStore.isAutomaticServerSelection()} " +
+                "avoid_current=$avoidCurrentInAuto allow_stale=$allowStaleOnRefreshMiss",
+        )
+        val automatic = prefsDataStore.isAutomaticServerSelection()
+        val refreshResult = vpnRepository.refreshServers(forceRefresh = true)
+        val refreshed = refreshResult.getOrNull().orEmpty()
+        val resolved = refreshed.let {
                 val availableServers = refreshed.filter { it.isAvailable }
-                if (prefsDataStore.isAutomaticServerSelection()) {
+                if (automatic) {
                     serverQualityRepository.selectBestServer(
                         servers = availableServers,
                         excludeServerId = if (avoidCurrentInAuto) server.id else null,
@@ -501,9 +580,16 @@ class VpnConnectionManager @Inject constructor(
                         ?: availableServers.firstOrNull { it.name == server.name }
                 }
             }
-        return resolved ?: server.takeIf {
-            allowStaleOnRefreshMiss && canUseStaleServerAfterRefreshMiss(it)
-        }
+        val staleFallback = resolved == null && allowStaleOnRefreshMiss &&
+            canUseStaleServerAfterRefreshMiss(server)
+        val selected = resolved ?: server.takeIf { staleFallback }
+        SafeDiagnostics.trace(
+            TAG,
+            "VPN server revalidation completed: refresh_success=${refreshResult.isSuccess} " +
+                "received=${refreshed.size} stale_fallback=$staleFallback selected=" +
+                (selected?.let(::diagnosticServerDescriptor) ?: "NONE"),
+        )
+        return selected
     }
 
     private suspend fun canUseStaleServerAfterRefreshMiss(server: Server): Boolean {
@@ -520,21 +606,34 @@ class VpnConnectionManager @Inject constructor(
             id = stableServerId(server),
             key = serverSelectionKey(server),
         )
+        SafeDiagnostics.trace(
+            TAG,
+            "Automatic server selection persisted: ${diagnosticServerDescriptor(server)}",
+        )
     }
 
     fun requestTunnelHealthCheck() {
+        SafeDiagnostics.trace(TAG, "Tunnel health recheck requested after network change")
         scope.launch {
             networkRecheckJob?.cancel()
             val gen = latestConnectionGeneration.get()
             networkRecheckJob = scope.launch {
                 delay(TUNNEL_HEALTH_NETWORK_CHANGE_DELAY_MS)
                 if (gen != latestConnectionGeneration.get() || _connectionState.value !is ConnectionState.Connected) {
+                    SafeDiagnostics.trace(TAG, "Tunnel network-change recheck cancelled as stale")
                     return@launch
                 }
-                if (!hasUnderlyingInternet()) return@launch
+                if (!hasUnderlyingInternet()) {
+                    SafeDiagnostics.warn(
+                        TAG,
+                        "Tunnel network-change recheck skipped: no underlying internet",
+                    )
+                    return@launch
+                }
 
-                val healthy = probeTunnelWithRetries(TUNNEL_HEALTH_NETWORK_CHANGE_ATTEMPTS)
-                if (healthy) {
+                val probe = probeTunnelWithRetries(TUNNEL_HEALTH_NETWORK_CHANGE_ATTEMPTS)
+                logTunnelProbe("NETWORK_CHANGE", probe)
+                if (probe.healthy) {
                     _currentServer.value?.let { server ->
                         scope.launch { serverQualityRepository.recordTunnelHealthy(server) }
                     }
@@ -556,9 +655,15 @@ class VpnConnectionManager @Inject constructor(
                 if (_connectionState.value is ConnectionState.Connected ||
                     _connectionState.value is ConnectionState.Connecting
                 ) {
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "External VPN error ignored while state=" +
+                            connectionStateName(_connectionState.value),
+                    )
                     return@withLock
                 }
                 _connectionState.value = ConnectionState.Error(message)
+                SafeDiagnostics.warn(TAG, "VPN state changed: ERROR source=EXTERNAL")
             }
         }
     }
@@ -569,7 +674,14 @@ class VpnConnectionManager @Inject constructor(
             mutex.withLock {
                 // A destroy report from an old service instance must not kill a
                 // newer connection attempt that is already in flight.
-                if (generation != -1 && generation != connectionGeneration) return@launch
+                if (generation != -1 && generation != connectionGeneration) {
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "Stale VPN service destruction ignored: reported=$generation " +
+                            "current=$connectionGeneration",
+                    )
+                    return@launch
+                }
                 val state = _connectionState.value
                 // Connecting counts too: if the service dies before reporting
                 // Connected, the UI would otherwise sit on "Connecting" forever.
@@ -579,6 +691,12 @@ class VpnConnectionManager @Inject constructor(
                 if (!hasActiveSession) return@withLock
 
                 failedServer = _currentServer.value
+                SafeDiagnostics.warn(
+                    TAG,
+                    "VPN service stopped unexpectedly: generation=$generation " +
+                        "state=${connectionStateName(state)} session_s=${currentSessionSeconds()} " +
+                        "session_kib=${sessionBytesAccumulated / 1024L}",
+                )
                 advanceGeneration()
                 permittedServiceStartGeneration.set(-1)
                 stopUsageTracking()
@@ -606,12 +724,24 @@ class VpnConnectionManager @Inject constructor(
             val current = _connectionState.value
             if (current is ConnectionState.Disconnected) return
 
+            SafeDiagnostics.info(
+                TAG,
+                "VPN stop sequence: previous_state=${connectionStateName(current)} " +
+                    "reason=${if (errorMessage != null) "ERROR" else "REQUESTED"} " +
+                    "session_s=${currentSessionSeconds()} " +
+                    "session_kib=${sessionBytesAccumulated / 1024L}",
+            )
             stopBeforeGeneration = advanceGeneration()
             permittedServiceStartGeneration.set(-1)
             _connectionState.value = if (errorMessage != null) {
                 ConnectionState.Error(errorMessage)
             } else {
                 ConnectionState.Disconnected
+            }
+            if (errorMessage != null) {
+                SafeDiagnostics.warn(TAG, "VPN state changed: ERROR")
+            } else {
+                SafeDiagnostics.info(TAG, "VPN state changed: DISCONNECTED")
             }
             stopUsageTracking()
             // Close the TUN and foreground notification before slower accounting
@@ -669,7 +799,15 @@ class VpnConnectionManager @Inject constructor(
             var failedServer: Server? = null
             mutex.withLock {
                 // Reject stale updates from old connection attempts
-                if (generation != -1 && generation != connectionGeneration) return@launch
+                if (generation != -1 && generation != connectionGeneration) {
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "Stale VPN state update ignored: reported_generation=$generation " +
+                            "current_generation=$connectionGeneration " +
+                            "reported_state=${connectionStateName(state)}",
+                    )
+                    return@launch
+                }
 
                 val prev = _connectionState.value
 
@@ -678,8 +816,17 @@ class VpnConnectionManager @Inject constructor(
                         // Only accept if we're still in Connecting
                         if (prev !is ConnectionState.Connecting) return@launch
                         _connectionState.value = state
+                        SafeDiagnostics.info(
+                            TAG,
+                            "VPN state changed: CONNECTED generation=$generation " +
+                                "connect_duration_ms=${connectionAttemptDurationMs()} " +
+                                (_currentServer.value?.let(::diagnosticServerDescriptor)
+                                    ?: "server_ref=UNKNOWN"),
+                        )
                         connectionStartTime = System.currentTimeMillis()
                         sessionBytesAccumulated = 0L
+                        sessionUplinkBytesAccumulated = 0L
+                        sessionDownlinkBytesAccumulated = 0L
                         _sessionBytes.value = 0L
                         trafficQualityConfirmed = false
                         lastTunnelTrafficAt = 0L
@@ -702,6 +849,12 @@ class VpnConnectionManager @Inject constructor(
                         advanceGeneration()
                         permittedServiceStartGeneration.set(-1)
                         _connectionState.value = state
+                        SafeDiagnostics.info(
+                            TAG,
+                            "VPN state changed: DISCONNECTED previous=${connectionStateName(prev)} " +
+                                "session_s=${currentSessionSeconds()} " +
+                                "session_kib=${sessionBytesAccumulated / 1024L}",
+                        )
                         stopUsageTracking()
                         flushPendingUsage()
                         saveSessionLog()
@@ -716,6 +869,12 @@ class VpnConnectionManager @Inject constructor(
                         advanceGeneration()
                         permittedServiceStartGeneration.set(-1)
                         _connectionState.value = state
+                        SafeDiagnostics.warn(
+                            TAG,
+                            "VPN state changed: ERROR previous=${connectionStateName(prev)} " +
+                                "connect_duration_ms=${connectionAttemptDurationMs()} " +
+                                "session_s=${currentSessionSeconds()}",
+                        )
                         stopUsageTracking()
                         flushPendingUsage()
                         saveSessionLog()
@@ -725,6 +884,10 @@ class VpnConnectionManager @Inject constructor(
                         // Only accept if we're not already ahead (Connected/Disconnected)
                         if (prev is ConnectionState.Disconnected || prev is ConnectionState.Connecting) {
                             _connectionState.value = state
+                            SafeDiagnostics.trace(
+                                TAG,
+                                "VPN connecting state acknowledged: generation=$generation",
+                            )
                         }
                     }
                 }
@@ -745,6 +908,9 @@ class VpnConnectionManager @Inject constructor(
             // device's "Last active" in the device list freezes at the moment
             // the app was last foregrounded.
             var heartbeatCounter = 0
+            var lastHeartbeatUplinkBytes = 0L
+            var lastHeartbeatDownlinkBytes = 0L
+            var lastHeartbeatAt = SystemClock.elapsedRealtime()
             while (gen == latestConnectionGeneration.get()) {
                 delay(1000)
                 if (_connectionState.value !is ConnectionState.Connected) break
@@ -759,7 +925,35 @@ class VpnConnectionManager @Inject constructor(
                 heartbeatCounter++
                 if (heartbeatCounter >= HEARTBEAT_TICKS) {
                     heartbeatCounter = 0
+                    val intervalUplinkBytes =
+                        (sessionUplinkBytesAccumulated - lastHeartbeatUplinkBytes)
+                            .coerceAtLeast(0L)
+                    val intervalDownlinkBytes =
+                        (sessionDownlinkBytesAccumulated - lastHeartbeatDownlinkBytes)
+                            .coerceAtLeast(0L)
+                    val heartbeatAt = SystemClock.elapsedRealtime()
+                    val intervalDurationMs =
+                        (heartbeatAt - lastHeartbeatAt).coerceAtLeast(1L)
+                    lastHeartbeatUplinkBytes = sessionUplinkBytesAccumulated
+                    lastHeartbeatDownlinkBytes = sessionDownlinkBytesAccumulated
+                    lastHeartbeatAt = heartbeatAt
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "VPN background heartbeat: generation=$gen " +
+                            "session_s=${currentSessionSeconds()} " +
+                            "session_kib=${sessionBytesAccumulated / 1024L} " +
+                            "uplink_kib=${sessionUplinkBytesAccumulated / 1024L} " +
+                            "downlink_kib=${sessionDownlinkBytesAccumulated / 1024L} " +
+                            "interval_ms=$intervalDurationMs " +
+                            "interval_up_kbps=" +
+                            "${kilobitsPerSecond(intervalUplinkBytes, intervalDurationMs)} " +
+                            "interval_down_kbps=" +
+                            "${kilobitsPerSecond(intervalDownlinkBytes, intervalDurationMs)} " +
+                            "xray_running=${XRayCore.isRunning} " +
+                            underlyingNetworkSummary(),
+                    )
                     if (runCatching { authRepository.pingHwidOnly() }.getOrDefault(false)) {
+                        SafeDiagnostics.warn(TAG, "VPN heartbeat detected server-side access block")
                         performStop(
                             errorMessage = context.getString(R.string.error_usage_blocked),
                             request = request,
@@ -769,6 +963,13 @@ class VpnConnectionManager @Inject constructor(
                     }
                     if (sessionDao.getSession()?.telegramId != null) {
                         runCatching { authRepository.registerCurrentDevice() }
+                            .onFailure { error ->
+                                SafeDiagnostics.warn(
+                                    TAG,
+                                    "VPN device heartbeat failed: " +
+                                        SafeDiagnostics.failureSummary(error),
+                                )
+                            }
                     }
                 }
 
@@ -817,7 +1018,17 @@ class VpnConnectionManager @Inject constructor(
                 isAuthenticated = authenticated,
             )
         )
+        SafeDiagnostics.info(
+            TAG,
+            "VPN session persisted: duration_s=$sessionTime " +
+                "traffic_kib=${sessionBytes / 1024L} " +
+                "uplink_kib=${sessionUplinkBytesAccumulated / 1024L} " +
+                "downlink_kib=${sessionDownlinkBytesAccumulated / 1024L} " +
+                "authenticated=$authenticated",
+        )
         sessionBytesAccumulated = 0L
+        sessionUplinkBytesAccumulated = 0L
+        sessionDownlinkBytesAccumulated = 0L
         sessionStartUsageBytes = 0L
         _sessionBytes.value = 0L
         connectionStartTime = 0L
@@ -830,22 +1041,35 @@ class VpnConnectionManager @Inject constructor(
         healthCheckJob = null
         networkRecheckJob?.cancel()
         networkRecheckJob = null
+        SafeDiagnostics.trace(TAG, "VPN background tracking stopped")
     }
 
     private fun startTunnelHealthCheck() {
         healthCheckJob?.cancel()
         val gen = connectionGeneration
+        SafeDiagnostics.trace(
+            TAG,
+            "Tunnel health watchdog started: generation=$gen " +
+                "initial_delay_ms=$TUNNEL_HEALTH_INITIAL_DELAY_MS " +
+                "interval_ms=$TUNNEL_HEALTH_INTERVAL_MS",
+        )
         healthCheckJob = scope.launch {
             delay(TUNNEL_HEALTH_INITIAL_DELAY_MS)
             var failedCycles = 0
             while (gen == latestConnectionGeneration.get() && _connectionState.value is ConnectionState.Connected) {
                 if (!hasUnderlyingInternet()) {
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "Tunnel health cycle skipped: no underlying internet",
+                    )
                     failedCycles = 0
                     delay(TUNNEL_HEALTH_INTERVAL_MS)
                     continue
                 }
 
-                if (probeTunnelWithRetries(TUNNEL_HEALTH_ATTEMPTS)) {
+                val probe = probeTunnelWithRetries(TUNNEL_HEALTH_ATTEMPTS)
+                logTunnelProbe("PERIODIC", probe)
+                if (probe.healthy) {
                     failedCycles = 0
                     _currentServer.value?.let { server ->
                         scope.launch { serverQualityRepository.recordTunnelHealthy(server) }
@@ -854,12 +1078,21 @@ class VpnConnectionManager @Inject constructor(
                         if (gen == connectionGeneration) watchdogRecoveryAttempts = 0
                     }
                 } else if (hasRecentTunnelTraffic()) {
+                    SafeDiagnostics.warn(
+                        TAG,
+                        "Tunnel probe failed but recent tunnel traffic confirmed liveness",
+                    )
                     failedCycles = 0
                     _currentServer.value?.let { server ->
                         scope.launch { serverQualityRepository.recordTunnelHealthy(server) }
                     }
                 } else {
                     failedCycles++
+                    SafeDiagnostics.warn(
+                        TAG,
+                        "Tunnel health failure cycle: count=$failedCycles " +
+                            "threshold=$TUNNEL_HEALTH_FAILURE_CYCLES",
+                    )
                 }
 
                 if (failedCycles >= TUNNEL_HEALTH_FAILURE_CYCLES) {
@@ -878,6 +1111,7 @@ class VpnConnectionManager @Inject constructor(
     }
 
     private suspend fun recoverTunnelAfterHealthFailure(gen: Int) {
+        SafeDiagnostics.warn(TAG, "VPN tunnel health recovery started")
         var serverToRestart: Server? = null
         var errorMessage: String? = null
         var shouldAbort = false
@@ -905,9 +1139,16 @@ class VpnConnectionManager @Inject constructor(
             recoveryRequest = requestedOperation.get()
         }
 
-        if (shouldAbort) return
+        if (shouldAbort) {
+            SafeDiagnostics.trace(TAG, "VPN tunnel recovery cancelled as stale")
+            return
+        }
 
         if (errorMessage != null) {
+            SafeDiagnostics.warn(
+                TAG,
+                "VPN tunnel recovery unavailable: attempts=$watchdogRecoveryAttempts",
+            )
             performStop(
                 errorMessage = errorMessage,
                 request = requestedOperation.get(),
@@ -917,6 +1158,11 @@ class VpnConnectionManager @Inject constructor(
         }
 
         val staleServer = serverToRestart ?: return
+        SafeDiagnostics.warn(
+            TAG,
+            "VPN tunnel recovery attempt: attempt=$watchdogRecoveryAttempts " +
+                diagnosticServerDescriptor(staleServer),
+        )
         val server = refreshServerAfterAccessCheck(
             server = staleServer,
             avoidCurrentInAuto = true,
@@ -937,6 +1183,11 @@ class VpnConnectionManager @Inject constructor(
             }
         }
         persistAutomaticSelectionIfNeeded(server)
+        SafeDiagnostics.info(
+            TAG,
+            "VPN tunnel recovery selected restart target: " +
+                diagnosticServerDescriptor(server),
+        )
         performStop(request = recoveryRequest, expectedGeneration = gen)
         delay(TUNNEL_RECOVERY_RESTART_DELAY_MS)
         if (recoveryRequest == requestedOperation.get() &&
@@ -950,25 +1201,72 @@ class VpnConnectionManager @Inject constructor(
         }
     }
 
-    private suspend fun probeTunnelWithRetries(attempts: Int): Boolean {
+    private suspend fun probeTunnelWithRetries(attempts: Int): TunnelProbeResult {
+        val startedAt = SystemClock.elapsedRealtime()
+        var lastFailure = "UNKNOWN"
         repeat(attempts) { index ->
-            if (probeTunnelOnce()) return true
+            val attempt = probeTunnelOnce()
+            if (attempt.healthy) {
+                return TunnelProbeResult(
+                    healthy = true,
+                    attemptsUsed = index + 1,
+                    durationMs = SystemClock.elapsedRealtime() - startedAt,
+                    lastFailure = null,
+                )
+            }
+            lastFailure = attempt.failure
             if (index < attempts - 1) delay(TUNNEL_HEALTH_RETRY_MS)
         }
-        return false
+        return TunnelProbeResult(
+            healthy = false,
+            attemptsUsed = attempts,
+            durationMs = SystemClock.elapsedRealtime() - startedAt,
+            lastFailure = lastFailure,
+        )
     }
 
-    private suspend fun probeTunnelOnce(): Boolean = withContext(Dispatchers.IO) {
+    private suspend fun probeTunnelOnce(): TunnelProbeAttempt =
+        withContext(Dispatchers.IO) {
+        var lastFailure = "NO_SUCCESS_RESPONSE"
         for (url in TUNNEL_PROBE_URLS) {
             try {
                 val request = Request.Builder().url(url).get().build()
                 tunnelProbeClient.newCall(request).execute().use { response ->
-                    if (response.code in 200..399) return@withContext true
+                    if (response.code in 200..399) {
+                        return@withContext TunnelProbeAttempt(healthy = true)
+                    }
+                    lastFailure = "HTTP_${response.code}"
                 }
-            } catch (_: Exception) {
+            } catch (error: Exception) {
+                lastFailure = SafeDiagnostics.failureCategory(error)
             }
         }
-        false
+        TunnelProbeAttempt(
+            healthy = false,
+            failure = lastFailure,
+        )
+    }
+
+    private fun logTunnelProbe(source: String, result: TunnelProbeResult) {
+        val message = buildString {
+            append("Tunnel health probe: source=")
+            append(source)
+            append(" result=")
+            append(if (result.healthy) "HEALTHY" else "FAILED")
+            append(" attempts=")
+            append(result.attemptsUsed)
+            append(" duration_ms=")
+            append(result.durationMs)
+            result.lastFailure?.let {
+                append(" last_failure=")
+                append(it)
+            }
+        }
+        if (result.healthy) {
+            SafeDiagnostics.trace(TAG, message)
+        } else {
+            SafeDiagnostics.warn(TAG, message)
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -988,12 +1286,14 @@ class VpnConnectionManager @Inject constructor(
     private suspend fun drainTrafficCounters(addTimeSeconds: Long) {
         withContext(NonCancellable) {
             statsMutex.withLock {
-                val upBytes = XRayCore.queryStats("proxy", "uplink")
-                val downBytes = XRayCore.queryStats("proxy", "downlink")
+                val upBytes = XRayCore.queryStats("proxy", "uplink").coerceAtLeast(0L)
+                val downBytes = XRayCore.queryStats("proxy", "downlink").coerceAtLeast(0L)
                 val delta = upBytes + downBytes
                 if (delta <= 0L && addTimeSeconds <= 0L) return@withLock
 
                 sessionBytesAccumulated += delta
+                sessionUplinkBytesAccumulated += upBytes
+                sessionDownlinkBytesAccumulated += downBytes
                 _sessionBytes.value = sessionBytesAccumulated
                 if (delta > 0L) {
                     lastTunnelTrafficAt = System.currentTimeMillis()
@@ -1032,6 +1332,83 @@ class VpnConnectionManager @Inject constructor(
         return lastTunnelTrafficAt > 0L &&
             System.currentTimeMillis() - lastTunnelTrafficAt <= RECENT_TUNNEL_TRAFFIC_GRACE_MS
     }
+
+    private fun currentSessionSeconds(): Long =
+        if (connectionStartTime > 0L) {
+            ((System.currentTimeMillis() - connectionStartTime) / 1_000L)
+                .coerceAtLeast(0L)
+        } else {
+            0L
+        }
+
+    private fun connectionAttemptDurationMs(): Long =
+        if (connectionAttemptStartedAt > 0L) {
+            (SystemClock.elapsedRealtime() - connectionAttemptStartedAt)
+                .coerceAtLeast(0L)
+        } else {
+            -1L
+        }
+
+    private fun kilobitsPerSecond(bytes: Long, durationMs: Long): Long =
+        (bytes.coerceAtLeast(0L) * 8L / durationMs.coerceAtLeast(1L))
+            .coerceAtLeast(0L)
+
+    @Suppress("DEPRECATION")
+    private fun underlyingNetworkSummary(): String {
+        val connectivityManager =
+            context.getSystemService(ConnectivityManager::class.java)
+                ?: return "underlying_transport=UNKNOWN"
+        val capabilities = connectivityManager.allNetworks
+            .mapNotNull(connectivityManager::getNetworkCapabilities)
+            .filter {
+                it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    !it.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+            }
+            .maxByOrNull {
+                if (it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                    1
+                } else {
+                    0
+                }
+            }
+            ?: return "underlying_transport=NONE"
+        val transport = when {
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "WIFI"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "CELLULAR"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ETHERNET"
+            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH) -> "BLUETOOTH"
+            else -> "OTHER"
+        }
+        return buildString {
+            append("underlying_transport=")
+            append(transport)
+            append(" validated=")
+            append(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED))
+            append(" metered=")
+            append(!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED))
+            append(" roaming=")
+            append(!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING))
+        }
+    }
+
+    private fun connectionStateName(state: ConnectionState): String = when (state) {
+        is ConnectionState.Disconnected -> "DISCONNECTED"
+        is ConnectionState.Connecting -> "CONNECTING"
+        is ConnectionState.Connected -> "CONNECTED"
+        is ConnectionState.Error -> "ERROR"
+    }
+
+    private data class TunnelProbeAttempt(
+        val healthy: Boolean,
+        val failure: String = "",
+    )
+
+    private data class TunnelProbeResult(
+        val healthy: Boolean,
+        val attemptsUsed: Int,
+        val durationMs: Long,
+        val lastFailure: String?,
+    )
 
     companion object {
         private const val TAG = "VpnConnectionManager"

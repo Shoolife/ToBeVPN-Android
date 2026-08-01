@@ -1,6 +1,9 @@
 package com.tobevpn.app.presentation.settings
 
+import android.content.ClipData
 import android.content.Context
+import android.content.Intent
+import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tobevpn.app.R
@@ -22,6 +25,8 @@ import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
 import com.tobevpn.app.domain.model.ProfileNameDisplay
 import com.tobevpn.app.domain.model.ThemeMode
 import com.tobevpn.app.util.DeepLinkBus
+import com.tobevpn.app.util.DiagnosticLogFileInfo
+import com.tobevpn.app.util.DiagnosticLogManager
 import com.tobevpn.app.util.LocaleManager
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.vpn.VpnConnectionManager
@@ -32,8 +37,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
@@ -51,6 +59,7 @@ class SettingsViewModel @Inject constructor(
     private val botApi: BotApi,
     private val prefsDataStore: PrefsDataStore,
     private val sessionDao: SessionDao,
+    private val diagnosticLogManager: DiagnosticLogManager,
     deepLinkBus: DeepLinkBus,
     appFilterRepository: AppFilterRepository,
 ) : ViewModel() {
@@ -75,6 +84,21 @@ class SettingsViewModel @Inject constructor(
     // whose first invocation would otherwise stall the Settings navigation.
     private val _xrayVersion = MutableStateFlow<String?>(null)
     val xrayVersion: StateFlow<String?> = _xrayVersion.asStateFlow()
+
+    val diagnosticLogState = diagnosticLogManager.state
+
+    private val _diagnosticLogHistoryState =
+        MutableStateFlow(DiagnosticLogHistoryUiState())
+    val diagnosticLogHistoryState: StateFlow<DiagnosticLogHistoryUiState> =
+        _diagnosticLogHistoryState.asStateFlow()
+
+    private val _diagnosticEvents = MutableSharedFlow<DiagnosticUiEvent>(
+        extraBufferCapacity = 4,
+    )
+    val diagnosticEvents: SharedFlow<DiagnosticUiEvent> =
+        _diagnosticEvents.asSharedFlow()
+
+    private var diagnosticModeToggleJob: Job? = null
 
     val userEmail: StateFlow<String?> = sessionDao.observeEmail()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
@@ -139,6 +163,124 @@ class SettingsViewModel @Inject constructor(
 
     fun resetDisplayPreferences() {
         viewModelScope.launch { prefsDataStore.resetDisplayPreferences() }
+    }
+
+    fun toggleDiagnosticMode() {
+        if (diagnosticModeToggleJob?.isActive == true) return
+        diagnosticModeToggleJob = viewModelScope.launch {
+            try {
+                val enabled = !diagnosticLogManager.state.value.debugModeEnabled
+                diagnosticLogManager.setDebugModeEnabled(enabled)
+                _diagnosticEvents.emit(DiagnosticUiEvent.ModeChanged(enabled))
+            } catch (error: Exception) {
+                SafeDiagnostics.warn(
+                    TAG,
+                    "Diagnostic mode toggle failed: ${SafeDiagnostics.failureCategory(error)}",
+                )
+                _diagnosticEvents.emit(DiagnosticUiEvent.OperationFailed)
+            }
+        }
+    }
+
+    fun setDiagnosticCollectionEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            try {
+                diagnosticLogManager.setCollectionEnabled(enabled)
+            } catch (error: Exception) {
+                SafeDiagnostics.warn(
+                    TAG,
+                    "Diagnostic collection toggle failed: ${SafeDiagnostics.failureCategory(error)}",
+                )
+                _diagnosticEvents.emit(DiagnosticUiEvent.OperationFailed)
+            }
+        }
+    }
+
+    fun refreshDiagnosticLogState() {
+        viewModelScope.launch {
+            runCatching { diagnosticLogManager.refresh() }
+                .onFailure { error ->
+                    SafeDiagnostics.warn(
+                        TAG,
+                        "Diagnostic state refresh failed: ${SafeDiagnostics.failureCategory(error)}",
+                    )
+                }
+        }
+    }
+
+    fun loadDiagnosticLogHistory() {
+        viewModelScope.launch {
+            _diagnosticLogHistoryState.value =
+                _diagnosticLogHistoryState.value.copy(isLoading = true)
+            try {
+                _diagnosticLogHistoryState.value = DiagnosticLogHistoryUiState(
+                    logs = diagnosticLogManager.logHistory(),
+                )
+            } catch (error: Exception) {
+                SafeDiagnostics.warn(
+                    TAG,
+                    "Diagnostic history load failed: ${SafeDiagnostics.failureCategory(error)}",
+                )
+                _diagnosticLogHistoryState.value =
+                    _diagnosticLogHistoryState.value.copy(isLoading = false)
+                _diagnosticEvents.emit(DiagnosticUiEvent.OperationFailed)
+            }
+        }
+    }
+
+    fun shareDiagnosticLog(fileName: String) {
+        viewModelScope.launch {
+            try {
+                val file = diagnosticLogManager.logForSharing(fileName)
+                if (file == null) {
+                    _diagnosticEvents.emit(DiagnosticUiEvent.NoLogToExport)
+                    return@launch
+                }
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file,
+                )
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    clipData = ClipData.newUri(context.contentResolver, file.name, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                _diagnosticEvents.emit(DiagnosticUiEvent.ShareLog(sendIntent))
+            } catch (error: Exception) {
+                SafeDiagnostics.warn(
+                    TAG,
+                    "Diagnostic export failed: ${SafeDiagnostics.failureCategory(error)}",
+                )
+                _diagnosticEvents.emit(DiagnosticUiEvent.OperationFailed)
+            }
+        }
+    }
+
+    fun deleteDiagnosticLog(fileName: String) {
+        if (_diagnosticLogHistoryState.value.deletingFileName != null) return
+        viewModelScope.launch {
+            _diagnosticLogHistoryState.value =
+                _diagnosticLogHistoryState.value.copy(deletingFileName = fileName)
+            try {
+                val deleted = diagnosticLogManager.deleteLog(fileName)
+                _diagnosticLogHistoryState.value = DiagnosticLogHistoryUiState(
+                    logs = diagnosticLogManager.logHistory(),
+                )
+                if (!deleted) {
+                    _diagnosticEvents.emit(DiagnosticUiEvent.OperationFailed)
+                }
+            } catch (error: Exception) {
+                SafeDiagnostics.warn(
+                    TAG,
+                    "Diagnostic log deletion failed: ${SafeDiagnostics.failureCategory(error)}",
+                )
+                _diagnosticLogHistoryState.value =
+                    _diagnosticLogHistoryState.value.copy(deletingFileName = null)
+                _diagnosticEvents.emit(DiagnosticUiEvent.OperationFailed)
+            }
+        }
     }
 
     private val _tvPairResult = MutableStateFlow<TvPairResult?>(null)
@@ -393,3 +535,16 @@ sealed interface TvPairResult {
     data object Success : TvPairResult
     data class Error(val message: String) : TvPairResult
 }
+
+sealed interface DiagnosticUiEvent {
+    data class ModeChanged(val enabled: Boolean) : DiagnosticUiEvent
+    data class ShareLog(val intent: Intent) : DiagnosticUiEvent
+    data object NoLogToExport : DiagnosticUiEvent
+    data object OperationFailed : DiagnosticUiEvent
+}
+
+data class DiagnosticLogHistoryUiState(
+    val logs: List<DiagnosticLogFileInfo> = emptyList(),
+    val isLoading: Boolean = false,
+    val deletingFileName: String? = null,
+)

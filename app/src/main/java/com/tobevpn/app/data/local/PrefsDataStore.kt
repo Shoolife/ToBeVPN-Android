@@ -58,6 +58,8 @@ class PrefsDataStore @Inject constructor(
         val FONT_SCALE = doublePreferencesKey("font_scale")
         val BOLD_TEXT = booleanPreferencesKey("bold_text")
         val OUTLINED_TEXT = booleanPreferencesKey("outlined_text")
+        val DIAGNOSTIC_MODE_ENABLED = booleanPreferencesKey("diagnostic_mode_enabled")
+        val DIAGNOSTIC_LOGGING_ENABLED = booleanPreferencesKey("diagnostic_logging_enabled")
         val USD_RATE = doublePreferencesKey("usd_rate")
         val USD_RATE_TIMESTAMP = longPreferencesKey("usd_rate_timestamp")
         val ANON_SERVER_BYTES = longPreferencesKey("anon_server_bytes")
@@ -164,6 +166,39 @@ class PrefsDataStore @Inject constructor(
             it.remove(Keys.FONT_SCALE)
             it.remove(Keys.BOLD_TEXT)
             it.remove(Keys.OUTLINED_TEXT)
+        }
+    }
+
+    /**
+     * Hidden diagnostic mode and active log collection are separate switches:
+     * revealing the diagnostic card must never start recording by itself.
+     */
+    suspend fun getDiagnosticSettings(): Pair<Boolean, Boolean> {
+        val prefs = context.dataStore.data.first()
+        val modeEnabled = prefs[Keys.DIAGNOSTIC_MODE_ENABLED] ?: false
+        val loggingEnabled = modeEnabled &&
+            (prefs[Keys.DIAGNOSTIC_LOGGING_ENABLED] ?: false)
+        return modeEnabled to loggingEnabled
+    }
+
+    /**
+     * Disabling the hidden mode atomically disables collection as well. This
+     * prevents a background recorder from remaining active after its controls
+     * disappear from the About screen.
+     */
+    suspend fun setDiagnosticModeEnabled(enabled: Boolean) {
+        context.dataStore.edit {
+            it[Keys.DIAGNOSTIC_MODE_ENABLED] = enabled
+            if (!enabled) {
+                it[Keys.DIAGNOSTIC_LOGGING_ENABLED] = false
+            }
+        }
+    }
+
+    suspend fun setDiagnosticLoggingEnabled(enabled: Boolean) {
+        context.dataStore.edit {
+            val modeEnabled = it[Keys.DIAGNOSTIC_MODE_ENABLED] ?: false
+            it[Keys.DIAGNOSTIC_LOGGING_ENABLED] = enabled && modeEnabled
         }
     }
 

@@ -42,6 +42,7 @@ import com.tobevpn.app.update.UpdateBannerCheck
 import com.tobevpn.app.update.UpdateBannerHost
 import com.tobevpn.app.util.DeepLinkBus
 import com.tobevpn.app.util.DeepLinkDestination
+import com.tobevpn.app.util.SafeDiagnostics
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -61,6 +62,10 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val systemSplash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        SafeDiagnostics.trace(
+            TAG,
+            "Main activity created: restored=${savedInstanceState != null}",
+        )
         // Immediately dismiss the system splash
         systemSplash.setKeepOnScreenCondition { false }
         enableEdgeToEdge()
@@ -180,6 +185,24 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        SafeDiagnostics.trace(TAG, "Application UI entered foreground")
+    }
+
+    override fun onStop() {
+        SafeDiagnostics.trace(TAG, "Application UI entered background")
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        SafeDiagnostics.trace(
+            TAG,
+            "Main activity destroyed: changing_configuration=$isChangingConfigurations",
+        )
+        super.onDestroy()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // setIntent so any subsequent getIntent() returns the new one — keeps
@@ -211,6 +234,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     companion object {
+        private const val TAG = "MainActivity"
         const val ACTION_CONNECT_FROM_QS_TILE = "com.tobevpn.app.action.CONNECT_FROM_QS_TILE"
         const val EXTRA_CONNECT_FROM_QS_TILE = "com.tobevpn.app.extra.CONNECT_FROM_QS_TILE"
         private const val ACTION_QS_TILE_PREFERENCES =

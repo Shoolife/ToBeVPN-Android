@@ -58,6 +58,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -71,10 +73,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
@@ -97,6 +101,9 @@ import com.tobevpn.app.domain.model.normalizeFontScale
 import com.tobevpn.app.domain.model.normalizeInterfaceScale
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.servers.ServerListScalePreview
+import com.tobevpn.app.presentation.theme.LocalAppBaseDensity
+import com.tobevpn.app.presentation.theme.LocalAppFontScale
+import com.tobevpn.app.presentation.theme.LocalAppInterfaceScale
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
@@ -270,6 +277,19 @@ fun DisplayScaleTextScreen(
     val currentSubscriptionPlan by viewModel.currentSubscriptionPlan.collectAsStateWithLifecycle()
     val profileNameDisplay by viewModel.profileNameDisplay.collectAsStateWithLifecycle()
     val avatarLoading by viewModel.avatarLoading.collectAsStateWithLifecycle()
+    var previewInterfaceScale by remember {
+        mutableFloatStateOf(normalizeInterfaceScale(interfaceScale))
+    }
+    var previewFontScale by remember {
+        mutableFloatStateOf(normalizeFontScale(fontScale))
+    }
+
+    LaunchedEffect(interfaceScale) {
+        previewInterfaceScale = normalizeInterfaceScale(interfaceScale)
+    }
+    LaunchedEffect(fontScale) {
+        previewFontScale = normalizeFontScale(fontScale)
+    }
 
     Scaffold(
         topBar = {
@@ -307,25 +327,37 @@ fun DisplayScaleTextScreen(
                 currentSubscriptionPlan = currentSubscriptionPlan,
                 profileNameDisplay = profileNameDisplay,
                 avatarLoading = avatarLoading,
+                interfaceScale = previewInterfaceScale,
+                fontScale = previewFontScale,
             )
             Spacer(modifier = Modifier.height(24.dp))
             DisplayScaleAndTextControls(
-                interfaceScale = interfaceScale,
-                fontScale = fontScale,
+                interfaceScale = previewInterfaceScale,
+                fontScale = previewFontScale,
                 boldText = boldText,
                 outlinedText = outlinedText,
-                onInterfaceScaleChange = viewModel::setInterfaceScale,
-                onFontScaleChange = viewModel::setFontScale,
+                onInterfaceScaleChange = { value ->
+                    previewInterfaceScale = normalizeInterfaceScale(value)
+                },
+                onInterfaceScaleChangeFinished = viewModel::setInterfaceScale,
+                onFontScaleChange = { value ->
+                    previewFontScale = normalizeFontScale(value)
+                },
+                onFontScaleChangeFinished = viewModel::setFontScale,
                 onBoldTextChange = viewModel::setBoldText,
                 onOutlinedTextChange = viewModel::setOutlinedText,
             )
             Spacer(modifier = Modifier.height(24.dp))
             ResetDisplaySettingsButton(
-                enabled = interfaceScale != DEFAULT_INTERFACE_SCALE ||
-                    fontScale != DEFAULT_FONT_SCALE ||
+                enabled = previewInterfaceScale != DEFAULT_INTERFACE_SCALE ||
+                    previewFontScale != DEFAULT_FONT_SCALE ||
                     boldText ||
                     outlinedText,
-                onClick = viewModel::resetDisplayPreferences,
+                onClick = {
+                    previewInterfaceScale = DEFAULT_INTERFACE_SCALE
+                    previewFontScale = DEFAULT_FONT_SCALE
+                    viewModel.resetDisplayPreferences()
+                },
             )
             Spacer(modifier = Modifier.height(16.dp))
         }
@@ -377,6 +409,8 @@ private fun DisplaySettingsPreview(
     currentSubscriptionPlan: CurrentSubscriptionPlanInfo?,
     profileNameDisplay: ProfileNameDisplay,
     avatarLoading: Boolean,
+    interfaceScale: Float,
+    fontScale: Float,
 ) {
     val isDark = isSystemInDarkTheme()
     val previewBackground = if (isDark) {
@@ -428,17 +462,22 @@ private fun DisplaySettingsPreview(
                         }
                         .clip(RoundedCornerShape(20.dp)),
                 ) {
-                    when (page) {
-                        0 -> DisplayPreviewProfilePage(
-                            authState = authState,
-                            profileNameDisplay = profileNameDisplay,
-                            avatarLoading = avatarLoading,
-                        )
-                        1 -> DisplayPreviewServersPage()
-                        else -> DisplayPreviewSubscriptionPage(
-                            authState = authState,
-                            currentSubscriptionPlan = currentSubscriptionPlan,
-                        )
+                    PreviewScaledContent(
+                        interfaceScale = interfaceScale,
+                        fontScale = fontScale,
+                    ) {
+                        when (page) {
+                            0 -> DisplayPreviewProfilePage(
+                                authState = authState,
+                                profileNameDisplay = profileNameDisplay,
+                                avatarLoading = avatarLoading,
+                            )
+                            1 -> DisplayPreviewServersPage()
+                            else -> DisplayPreviewSubscriptionPage(
+                                authState = authState,
+                                currentSubscriptionPlan = currentSubscriptionPlan,
+                            )
+                        }
                     }
                 }
             }
@@ -496,6 +535,34 @@ private fun DisplaySettingsPreview(
             }
         }
     }
+}
+
+@Composable
+private fun PreviewScaledContent(
+    interfaceScale: Float,
+    fontScale: Float,
+    content: @Composable () -> Unit,
+) {
+    val baseDensity = LocalAppBaseDensity.current ?: LocalDensity.current
+    val normalizedInterfaceScale = normalizeInterfaceScale(interfaceScale)
+    val normalizedFontScale = normalizeFontScale(fontScale)
+    val previewDensity = remember(
+        baseDensity,
+        normalizedInterfaceScale,
+        normalizedFontScale,
+    ) {
+        Density(
+            density = baseDensity.density * normalizedInterfaceScale,
+            fontScale = baseDensity.fontScale * normalizedFontScale,
+        )
+    }
+
+    CompositionLocalProvider(
+        LocalAppInterfaceScale provides normalizedInterfaceScale,
+        LocalAppFontScale provides normalizedFontScale,
+        LocalDensity provides previewDensity,
+        content = content,
+    )
 }
 
 @Composable
@@ -745,7 +812,9 @@ private fun DisplayScaleAndTextControls(
     boldText: Boolean,
     outlinedText: Boolean,
     onInterfaceScaleChange: (Float) -> Unit,
+    onInterfaceScaleChangeFinished: (Float) -> Unit,
     onFontScaleChange: (Float) -> Unit,
+    onFontScaleChangeFinished: (Float) -> Unit,
     onBoldTextChange: (Boolean) -> Unit,
     onOutlinedTextChange: (Boolean) -> Unit,
 ) {
@@ -778,6 +847,7 @@ private fun DisplayScaleAndTextControls(
             decreaseDescription = stringResource(R.string.font_scale_decrease),
             increaseDescription = stringResource(R.string.font_scale_increase),
             onValueChange = onFontScaleChange,
+            onValueChangeFinished = onFontScaleChangeFinished,
         )
         HorizontalDivider(
             modifier = Modifier.padding(horizontal = 16.dp),
@@ -791,6 +861,7 @@ private fun DisplayScaleAndTextControls(
             decreaseDescription = stringResource(R.string.interface_scale_decrease),
             increaseDescription = stringResource(R.string.interface_scale_increase),
             onValueChange = onInterfaceScaleChange,
+            onValueChangeFinished = onInterfaceScaleChangeFinished,
         )
     }
 
@@ -838,8 +909,9 @@ private fun DiscreteScaleSetting(
     decreaseDescription: String,
     increaseDescription: String,
     onValueChange: (Float) -> Unit,
+    onValueChangeFinished: (Float) -> Unit,
 ) {
-    var sliderValue by remember(value) {
+    var sliderValue by remember {
         mutableFloatStateOf(normalize(value))
     }
     val normalizedValue = normalize(sliderValue)
@@ -852,6 +924,10 @@ private fun DiscreteScaleSetting(
         inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
         inactiveTickColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
     )
+
+    LaunchedEffect(value) {
+        sliderValue = normalize(value)
+    }
 
     fun select(valueToSelect: Float) {
         val normalized = normalize(valueToSelect)
@@ -900,12 +976,17 @@ private fun DiscreteScaleSetting(
                 contentDescription = decreaseDescription,
                 enabled = canDecrease,
                 onClick = {
-                    select(normalizedValue - INTERFACE_SCALE_STEP)
+                    val selected = normalize(normalizedValue - INTERFACE_SCALE_STEP)
+                    select(selected)
+                    onValueChangeFinished(selected)
                 },
             )
             Slider(
                 value = normalizedValue,
                 onValueChange = ::select,
+                onValueChangeFinished = {
+                    onValueChangeFinished(normalize(sliderValue))
+                },
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 6.dp),
@@ -937,7 +1018,9 @@ private fun DiscreteScaleSetting(
                 contentDescription = increaseDescription,
                 enabled = canIncrease,
                 onClick = {
-                    select(normalizedValue + INTERFACE_SCALE_STEP)
+                    val selected = normalize(normalizedValue + INTERFACE_SCALE_STEP)
+                    select(selected)
+                    onValueChangeFinished(selected)
                 },
             )
         }
@@ -982,8 +1065,8 @@ private fun TextStyleToggleRow(
     } else {
         SwitchDefaults.colors(
             checkedThumbColor = Color.White,
-            checkedTrackColor = AccentViolet,
-            checkedBorderColor = AccentViolet,
+            checkedTrackColor = Color(0xFF3F3F3F),
+            checkedBorderColor = Color(0xFF3F3F3F),
             uncheckedThumbColor = Color.White,
             uncheckedTrackColor = Color(0xFFBDBDBD),
             uncheckedBorderColor = Color(0xFFBDBDBD),

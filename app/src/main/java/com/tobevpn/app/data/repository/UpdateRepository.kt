@@ -3,11 +3,11 @@ package com.tobevpn.app.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
-import android.util.Log
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.data.remote.GithubReleasesApi
 import com.tobevpn.app.data.remote.dto.GithubAssetDto
 import com.tobevpn.app.data.remote.dto.GithubReleaseDto
+import com.tobevpn.app.util.SafeDiagnostics
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -49,7 +49,10 @@ class UpdateRepository @Inject constructor(
             writeCached(fresh)
             fresh
         }.getOrElse { e ->
-            Log.w(TAG, "update check failed", e)
+            SafeDiagnostics.warn(
+                TAG,
+                "Update check failed: ${SafeDiagnostics.failureCategory(e)}",
+            )
             UpdateCheckResult.UpToDate
         }
     }

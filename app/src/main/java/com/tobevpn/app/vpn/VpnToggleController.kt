@@ -15,6 +15,8 @@ import com.tobevpn.app.presentation.servers.isSelectedServer
 import com.tobevpn.app.presentation.servers.resolveSelectedServer
 import com.tobevpn.app.presentation.servers.serverSelectionKey
 import com.tobevpn.app.presentation.servers.stableServerId
+import com.tobevpn.app.util.SafeDiagnostics
+import com.tobevpn.app.util.diagnosticServerDescriptor
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
@@ -60,9 +62,14 @@ class VpnToggleController @Inject constructor(
         if (!prefsDataStore.isAutomaticServerSelection()) return
         val selectedId = prefsDataStore.getSelectedServerId()
         if (!forceSelection && selectedId != null && servers.any { it.id == selectedId && it.isAvailable }) {
+            SafeDiagnostics.trace(TAG, "Automatic server selection kept the cached choice")
             return
         }
         val best = serverQualityRepository.selectBestServer(servers) ?: return
+        SafeDiagnostics.trace(
+            TAG,
+            "Automatic server selected: ${diagnosticServerDescriptor(best)}",
+        )
         prefsDataStore.setAutomaticSelectedServer(
             id = stableServerId(best),
             key = serverSelectionKey(best),
@@ -85,7 +92,15 @@ class VpnToggleController @Inject constructor(
 
     suspend fun prepareServerForConnect(server: Server?): Server? {
         val selection = readSelection()
-        if (!selection.automatic && server != null && !server.isAvailable) return null
+        SafeDiagnostics.trace(
+            TAG,
+            "Connection preparation started: mode=${if (selection.automatic) "AUTO" else "MANUAL"} " +
+                "cached=${server?.let(::diagnosticServerDescriptor) ?: "NONE"}",
+        )
+        if (!selection.automatic && server != null && !server.isAvailable) {
+            SafeDiagnostics.warn(TAG, "Connection preparation rejected unavailable manual server")
+            return null
+        }
 
         authRepository.ensurePanelUser()
         authRepository.syncSubscription(
@@ -107,6 +122,11 @@ class VpnToggleController @Inject constructor(
             )
         }
         if (resolved == null && canUseSelectedServerFallback(server)) {
+            SafeDiagnostics.warn(
+                TAG,
+                "Connection preparation using stale server fallback: " +
+                    server?.let(::diagnosticServerDescriptor),
+            )
             return server
         }
         if (selection.automatic && resolved != null) {
@@ -115,6 +135,11 @@ class VpnToggleController @Inject constructor(
                 key = serverSelectionKey(resolved),
             )
         }
+        SafeDiagnostics.trace(
+            TAG,
+            "Connection preparation completed: available=${availableServers.size} " +
+                "resolved=${resolved?.let(::diagnosticServerDescriptor) ?: "NONE"}",
+        )
         return resolved
     }
 
@@ -150,4 +175,8 @@ class VpnToggleController @Inject constructor(
         val selectedKey: String?,
         val automatic: Boolean,
     )
+
+    private companion object {
+        const val TAG = "VpnToggleController"
+    }
 }

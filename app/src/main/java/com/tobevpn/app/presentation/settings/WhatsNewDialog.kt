@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -70,19 +71,19 @@ private data class WhatsNewHighlight(
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.Tune,
-        titleRes = R.string.whats_new_display_scale_title,
-        descriptionRes = R.string.whats_new_display_scale_desc,
+        icon = Icons.Outlined.LocalOffer,
+        titleRes = R.string.whats_new_discount_title,
+        descriptionRes = R.string.whats_new_discount_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.AutoAwesome,
-        titleRes = R.string.whats_new_text_accessibility_title,
-        descriptionRes = R.string.whats_new_text_accessibility_desc,
+        icon = Icons.Filled.Tune,
+        titleRes = R.string.whats_new_diagnostics_title,
+        descriptionRes = R.string.whats_new_diagnostics_desc,
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.CheckCircle,
-        titleRes = R.string.whats_new_adaptive_ui_title,
-        descriptionRes = R.string.whats_new_adaptive_ui_desc,
+        titleRes = R.string.whats_new_log_history_title,
+        descriptionRes = R.string.whats_new_log_history_desc,
     ),
 )
 

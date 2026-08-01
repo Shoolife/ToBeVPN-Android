@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tobevpn.app.R
 import com.tobevpn.app.domain.model.ConnectionState
+import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.vpn.VpnConfig
 import com.tobevpn.app.vpn.VpnConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,6 +26,7 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.Locale
 import javax.inject.Inject
 
 data class SpeedTestState(
@@ -89,16 +91,29 @@ class SpeedTestViewModel @Inject constructor(
         cancelActiveWork()
         cancelled.set(false)
         testJob = viewModelScope.launch {
+            val throughVpn = viaVpn.value
+            val startedAt = System.nanoTime()
+            SafeDiagnostics.info(
+                TAG,
+                "Speed test started: route=${if (throughVpn) "VPN" else "DIRECT"} " +
+                    "duration_s=$testDurationSeconds",
+            )
             _state.value = SpeedTestState(phase = SpeedTestPhase.Ping)
-            val client = buildClient(throughVpn = viaVpn.value)
+            val client = buildClient(throughVpn = throughVpn)
 
             val ping = measurePing(client)
             if (cancelled.get()) return@launch
 
             if (ping < 0) {
+                SafeDiagnostics.warn(
+                    TAG,
+                    "Speed test stopped: route=${if (throughVpn) "VPN" else "DIRECT"} " +
+                        "reason=PING_FAILED",
+                )
                 _state.value = SpeedTestState(phase = SpeedTestPhase.Done, errorRes = R.string.speed_no_connection)
                 return@launch
             }
+            SafeDiagnostics.trace(TAG, "Speed test ping completed: latency_ms=$ping")
             _state.value = _state.value.copy(ping = ping)
 
             _state.value = _state.value.copy(phase = SpeedTestPhase.Download, progress = 0f)
@@ -112,6 +127,12 @@ class SpeedTestViewModel @Inject constructor(
                 progress = 1f,
                 errorRes = if (downloadMbps <= 0) R.string.speed_measure_failed else null,
             )
+            SafeDiagnostics.info(
+                TAG,
+                "Speed test completed: route=${if (throughVpn) "VPN" else "DIRECT"} " +
+                    "ping_ms=$ping download_mbps=${formatMbps(downloadMbps)} " +
+                    "duration_ms=${(System.nanoTime() - startedAt) / 1_000_000L}",
+            )
         }
     }
 
@@ -121,11 +142,15 @@ class SpeedTestViewModel @Inject constructor(
     }
 
     private fun cancelActiveWork() {
+        val wasRunning = testJob?.isActive == true
         cancelled.set(true)
         activeCall?.cancel()
         activeCall = null
         testJob?.cancel()
         testJob = null
+        if (wasRunning) {
+            SafeDiagnostics.info(TAG, "Speed test cancelled")
+        }
     }
 
     private suspend fun measurePing(client: OkHttpClient): Long = withContext(Dispatchers.IO) {
@@ -146,7 +171,13 @@ class SpeedTestViewModel @Inject constructor(
                 times.add(System.currentTimeMillis() - start)
             }
             times.sorted()[times.size / 2]
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            if (!cancelled.get()) {
+                SafeDiagnostics.warn(
+                    TAG,
+                    "Speed test ping failed: ${SafeDiagnostics.failureSummary(error)}",
+                )
+            }
             -1L
         }
     }
@@ -194,17 +225,32 @@ class SpeedTestViewModel @Inject constructor(
 
             val totalTime = (System.nanoTime() - testStartTime) / 1_000_000_000.0
             if (totalTime > 0) (totalBytes * 8.0) / (totalTime * 1_000_000) else 0.0
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             if (cancelled.get()) return@withContext 0.0
             val totalTime = (System.nanoTime() - testStartTime) / 1_000_000_000.0
-            if (totalBytes > 0 && totalTime > 1) {
+            val partialSpeed = if (totalBytes > 0 && totalTime > 1) {
                 (totalBytes * 8.0) / (totalTime * 1_000_000)
-            } else 0.0
+            } else {
+                0.0
+            }
+            SafeDiagnostics.warn(
+                TAG,
+                "Speed test download interrupted: ${SafeDiagnostics.failureSummary(error)} " +
+                    "partial_mbps=${formatMbps(partialSpeed)} elapsed_ms=${(totalTime * 1_000).toLong()}",
+            )
+            partialSpeed
         }
     }
 
     override fun onCleared() {
         super.onCleared()
         cancelActiveWork()
+    }
+
+    private fun formatMbps(value: Double): String =
+        String.format(Locale.US, "%.2f", value)
+
+    private companion object {
+        const val TAG = "SpeedTest"
     }
 }
