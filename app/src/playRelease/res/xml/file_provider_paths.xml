@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- The Google Play build shares only a user-selected diagnostic journal.
+         APK update directories remain available exclusively to direct builds. -->
+    <files-path name="diagnostic_logs" path="diagnostic_logs/" />
+</paths>

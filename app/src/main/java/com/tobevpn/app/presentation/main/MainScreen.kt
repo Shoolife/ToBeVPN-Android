@@ -1065,8 +1065,10 @@ private fun LimitExhaustedCard(onLoginClick: () -> Unit) {
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = onLoginClick,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                shape = RoundedCornerShape(14.dp),
             ) {
                 Text(
                     text = stringResource(R.string.login_via_telegram),
@@ -2181,8 +2183,10 @@ private fun SubscriptionBottomSheet(
                             onDismiss()
                             onNavigateToAuth()
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp),
+                        shape = RoundedCornerShape(14.dp),
                         // Match the "Купить" / "Сканировать QR" CTA family.
                         colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
                             androidx.compose.material3.ButtonDefaults.buttonColors()

@@ -41,6 +41,8 @@ internal val BrandNeutralPrimaryContainer = Color(0xFFDFE2F3)
 // visible colour cast on this device (blue channel 229 > green 226); the
 // look spec is "cards on Home are a light, even grey".
 internal val BrandCardFill = Color(0xFFEEEEEE)
+// Softer light-theme fill shared by applied-promocode and linked-device cards.
+internal val BrandSoftCardFill = Color(0xFFF2F2F2)
 internal val BrandIconAccent = Color(0xFF5C5E6A)
 internal val BrandSelectionRing = Color(0xFF5A5D6C)
 

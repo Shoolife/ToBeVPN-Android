@@ -1,5 +1,9 @@
 package com.tobevpn.app.presentation.settings
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -8,6 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyRow
@@ -20,6 +25,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -100,6 +106,8 @@ import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.domain.model.normalizeFontScale
 import com.tobevpn.app.domain.model.normalizeInterfaceScale
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.HorizontalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.horizontalFadingEdges
 import com.tobevpn.app.presentation.servers.ServerListScalePreview
 import com.tobevpn.app.presentation.theme.LocalAppBaseDensity
 import com.tobevpn.app.presentation.theme.LocalAppFontScale
@@ -209,56 +217,87 @@ fun PersonalizationScreen(
 
     val pending = pendingLanguage
     if (pending != null) {
+        val isDark = isSystemInDarkTheme()
         AppAlertDialog(
             onDismissRequest = { pendingLanguage = null },
             title = {
                 Text(
                     text = stringResource(R.string.language_restart_title),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             },
             text = {
                 Text(
                     text = stringResource(R.string.language_restart_message),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.setLanguage(pending)
-                        pendingLanguage = null
-                        LocaleManager.restartApp(context)
-                    },
-                    colors = if (isSystemInDarkTheme()) {
-                        ButtonDefaults.buttonColors()
-                    } else {
-                        ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF3F3F3F),
-                            contentColor = Color.White,
-                        )
-                    },
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Text(
-                        text = stringResource(R.string.language_restart_button),
-                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    OutlinedButton(
+                        onClick = { pendingLanguage = null },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = if (isDark) {
+                            ButtonDefaults.outlinedButtonColors()
+                        } else {
+                            ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
+                        },
+                        border = if (isDark) {
+                            ButtonDefaults.outlinedButtonBorder
+                        } else {
+                            BorderStroke(1.dp, Color(0xFFD6D6D6))
+                        },
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.cancel),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            viewModel.setLanguage(pending)
+                            pendingLanguage = null
+                            LocaleManager.restartApp(context)
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = if (isDark) {
+                            ButtonDefaults.buttonColors()
+                        } else {
+                            ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF3F3F3F),
+                                contentColor = Color.White,
+                            )
+                        },
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.language_restart_button),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             },
-            dismissButton = {
-                OutlinedButton(onClick = { pendingLanguage = null }) {
-                    Text(
-                        text = stringResource(R.string.cancel),
-                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            },
+            dismissButton = {},
         )
     }
 }
@@ -376,7 +415,7 @@ private fun ResetDisplaySettingsButton(
         Button(
             onClick = onClick,
             enabled = enabled,
-            shape = CircleShape,
+            shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f),
                 contentColor = MaterialTheme.colorScheme.onSurface,
@@ -1118,15 +1157,13 @@ private fun ThemeCard(
         accent = AccentViolet,
         title = stringResource(R.string.settings_theme),
     ) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(modes.size) { index ->
-                ThemeTile(
-                    dark = darks[index],
-                    labelRes = labels[index],
-                    selected = modes[index] == selected,
-                    onClick = { onSelect(modes[index]) },
-                )
-            }
+        SelectionLazyRowWithCues(itemCount = modes.size) { index ->
+            ThemeTile(
+                dark = darks[index],
+                labelRes = labels[index],
+                selected = modes[index] == selected,
+                onClick = { onSelect(modes[index]) },
+            )
         }
     }
 }
@@ -1289,15 +1326,68 @@ private fun ProfileDisplayCard(
         accent = VpnGreen,
         title = stringResource(R.string.settings_profile_display),
     ) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(modes.size) { index ->
-                LabelTile(
-                    labelRes = labels[index],
-                    selected = modes[index] == selected,
-                    onClick = { onSelect(modes[index]) },
-                )
-            }
+        SelectionLazyRowWithCues(itemCount = modes.size) { index ->
+            LabelTile(
+                labelRes = labels[index],
+                selected = modes[index] == selected,
+                onClick = { onSelect(modes[index]) },
+            )
         }
+    }
+}
+
+@Composable
+private fun SelectionLazyRowWithCues(
+    itemCount: Int,
+    itemContent: @Composable (Int) -> Unit,
+) {
+    val listState = rememberLazyListState()
+    val startFadeAlpha by animateFloatAsState(
+        targetValue = if (listState.canScrollBackward) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = 180,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "PersonalizationSelectionStartFade",
+    )
+    val endFadeAlpha by animateFloatAsState(
+        targetValue = if (listState.canScrollForward) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = 180,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "PersonalizationSelectionEndFade",
+    )
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        LazyRow(
+            state = listState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalFadingEdges(
+                    startAlpha = startFadeAlpha,
+                    endAlpha = endFadeAlpha,
+                    fadeWidth = 38.dp,
+                ),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            items(itemCount) { index -> itemContent(index) }
+        }
+
+        HorizontalScrollEdgeArrow(
+            alpha = startFadeAlpha,
+            isStart = true,
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 2.dp),
+        )
+        HorizontalScrollEdgeArrow(
+            alpha = endFadeAlpha,
+            isStart = false,
+            modifier = Modifier
+                .align(Alignment.CenterEnd)
+                .padding(end = 2.dp),
+        )
     }
 }
 

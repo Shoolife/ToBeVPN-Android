@@ -16,6 +16,9 @@ import com.tobevpn.app.data.remote.dto.PanelNodeDto
 import com.tobevpn.app.data.remote.dto.PanelResponse
 import com.tobevpn.app.data.remote.dto.PanelUserDto
 import com.tobevpn.app.data.remote.dto.PurchasePlansDto
+import com.tobevpn.app.data.remote.dto.PromocodeActivateRequestDto
+import com.tobevpn.app.data.remote.dto.PromocodeActivationResultDto
+import com.tobevpn.app.data.remote.dto.PromocodeHistoryDto
 import com.tobevpn.app.data.remote.dto.ReferralsDto
 import com.tobevpn.app.data.remote.dto.RemoteConfigDto
 import com.tobevpn.app.data.remote.dto.SaveEmailRequestDto
@@ -118,6 +121,19 @@ interface BotApi {
 
     @GET("api/purchase/plans")
     suspend fun getPurchasePlans(): ApiResponse<PurchasePlansDto>
+
+    // Promocodes — identity is resolved from the linked device session.
+
+    @POST("api/user/promocodes/activate")
+    suspend fun activatePromocode(
+        @Body request: PromocodeActivateRequestDto,
+    ): ApiResponse<PromocodeActivationResultDto>
+
+    @GET("api/user/promocodes")
+    suspend fun getAppliedPromocodes(
+        @Query("limit") limit: Int = 20,
+        @Query("offset") offset: Int = 0,
+    ): ApiResponse<PromocodeHistoryDto>
 
     // Referral program — identity is resolved from the current device session.
 

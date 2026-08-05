@@ -40,6 +40,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.GroupAdd
@@ -114,6 +115,7 @@ fun SettingsScreen(
     onNavigateToSupport: () -> Unit,
     onNavigateToAbout: () -> Unit,
     onNavigateToReferrals: () -> Unit,
+    onNavigateToPromocodes: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
@@ -147,7 +149,11 @@ fun SettingsScreen(
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.Logout,
                                 contentDescription = stringResource(R.string.logout),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                tint = if (isSystemInDarkTheme()) {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                } else {
+                                    Color.Black
+                                },
                             )
                         }
                     }
@@ -172,8 +178,8 @@ fun SettingsScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 2×2 grid of category tiles. Tapping opens the matching section;
-            // Support opens the Telegram support chat directly.
+            // Two-column category grid. Keep About in the bottom-right tile;
+            // Promocodes occupies the matching bottom-left position.
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     SettingsCategoryTile(
@@ -207,13 +213,27 @@ fun SettingsScreen(
                         onClick = onNavigateToReferrals,
                     )
                 }
-                SettingsWideCategoryCard(
-                    icon = Icons.Filled.Info,
-                    accent = VpnOrange,
-                    label = stringResource(R.string.about),
-                    description = stringResource(R.string.settings_about_desc),
-                    onClick = onNavigateToAbout,
-                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    SettingsCategoryTile(
+                        icon = Icons.Filled.LocalOffer,
+                        accent = PromocodeAccent,
+                        iconTint = if (isSystemInDarkTheme()) {
+                            PromocodeAccent
+                        } else {
+                            PromocodeAccentOnLight
+                        },
+                        label = stringResource(R.string.settings_promocodes),
+                        description = stringResource(R.string.settings_promocodes_desc),
+                        onClick = onNavigateToPromocodes,
+                    )
+                    SettingsCategoryTile(
+                        icon = Icons.Filled.Info,
+                        accent = VpnOrange,
+                        label = stringResource(R.string.about),
+                        description = stringResource(R.string.settings_about_desc),
+                        onClick = onNavigateToAbout,
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -270,7 +290,14 @@ private fun LogoutConfirmDialog(
     if (transitionState.currentState || transitionState.targetState) {
         Dialog(
             onDismissRequest = onDismiss,
-            properties = DialogProperties(usePlatformDefaultWidth = false),
+            properties = DialogProperties(
+                usePlatformDefaultWidth = false,
+                // The scrim is drawn by Compose so the dialog can fade smoothly.
+                // Let that full-screen layer extend behind the status and navigation
+                // bars as well; otherwise their undimmed backgrounds form a sharp
+                // horizontal boundary above and below the app content.
+                decorFitsSystemWindows = false,
+            ),
         ) {
             AppScaledContent {
                 // Kill the Dialog window's built-in dim. It isn't animated and only
@@ -301,7 +328,7 @@ private fun LogoutConfirmDialog(
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(Color.Black.copy(alpha = 0.5f)),
+                                .background(Color.Black.copy(alpha = 0.32f)),
                         )
                     }
                     AnimatedVisibility(
@@ -324,13 +351,18 @@ private fun LogoutConfirmDialog(
                             color = MaterialTheme.colorScheme.surfaceContainerHigh,
                             tonalElevation = 6.dp,
                         ) {
-                            Column(modifier = Modifier.padding(24.dp)) {
+                            Column(
+                                modifier = Modifier.padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
                             Text(
                                 text = stringResource(R.string.logout_confirm_title),
                                 style = fixedLayoutTextStyle(
                                     MaterialTheme.typography.headlineSmall,
                                 ),
                                 color = dialogTextColor,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
@@ -339,6 +371,8 @@ private fun LogoutConfirmDialog(
                                     MaterialTheme.typography.bodyMedium,
                                 ),
                                 color = dialogTextColor,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth(),
                             )
                             Spacer(modifier = Modifier.height(24.dp))
                             Row(
@@ -477,7 +511,9 @@ internal fun AccountCard(
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
                             onClick = onNavigateToAuth,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
                             shape = RoundedCornerShape(14.dp),
                             colors = if (isDark) {
                                 ButtonDefaults.buttonColors()
@@ -497,7 +533,9 @@ internal fun AccountCard(
                         Spacer(modifier = Modifier.height(10.dp))
                         OutlinedButton(
                             onClick = onNavigateToDevicePairingAuth,
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
                             shape = RoundedCornerShape(14.dp),
                             colors = if (isDark) {
                                 ButtonDefaults.outlinedButtonColors()
@@ -827,6 +865,9 @@ private fun ProfileAvatar(photoUrl: String?, size: Dp, loading: Boolean = false)
 // still reads as on-brand next to the green/blue/orange of the other tiles.
 private val AccentViolet = Color(0xFF8B7CF6)
 private val ReferralAccent = Color(0xFFE65C9C)
+// Saved fallback from visual review: dark #26C6DA, light #0097A7.
+private val PromocodeAccent = Color(0xFFE57373)
+private val PromocodeAccentOnLight = Color(0xFFC84C4C)
 
 @Composable
 private fun SettingsWideCategoryCard(
@@ -907,6 +948,7 @@ private fun SettingsWideCategoryCard(
 private fun RowScope.SettingsCategoryTile(
     icon: ImageVector,
     accent: Color,
+    iconTint: Color = accent,
     label: String,
     description: String,
     onClick: () -> Unit,
@@ -941,7 +983,7 @@ private fun RowScope.SettingsCategoryTile(
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = accent,
+                        tint = iconTint,
                         modifier = Modifier.size(24.dp),
                     )
                 }

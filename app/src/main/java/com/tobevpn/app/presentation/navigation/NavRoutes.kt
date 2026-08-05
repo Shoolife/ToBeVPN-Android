@@ -46,3 +46,6 @@ object AboutRoute
 
 @Serializable
 object ReferralsRoute
+
+@Serializable
+object PromocodesRoute

@@ -1,7 +1,9 @@
 package com.tobevpn.app.presentation.settings
 
 import android.text.format.Formatter
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -313,6 +315,8 @@ private fun DiagnosticLogDeleteDialog(
                 text = stringResource(R.string.diagnostics_history_delete_title),
                 style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
                 fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         },
         text = {
@@ -323,37 +327,58 @@ private fun DiagnosticLogDeleteDialog(
                 ),
                 style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
             )
         },
         confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError,
-                ),
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text(
-                    text = stringResource(R.string.diagnostics_history_delete_confirm),
-                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
-                )
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = if (isDark) {
+                        ButtonDefaults.outlinedButtonColors()
+                    } else {
+                        ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
+                    },
+                    border = if (isDark) {
+                        ButtonDefaults.outlinedButtonBorder
+                    } else {
+                        BorderStroke(1.dp, Color(0xFFD6D6D6))
+                    },
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.cancel),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                    )
+                }
+                Button(
+                    onClick = onConfirm,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.diagnostics_history_delete_confirm),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                    )
+                }
             }
         },
-        dismissButton = {
-            OutlinedButton(
-                onClick = onDismiss,
-                colors = if (isDark) {
-                    ButtonDefaults.outlinedButtonColors()
-                } else {
-                    ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
-                },
-            ) {
-                Text(
-                    text = stringResource(R.string.cancel),
-                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
-                )
-            }
-        },
+        dismissButton = {},
     )
 }
 

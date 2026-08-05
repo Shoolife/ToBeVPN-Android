@@ -1,6 +1,7 @@
 package com.tobevpn.app.presentation.settings
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,7 +11,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -23,6 +27,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -55,7 +60,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
+import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.AppScaledContent
 
 // One highlight in the "What's new" dialog: an icon with a title and a short
@@ -72,18 +79,23 @@ private data class WhatsNewHighlight(
 private val currentHighlights = listOf(
     WhatsNewHighlight(
         icon = Icons.Outlined.LocalOffer,
-        titleRes = R.string.whats_new_discount_title,
-        descriptionRes = R.string.whats_new_discount_desc,
+        titleRes = R.string.whats_new_promocodes_title,
+        descriptionRes = R.string.whats_new_promocodes_desc,
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.Tune,
-        titleRes = R.string.whats_new_diagnostics_title,
-        descriptionRes = R.string.whats_new_diagnostics_desc,
+        titleRes = R.string.whats_new_navigation_title,
+        descriptionRes = R.string.whats_new_navigation_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Outlined.HelpOutline,
+        titleRes = R.string.whats_new_support_title,
+        descriptionRes = R.string.whats_new_support_desc,
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.CheckCircle,
-        titleRes = R.string.whats_new_log_history_title,
-        descriptionRes = R.string.whats_new_log_history_desc,
+        titleRes = R.string.whats_new_fixes_title,
+        descriptionRes = R.string.whats_new_fixes_desc,
     ),
 )
 
@@ -114,6 +126,17 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
         animationSpec = tween(durationMillis = 220),
         label = "whatsNewIn",
     )
+    val highlightsScrollState = rememberScrollState()
+    val topFadeAlpha by animateFloatAsState(
+        targetValue = if (highlightsScrollState.value > 0) 1f else 0f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "whatsNewHighlightsTopFade",
+    )
+    val bottomFadeAlpha by animateFloatAsState(
+        targetValue = if (highlightsScrollState.value < highlightsScrollState.maxValue) 1f else 0f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "whatsNewHighlightsBottomFade",
+    )
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -125,6 +148,8 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                     .padding(24.dp)
                     .widthIn(max = 390.dp)
                     .fillMaxWidth()
+                    .heightIn(max = 760.dp)
+                    .fillMaxHeight(0.94f)
                     .scale(0.96f + 0.04f * progress),
                 shape = RoundedCornerShape(24.dp),
                 color = colors.surface,
@@ -134,7 +159,6 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                 Box {
                     Column(
                         modifier = Modifier
-                            .verticalScroll(rememberScrollState())
                             .padding(start = 24.dp, end = 24.dp, top = 28.dp, bottom = 22.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
@@ -212,12 +236,54 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                     )
 
                     Spacer(modifier = Modifier.height(12.dp))
-                    currentHighlights.forEachIndexed { index, highlight ->
-                        if (index > 0) Spacer(modifier = Modifier.height(10.dp))
-                        HighlightCard(highlight, accent = colors.tertiary)
+                    // Only the release highlights scroll. The hero/version/intro
+                    // above and the acknowledgement button below stay pinned so
+                    // users always retain the dialog's context and exit action.
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalFadingEdges(
+                                    topAlpha = topFadeAlpha,
+                                    bottomAlpha = bottomFadeAlpha,
+                                    fadeHeight = 38.dp,
+                                ),
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .verticalScroll(highlightsScrollState),
+                            ) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                currentHighlights.forEachIndexed { index, highlight ->
+                                    if (index > 0) Spacer(modifier = Modifier.height(10.dp))
+                                    HighlightCard(highlight, accent = colors.tertiary)
+                                }
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
+                        }
+
+                        VerticalScrollEdgeArrow(
+                            alpha = topFadeAlpha,
+                            isTop = true,
+                            modifier = Modifier
+                                .align(Alignment.TopCenter)
+                                .padding(top = 2.dp),
+                        )
+                        VerticalScrollEdgeArrow(
+                            alpha = bottomFadeAlpha,
+                            isTop = false,
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .padding(bottom = 2.dp),
+                        )
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(12.dp))
                     // Full-width primary "Got it" button.
                     Box(
                         modifier = Modifier

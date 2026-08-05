@@ -12,8 +12,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -123,20 +123,22 @@ private fun desktopRefreshPath(width: Float, height: Float): Path {
         lineTo(p(1f, 14f).x, p(1f, 14f).y)
         lineTo(p(7f, 14f).x, p(7f, 14f).y)
 
+        // Exact 180-degree mirror of the lower curve so the upper arrow
+        // reaches its tip with the same geometry as the lower arrow.
         moveTo(p(3.51f, 9f).x, p(3.51f, 9f).y)
         cubicTo(
-            p(4.95f, 5.35f).x,
-            p(4.95f, 5.35f).y,
-            p(8.58f, 3.04f).x,
-            p(8.58f, 3.04f).y,
-            p(12.55f, 3.05f).x,
-            p(12.55f, 3.05f).y,
+            p(4.97f, 5.25f).x,
+            p(4.97f, 5.25f).y,
+            p(8.08f, 3.10f).x,
+            p(8.08f, 3.10f).y,
+            p(11.55f, 3.05f).x,
+            p(11.55f, 3.05f).y,
         )
         cubicTo(
-            p(14.92f, 3.05f).x,
-            p(14.92f, 3.05f).y,
-            p(17.16f, 4.03f).x,
-            p(17.16f, 4.03f).y,
+            p(14.14f, 3.01f).x,
+            p(14.14f, 3.01f).y,
+            p(16.62f, 3.95f).x,
+            p(16.62f, 3.95f).y,
             p(18.36f, 5.64f).x,
             p(18.36f, 5.64f).y,
         )
@@ -153,8 +155,8 @@ private fun desktopRefreshPath(width: Float, height: Float): Path {
             p(12.45f, 20.95f).y,
         )
         cubicTo(
-            p(15.92f, 20.9f).x,
-            p(15.92f, 20.9f).y,
+            p(15.92f, 20.90f).x,
+            p(15.92f, 20.90f).y,
             p(19.03f, 18.75f).x,
             p(19.03f, 18.75f).y,
             p(20.49f, 15f).x,

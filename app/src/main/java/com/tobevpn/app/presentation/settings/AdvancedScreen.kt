@@ -2,6 +2,7 @@ package com.tobevpn.app.presentation.settings
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -43,7 +45,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -81,7 +85,7 @@ import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.AppAlertDialog
-import com.tobevpn.app.presentation.theme.BrandCardFill
+import com.tobevpn.app.presentation.theme.BrandSoftCardFill
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.util.DeviceQrScanAction
@@ -274,49 +278,115 @@ fun AdvancedScreen(
         null -> {}
         is TvPairResult.PendingConfirmation -> {
             val isDark = isSystemInDarkTheme()
+            val dialogShape = RoundedCornerShape(28.dp)
+            val dialogBorderColor = if (isDark) {
+                Color.White.copy(alpha = 0.16f)
+            } else {
+                Color.Black.copy(alpha = 0.18f)
+            }
+            val dialogContainerColor = if (isDark) {
+                MaterialTheme.colorScheme.surfaceContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+            val codeContainerColor = MaterialTheme.colorScheme.surfaceVariant
             AppAlertDialog(
+                modifier = Modifier.border(
+                    width = 1.dp,
+                    color = dialogBorderColor,
+                    shape = dialogShape,
+                ),
                 onDismissRequest = { viewModel.clearTvPairResult() },
+                shape = dialogShape,
+                containerColor = dialogContainerColor,
                 title = {
                     DialogTitleText(stringResource(R.string.link_tv_confirm_title))
                 },
                 text = {
-                    Column {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
                         DialogBodyText(stringResource(R.string.link_tv_confirm_text))
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = result.code,
-                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
-                            fontWeight = FontWeight.Bold,
-                        )
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = codeContainerColor,
+                            ) {
+                                Text(
+                                    text = stringResource(
+                                        R.string.devices_pairing_code_value,
+                                        result.code,
+                                    ),
+                                    style = fixedLayoutTextStyle(
+                                        MaterialTheme.typography.titleMedium,
+                                    ),
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (isDark) {
+                                        MaterialTheme.colorScheme.onSurface
+                                    } else {
+                                        Color.Black
+                                    },
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(
+                                        horizontal = 14.dp,
+                                        vertical = 10.dp,
+                                    ),
+                                )
+                            }
+                        }
                     }
                 },
                 confirmButton = {
-                    Button(
-                        onClick = { viewModel.confirmTvPairing(result.code) },
-                        colors = if (isDark) {
-                            ButtonDefaults.buttonColors()
-                        } else {
-                            ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF3F3F3F),
-                                contentColor = Color.White,
-                            )
-                        },
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        DialogButtonText(stringResource(R.string.link_tv_confirm_action))
+                        OutlinedButton(
+                            onClick = { viewModel.clearTvPairResult() },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = if (isDark) {
+                                ButtonDefaults.outlinedButtonColors()
+                            } else {
+                                ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
+                            },
+                            border = if (isDark) {
+                                ButtonDefaults.outlinedButtonBorder
+                            } else {
+                                BorderStroke(1.dp, Color(0xFFD6D6D6))
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                        ) {
+                            DialogButtonText(stringResource(R.string.cancel))
+                        }
+                        Button(
+                            onClick = { viewModel.confirmTvPairing(result.code) },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(46.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = if (isDark) {
+                                ButtonDefaults.buttonColors()
+                            } else {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF3F3F3F),
+                                    contentColor = Color.White,
+                                )
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp),
+                        ) {
+                            DialogButtonText(stringResource(R.string.link_tv_confirm_action))
+                        }
                     }
                 },
-                dismissButton = {
-                    TextButton(
-                        onClick = { viewModel.clearTvPairResult() },
-                        colors = if (isDark) {
-                            ButtonDefaults.textButtonColors()
-                        } else {
-                            ButtonDefaults.textButtonColors(contentColor = Color.Black)
-                        },
-                    ) {
-                        DialogButtonText(stringResource(R.string.cancel))
-                    }
-                },
+                dismissButton = {},
             )
         }
 
@@ -325,10 +395,18 @@ fun AdvancedScreen(
                 onDismissRequest = {},
                 title = { DialogTitleText(stringResource(R.string.devices_scan_qr)) },
                 text = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp))
                         Spacer(modifier = Modifier.width(12.dp))
-                        DialogBodyText(stringResource(R.string.link_tv_linking))
+                        Text(
+                            text = stringResource(R.string.link_tv_linking),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                            textAlign = TextAlign.Center,
+                        )
                     }
                 },
                 confirmButton = {},
@@ -349,12 +427,27 @@ fun AdvancedScreen(
         }
 
         is TvPairResult.Error -> {
+            val isDark = isSystemInDarkTheme()
             AppAlertDialog(
                 onDismissRequest = { viewModel.clearTvPairResult() },
                 title = { DialogTitleText(stringResource(R.string.link_tv_error_title)) },
                 text = { DialogBodyText(result.message) },
                 confirmButton = {
-                    Button(onClick = { viewModel.clearTvPairResult() }) {
+                    Button(
+                        onClick = { viewModel.clearTvPairResult() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = if (isDark) {
+                            ButtonDefaults.buttonColors()
+                        } else {
+                            ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF3F3F3F),
+                                contentColor = Color.White,
+                            )
+                        },
+                    ) {
                         DialogButtonText(stringResource(R.string.ok))
                     }
                 },
@@ -378,6 +471,8 @@ private fun DialogTitleText(text: String) {
     Text(
         text = text,
         style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
     )
 }
 
@@ -386,6 +481,8 @@ private fun DialogBodyText(text: String) {
     Text(
         text = text,
         style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+        textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
     )
 }
 
@@ -414,11 +511,16 @@ private fun PairingCodeInputDialog(
         onDismissRequest = onDismiss,
         title = { DialogTitleText(stringResource(R.string.devices_enter_code)) },
         text = {
-            Column {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
                 Text(
                     text = stringResource(R.string.devices_enter_code_hint),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.height(12.dp))
                 OutlinedTextField(
@@ -435,7 +537,13 @@ private fun PairingCodeInputDialog(
                     label = {
                         Text(
                             text = stringResource(R.string.devices_pairing_code_label),
-                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Filled.Key,
+                            contentDescription = null,
                         )
                     },
                     isError = showCodeError,
@@ -451,42 +559,64 @@ private fun PairingCodeInputDialog(
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = settingsInputFieldColors(),
                 )
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    if (normalizedCode.isBlank()) {
-                        showCodeError = true
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = if (isDark) {
+                        ButtonDefaults.outlinedButtonColors()
                     } else {
-                        onSubmit(normalizedCode)
-                    }
-                },
-                colors = if (isDark) {
-                    ButtonDefaults.buttonColors()
-                } else {
-                    ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF3F3F3F),
-                        contentColor = Color.White,
-                    )
-                },
-            ) {
-                DialogButtonText(stringResource(R.string.continue_btn))
+                        ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
+                    },
+                    border = if (isDark) {
+                        ButtonDefaults.outlinedButtonBorder
+                    } else {
+                        BorderStroke(1.dp, Color(0xFFD6D6D6))
+                    },
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
+                    DialogButtonText(stringResource(R.string.cancel))
+                }
+                Button(
+                    onClick = {
+                        if (normalizedCode.isBlank()) {
+                            showCodeError = true
+                        } else {
+                            onSubmit(normalizedCode)
+                        }
+                    },
+                    enabled = normalizedCode.isNotBlank(),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = if (isDark) {
+                        ButtonDefaults.buttonColors()
+                    } else {
+                        ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF3F3F3F),
+                            contentColor = Color.White,
+                        )
+                    },
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
+                    DialogButtonText(stringResource(R.string.continue_btn))
+                }
             }
         },
-        dismissButton = {
-            TextButton(
-                onClick = onDismiss,
-                colors = if (isDark) {
-                    ButtonDefaults.textButtonColors()
-                } else {
-                    ButtonDefaults.textButtonColors(contentColor = Color.Black)
-                },
-            ) {
-                DialogButtonText(stringResource(R.string.cancel))
-            }
-        },
+        dismissButton = {},
     )
 }
 
@@ -573,6 +703,7 @@ private fun LinkedDevicesBottomSheet(
                     onClick = onScanQr,
                     enabled = !state.isLoading && canLinkMoreDevices,
                     modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
                     colors = if (isDark) {
                         ButtonDefaults.buttonColors()
                     } else {
@@ -588,6 +719,7 @@ private fun LinkedDevicesBottomSheet(
                     onClick = onEnterCode,
                     enabled = !state.isLoading && canLinkMoreDevices,
                     modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
                     colors = if (isDark) {
                         ButtonDefaults.outlinedButtonColors()
                     } else {
@@ -603,6 +735,7 @@ private fun LinkedDevicesBottomSheet(
                 onClick = onRefresh,
                 enabled = !state.isLoading,
                 modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
                 colors = if (isDark) {
                     ButtonDefaults.outlinedButtonColors()
                 } else {
@@ -727,7 +860,7 @@ private fun LinkedDeviceCard(
             )
         } else {
             CardDefaults.cardColors(
-                containerColor = BrandCardFill,
+                containerColor = BrandSoftCardFill,
             )
         },
     ) {
@@ -1101,6 +1234,12 @@ private fun EmailInput(
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                 )
             },
+            leadingIcon = {
+                Icon(
+                    Icons.Filled.Email,
+                    contentDescription = null,
+                )
+            },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             isError = isError || emailSaveResult == EmailSaveResult.Error,
@@ -1108,6 +1247,8 @@ private fun EmailInput(
                 .weight(1f)
                 .align(Alignment.CenterVertically),
             enabled = !isSaving,
+            shape = RoundedCornerShape(14.dp),
+            colors = settingsInputFieldColors(),
         )
         Spacer(modifier = Modifier.width(8.dp))
         Button(
@@ -1121,6 +1262,7 @@ private fun EmailInput(
             },
             enabled = !isSaving && email.isNotBlank(),
             modifier = Modifier.align(Alignment.CenterVertically),
+            shape = RoundedCornerShape(14.dp),
             colors = if (isSystemInDarkTheme()) {
                 ButtonDefaults.buttonColors()
             } else {
@@ -1164,4 +1306,19 @@ private fun EmailInput(
             DialogButtonText(stringResource(R.string.cancel))
         }
     }
+}
+
+@Composable
+private fun settingsInputFieldColors() = if (isSystemInDarkTheme()) {
+    OutlinedTextFieldDefaults.colors()
+} else {
+    OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = Color(0xFF3F3F3F),
+        focusedLabelColor = Color(0xFF3F3F3F),
+        cursorColor = Color(0xFF3F3F3F),
+        focusedTextColor = Color.Black,
+        unfocusedTextColor = Color.Black,
+        focusedTrailingIconColor = Color(0xFF3F3F3F),
+        unfocusedTrailingIconColor = Color(0xFF5F5F5F),
+    )
 }

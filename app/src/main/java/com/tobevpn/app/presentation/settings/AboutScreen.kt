@@ -5,6 +5,8 @@ import android.net.Uri
 import android.text.format.Formatter
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -72,7 +74,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
+import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.update.SettingsUpdateCheckRow
 import com.tobevpn.app.util.DiagnosticLogState
@@ -529,6 +533,23 @@ private fun DiagnosticLogCard(
 @Composable
 private fun DiagnosticInfoDialog(onDismiss: () -> Unit) {
     val isDark = isSystemInDarkTheme()
+    val descriptionScrollState = rememberScrollState()
+    val topFadeAlpha by animateFloatAsState(
+        targetValue = if (descriptionScrollState.value > 0) 1f else 0f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "diagnosticsDescriptionTopFade",
+    )
+    val bottomFadeAlpha by animateFloatAsState(
+        targetValue = if (
+            descriptionScrollState.value < descriptionScrollState.maxValue
+        ) {
+            1f
+        } else {
+            0f
+        },
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "diagnosticsDescriptionBottomFade",
+    )
     AppAlertDialog(
         onDismissRequest = onDismiss,
         icon = {
@@ -548,15 +569,50 @@ private fun DiagnosticInfoDialog(onDismiss: () -> Unit) {
             )
         },
         text = {
-            Column {
-                DiagnosticInfoParagraph(R.string.diagnostics_info_manual)
-                DiagnosticInfoParagraph(R.string.diagnostics_info_persistence)
-                DiagnosticInfoParagraph(R.string.diagnostics_info_contents)
-                DiagnosticInfoParagraph(R.string.diagnostics_info_daily)
-                DiagnosticInfoParagraph(R.string.diagnostics_info_privacy)
-                DiagnosticInfoParagraph(
-                    stringRes = R.string.diagnostics_info_share,
-                    addBottomSpacing = false,
+            Box(
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalFadingEdges(
+                            topAlpha = topFadeAlpha,
+                            bottomAlpha = bottomFadeAlpha,
+                            fadeHeight = 38.dp,
+                        ),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(descriptionScrollState),
+                    ) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        DiagnosticInfoParagraph(R.string.diagnostics_info_manual)
+                        DiagnosticInfoParagraph(R.string.diagnostics_info_persistence)
+                        DiagnosticInfoParagraph(R.string.diagnostics_info_contents)
+                        DiagnosticInfoParagraph(R.string.diagnostics_info_daily)
+                        DiagnosticInfoParagraph(R.string.diagnostics_info_privacy)
+                        DiagnosticInfoParagraph(
+                            stringRes = R.string.diagnostics_info_share,
+                            addBottomSpacing = false,
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                }
+
+                VerticalScrollEdgeArrow(
+                    alpha = topFadeAlpha,
+                    isTop = true,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 2.dp),
+                )
+                VerticalScrollEdgeArrow(
+                    alpha = bottomFadeAlpha,
+                    isTop = false,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 2.dp),
                 )
             }
         },

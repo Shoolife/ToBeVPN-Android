@@ -29,8 +29,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -53,27 +51,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.tobevpn.app.R
+import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.verticalFadingEdges
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -101,11 +92,14 @@ fun SupportScreen(
         R.string.faq_q_server to R.string.faq_a_server,
         R.string.faq_q_pay to R.string.faq_a_pay,
         R.string.faq_q_activate to R.string.faq_a_activate,
-        R.string.faq_q_traffic to R.string.faq_a_traffic,
+        R.string.faq_q_discount to R.string.faq_a_discount,
         R.string.faq_q_devices to R.string.faq_a_devices,
+        R.string.faq_q_app_filter to R.string.faq_a_app_filter,
+        R.string.faq_q_referrals to R.string.faq_a_referrals,
+        R.string.faq_q_updates to R.string.faq_a_updates,
+        R.string.faq_q_display_scale to R.string.faq_a_display_scale,
         R.string.faq_q_privacy to R.string.faq_a_privacy,
-        R.string.faq_q_platforms to R.string.faq_a_platforms,
-        R.string.faq_q_stores to R.string.faq_a_stores,
+        R.string.faq_q_support_details to R.string.faq_a_support_details,
     )
 
     Scaffold(
@@ -221,14 +215,14 @@ fun SupportScreen(
                     }
                 }
 
-                ScrollEdgeArrow(
+                VerticalScrollEdgeArrow(
                     alpha = topFadeAlpha,
                     isTop = true,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .padding(top = 2.dp),
                 )
-                ScrollEdgeArrow(
+                VerticalScrollEdgeArrow(
                     alpha = bottomFadeAlpha,
                     isTop = false,
                     modifier = Modifier
@@ -366,71 +360,3 @@ private fun FaqItem(
         }
     }
 }
-
-// A small ↑/↓ hint at the scroll edge, fading in when there's more to scroll —
-// same cue as the tariff tabs in Subscription, but vertical.
-@Composable
-private fun ScrollEdgeArrow(
-    alpha: Float,
-    isTop: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    Icon(
-        imageVector = if (isTop) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-        contentDescription = null,
-        modifier = modifier
-            .size(22.dp)
-            .alpha(alpha.coerceIn(0f, 1f)),
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
-// Fades the top and/or bottom edge of a scroll viewport into transparency so
-// the list visibly "runs off" the edge when scrollable. Uses an offscreen
-// layer + DstIn gradient mask, matching horizontalFadingEdges in Subscription.
-private fun Modifier.verticalFadingEdges(
-    topAlpha: Float,
-    bottomAlpha: Float,
-    fadeHeight: Dp,
-): Modifier = this
-    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-    .drawWithContent {
-        drawContent()
-
-        val fadeHeightPx = fadeHeight.toPx().coerceAtMost(size.height / 2f)
-        if (fadeHeightPx <= 0f) return@drawWithContent
-
-        val topA = topAlpha.coerceIn(0f, 1f)
-        if (topA > 0.001f) {
-            drawRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.Black.copy(alpha = 1f - topA),
-                        Color.Black,
-                    ),
-                    startY = 0f,
-                    endY = fadeHeightPx,
-                ),
-                topLeft = Offset.Zero,
-                size = Size(size.width, fadeHeightPx),
-                blendMode = BlendMode.DstIn,
-            )
-        }
-
-        val bottomA = bottomAlpha.coerceIn(0f, 1f)
-        if (bottomA > 0.001f) {
-            drawRect(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.Black,
-                        Color.Black.copy(alpha = 1f - bottomA),
-                    ),
-                    startY = size.height - fadeHeightPx,
-                    endY = size.height,
-                ),
-                topLeft = Offset(0f, size.height - fadeHeightPx),
-                size = Size(size.width, fadeHeightPx),
-                blendMode = BlendMode.DstIn,
-            )
-        }
-    }

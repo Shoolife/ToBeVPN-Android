@@ -8,6 +8,7 @@ import androidx.room.RoomDatabase
 import com.tobevpn.app.data.local.AppDatabase
 import com.tobevpn.app.data.local.DatabasePassphrase
 import com.tobevpn.app.data.local.dao.AppFilterDao
+import com.tobevpn.app.data.local.dao.PendingPromocodeActivationDao
 import com.tobevpn.app.data.local.dao.ServerDao
 import com.tobevpn.app.data.local.dao.SessionDao
 import com.tobevpn.app.data.local.dao.TrafficLogDao
@@ -48,6 +49,7 @@ object DatabaseModule {
                 MIGRATION_13_14,
                 MIGRATION_14_15,
                 MIGRATION_15_16,
+                MIGRATION_16_17,
             )
             .fallbackToDestructiveMigration(dropAllTables = false)
             // TRUNCATE journal (no WAL) — committed writes land in the
@@ -137,6 +139,27 @@ object DatabaseModule {
         }
     }
 
+    // v16 -> v17: persist the idempotency key for promocode activations whose
+    // network outcome is not yet known. This table is inside SQLCipher and is
+    // deliberately separate from Auto-Backup-enabled preferences.
+    private val MIGRATION_16_17 = object : Migration(16, 17) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS pending_promocode_activations (" +
+                    "telegramId INTEGER NOT NULL, " +
+                    "code TEXT NOT NULL, " +
+                    "requestId TEXT NOT NULL, " +
+                    "createdAt INTEGER NOT NULL, " +
+                    "PRIMARY KEY(telegramId, code))",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                    "index_pending_promocode_activations_requestId " +
+                    "ON pending_promocode_activations(requestId)",
+            )
+        }
+    }
+
     /**
      * Probe the DB file to make sure it's openable with the current
      * SQLCipher passphrase. Originally this wiped the file on any
@@ -197,4 +220,9 @@ object DatabaseModule {
 
     @Provides
     fun provideAppFilterDao(db: AppDatabase): AppFilterDao = db.appFilterDao()
+
+    @Provides
+    fun providePendingPromocodeActivationDao(
+        db: AppDatabase,
+    ): PendingPromocodeActivationDao = db.pendingPromocodeActivationDao()
 }

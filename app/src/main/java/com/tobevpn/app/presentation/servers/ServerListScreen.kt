@@ -1,6 +1,9 @@
 package com.tobevpn.app.presentation.servers
 
 import android.content.res.Configuration
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -74,6 +78,8 @@ import com.tobevpn.app.presentation.components.countryFlagForUi
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import com.tobevpn.app.presentation.components.serverDisplayName
+import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.presentation.theme.VpnRed
@@ -163,7 +169,23 @@ fun ServerListScreen(
     val error by viewModel.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val isTv = isTelevisionUi()
+    val refreshIconColor = if (isSystemInDarkTheme()) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        Color.Black
+    }
     val metrics = serverListMetrics(isTv)
+    val listState = rememberLazyListState()
+    val topFadeAlpha by animateFloatAsState(
+        targetValue = if (listState.canScrollBackward) 1f else 0f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "serverListTopFade",
+    )
+    val bottomFadeAlpha by animateFloatAsState(
+        targetValue = if (listState.canScrollForward) 1f else 0f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "serverListBottomFade",
+    )
 
     // Pause the 5-second ping loop while the list isn't on screen.
     LifecycleResumeEffect(Unit) {
@@ -197,6 +219,7 @@ fun ServerListScreen(
                         com.tobevpn.app.presentation.components.SpinningRefreshIcon(
                             spinning = isLoading,
                             contentDescription = stringResource(R.string.refresh),
+                            tint = refreshIconColor,
                         )
                     }
                 },
@@ -316,50 +339,81 @@ fun ServerListScreen(
                             candidate.coerceAtLeast(minimumServerNameFontSize.value).sp
                         }
 
-                        LazyColumn(
-                            modifier = Modifier
-                                .align(Alignment.TopCenter)
-                                .width(listWidth)
-                                .padding(vertical = metrics.listVerticalPadding),
-                        ) {
-                            item(key = "automatic") {
-                                AutomaticServerItem(
-                                    selected = automaticServerSelection,
-                                    enabled = servers.any { it.isSelectable },
-                                    metrics = metrics,
-                                    isTv = isTv,
-                                    onClick = {
-                                        scope.launch {
-                                            if (viewModel.selectAutomaticServer()) {
-                                                onBack()
-                                            }
-                                        }
-                                    },
-                                )
-                            }
-                            items(servers, key = { serverListItemKey(it) }) { server ->
-                                val selectable = server.isSelectable
-                                ServerItem(
-                                    server = server,
-                                    selected = !automaticServerSelection && selectable && isSelectedServer(
-                                        server = server,
-                                        selectedId = selectedServerId,
-                                        selectedKey = selectedServerKey,
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalFadingEdges(
+                                        topAlpha = topFadeAlpha,
+                                        bottomAlpha = bottomFadeAlpha,
+                                        fadeHeight = 38.dp,
                                     ),
-                                    enabled = selectable,
-                                    showEndpoint = isAdminProfile,
-                                    serverNameFontSize = serverNameFontSize,
-                                    metrics = metrics,
-                                    isTv = isTv,
-                                    onClick = {
-                                        scope.launch {
-                                            if (viewModel.selectServer(server)) {
-                                                onBack()
-                                            }
-                                        }
-                                    },
-                                )
+                            ) {
+                                LazyColumn(
+                                    state = listState,
+                                    modifier = Modifier
+                                        .align(Alignment.TopCenter)
+                                        .width(listWidth)
+                                        .padding(vertical = metrics.listVerticalPadding),
+                                ) {
+                                    item(key = "automatic") {
+                                        AutomaticServerItem(
+                                            selected = automaticServerSelection,
+                                            enabled = servers.any { it.isSelectable },
+                                            metrics = metrics,
+                                            isTv = isTv,
+                                            onClick = {
+                                                scope.launch {
+                                                    if (viewModel.selectAutomaticServer()) {
+                                                        onBack()
+                                                    }
+                                                }
+                                            },
+                                        )
+                                    }
+                                    items(servers, key = { serverListItemKey(it) }) { server ->
+                                        val selectable = server.isSelectable
+                                        ServerItem(
+                                            server = server,
+                                            selected = !automaticServerSelection && selectable && isSelectedServer(
+                                                server = server,
+                                                selectedId = selectedServerId,
+                                                selectedKey = selectedServerKey,
+                                            ),
+                                            enabled = selectable,
+                                            showEndpoint = isAdminProfile,
+                                            serverNameFontSize = serverNameFontSize,
+                                            metrics = metrics,
+                                            isTv = isTv,
+                                            onClick = {
+                                                scope.launch {
+                                                    if (viewModel.selectServer(server)) {
+                                                        onBack()
+                                                    }
+                                                }
+                                            },
+                                        )
+                                    }
+                                    item(key = "scroll-end-spacer") {
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                    }
+                                }
                             }
+
+                            VerticalScrollEdgeArrow(
+                                alpha = topFadeAlpha,
+                                isTop = true,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 2.dp),
+                            )
+                            VerticalScrollEdgeArrow(
+                                alpha = bottomFadeAlpha,
+                                isTop = false,
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = 2.dp),
+                            )
                         }
                     }
                 }
@@ -422,6 +476,7 @@ private fun AutomaticServerItem(
     onClick: () -> Unit,
 ) {
     val isDark = isSystemInDarkTheme()
+    val titleColor = if (isDark) MaterialTheme.colorScheme.onSurface else Color.Black
     var focused by remember { mutableStateOf(false) }
     val selectedContainerColor = if (isDark) {
         VpnGreen.copy(alpha = 0.14f)
@@ -473,6 +528,7 @@ private fun AutomaticServerItem(
                     text = stringResource(R.string.server_auto),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                     fontWeight = FontWeight.Medium,
+                    color = titleColor,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
@@ -502,6 +558,7 @@ private fun ServerItem(
     onClick: () -> Unit,
 ) {
     val isDark = isSystemInDarkTheme()
+    val titleColor = if (isDark) MaterialTheme.colorScheme.onSurface else Color.Black
     var focused by remember { mutableStateOf(false) }
     val selectedContainerColor = if (isDark) {
         VpnGreen.copy(alpha = 0.14f)
@@ -589,6 +646,7 @@ private fun ServerItem(
                             MaterialTheme.typography.titleMedium,
                         ).copy(fontSize = serverNameFontSize),
                         fontWeight = FontWeight.Medium,
+                        color = titleColor,
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,

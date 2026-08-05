@@ -47,8 +47,8 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = versionCodeOverride ?: 62
-        versionName = "1.0.61"
+        versionCode = versionCodeOverride ?: 63
+        versionName = "1.0.62"
 
         // Direct APK releases can use the GitHub self-updater. Google Play
         // builds override this flag because Play policy requires updates to
@@ -137,7 +137,10 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
             ndk {
-                abiFilters += listOf("x86", "x86_64")
+                // Keep emulator ABIs and arm64 so the same debug application
+                // can be installed side-by-side with Play builds on modern
+                // physical phones during client/server contract testing.
+                abiFilters += listOf("x86", "x86_64", "arm64-v8a")
             }
         }
         release {

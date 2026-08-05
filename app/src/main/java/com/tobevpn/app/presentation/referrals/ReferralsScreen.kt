@@ -555,6 +555,11 @@ private fun ReferralSummaryCard(
     onOpenList: () -> Unit,
     onOpenRewards: () -> Unit,
 ) {
+    val primaryTextColor = if (isSystemInDarkTheme()) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        Color.Black
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -588,6 +593,7 @@ private fun ReferralSummaryCard(
                         text = total.toString(),
                         style = fixedLayoutTextStyle(MaterialTheme.typography.headlineMedium),
                         fontWeight = FontWeight.Bold,
+                        color = primaryTextColor,
                     )
                     Text(
                         text = pluralStringResource(
@@ -999,6 +1005,11 @@ private fun ReferrerInputCard(
     onValueChange: (String) -> Unit,
     onRequestSubmit: (Long) -> Unit,
 ) {
+    val primaryTextColor = if (isSystemInDarkTheme()) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        Color.Black
+    }
     val referrerId = value.toLongOrNull()?.takeIf { it > 0 }
     val hasLocalError = value.isNotEmpty() && referrerId == null
     Card(
@@ -1031,6 +1042,7 @@ private fun ReferrerInputCard(
                         text = stringResource(R.string.referrals_referrer_input_title),
                         style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                         fontWeight = FontWeight.SemiBold,
+                        color = primaryTextColor,
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
@@ -1132,6 +1144,11 @@ private fun ReferrerCard(
     displayName: String?,
     telegramId: Long?,
 ) {
+    val primaryNameColor = if (isSystemInDarkTheme()) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        Color.Black
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
@@ -1172,6 +1189,7 @@ private fun ReferrerCard(
                         ?: stringResource(R.string.referrals_unknown_user),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                     fontWeight = FontWeight.SemiBold,
+                    color = primaryNameColor,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1313,6 +1331,11 @@ private fun ReferralListRow(item: ReferralListItemDto) {
     val formattedDate = remember(item.createdAt) {
         formatReferralDate(item.createdAt)
     }
+    val primaryNameColor = if (isSystemInDarkTheme()) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        Color.Black
+    }
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(18.dp),
@@ -1345,6 +1368,7 @@ private fun ReferralListRow(item: ReferralListItemDto) {
                             ?: stringResource(R.string.referrals_unknown_user),
                         style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                         fontWeight = FontWeight.SemiBold,
+                        color = primaryNameColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )

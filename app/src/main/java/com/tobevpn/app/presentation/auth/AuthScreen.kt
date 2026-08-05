@@ -181,7 +181,10 @@ private fun IdleContent(
     Spacer(modifier = Modifier.height(32.dp))
     Button(
         onClick = onTelegramLogin,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        shape = RoundedCornerShape(14.dp),
         // Same dark-grey CTA family as "Купить" / "Сканировать QR".
         colors = if (isDark) {
             androidx.compose.material3.ButtonDefaults.buttonColors()
@@ -252,7 +255,10 @@ private fun PollingContent(
     Spacer(modifier = Modifier.height(24.dp))
     Button(
         onClick = onOpenTelegram,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
             androidx.compose.material3.ButtonDefaults.buttonColors()
         } else {
@@ -267,7 +273,10 @@ private fun PollingContent(
     Spacer(modifier = Modifier.height(8.dp))
     OutlinedButton(
         onClick = onRestart,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        shape = RoundedCornerShape(14.dp),
     ) {
         Text(stringResource(R.string.retry))
     }
@@ -416,7 +425,10 @@ private fun SuccessContent(onBack: () -> Unit) {
     Spacer(modifier = Modifier.height(32.dp))
     Button(
         onClick = onBack,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        shape = RoundedCornerShape(14.dp),
         // Same dark-grey CTA family as the other primary actions on light.
         colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
             androidx.compose.material3.ButtonDefaults.buttonColors()
@@ -440,7 +452,13 @@ private fun ErrorContent(message: String, onRetry: () -> Unit) {
         textAlign = TextAlign.Center,
     )
     Spacer(modifier = Modifier.height(24.dp))
-    OutlinedButton(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+    OutlinedButton(
+        onClick = onRetry,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(52.dp),
+        shape = RoundedCornerShape(14.dp),
+    ) {
         Text(stringResource(R.string.retry))
     }
 }
@@ -456,13 +474,21 @@ private fun EmailPromptDialog(
 
     AppAlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.email_prompt_title)) },
+        title = {
+            Text(
+                text = stringResource(R.string.email_prompt_title),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
         text = {
             Column {
                 Text(
                     stringResource(R.string.email_prompt_description),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 OutlinedTextField(

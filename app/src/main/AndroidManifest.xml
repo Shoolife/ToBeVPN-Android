@@ -130,8 +130,9 @@
             android:name="com.google.mlkit.vision.DEPENDENCIES"
             android:value="barcode_ui" />
 
-        <!-- Exposes the downloaded APK to the system package installer
-             without granting any storage permission. See update/UpdateInstaller.kt. -->
+        <!-- Exposes only explicitly selected app-owned files through temporary
+             URI grants: downloaded APKs in direct builds and diagnostic logs
+             shared by the user. The provider itself is never exported. -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
