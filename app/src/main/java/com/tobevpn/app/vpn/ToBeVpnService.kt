@@ -28,6 +28,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import libv2ray.CoreCallbackHandler
 import java.util.concurrent.atomic.AtomicReference
@@ -44,8 +45,15 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
+    private val coreLifecycleLock = Any()
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private val underlyingNetworkTracker = UnderlyingNetworkTracker<Network>()
+    private var networkHandoverJob: Job? = null
     private var lastUnderlyingNetworkSummary: String? = null
+    private var activeConfigJson: String? = null
+    private var activeServerName = ""
+    private var activeServerCountry = ""
+    private var activeServerDiagnostic = "server_ref=UNKNOWN"
     private var tunnelPipelineStartedAt = 0L
     @Volatile
     private var cleanedUp = false
@@ -96,8 +104,10 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                 val serverDiagnostic = intent.getStringExtra(EXTRA_SERVER_DIAGNOSTIC)
                     .orEmpty()
                     .ifBlank { "server_ref=UNKNOWN" }
-                cleanedUp = false
-                activeConnectionGeneration = generation
+                synchronized(coreLifecycleLock) {
+                    cleanedUp = false
+                    activeConnectionGeneration = generation
+                }
                 tunnelPipelineStartedAt = SystemClock.elapsedRealtime()
                 SafeDiagnostics.info(
                     TAG,
@@ -177,36 +187,53 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                         "duration_ms=${SystemClock.elapsedRealtime() - tunStartedAt}",
                 )
 
-                // If disconnect was requested while TUN was being created, bail out
-                if (cleanedUp || generation != activeConnectionGeneration) {
+                val xrayStartedAt = SystemClock.elapsedRealtime()
+                val loopGeneration = synchronized(coreLifecycleLock) {
+                    // Cleanup and an in-place core reload use the same lock. This
+                    // keeps a stale start from reviving Xray after the user has
+                    // already disconnected.
+                    if (cleanedUp || generation != activeConnectionGeneration) {
+                        null
+                    } else {
+                        vpnInterface = fd
+                        XRayCore.startLoop(configJson, fd.fd).also {
+                            activeConfigJson = configJson
+                            activeServerName = serverName
+                            activeServerCountry = serverCountry
+                            activeServerDiagnostic = serverDiagnostic
+                        }
+                    }
+                } ?: run {
                     fd.close()
                     return@launch
                 }
-
-                vpnInterface = fd
-                val xrayStartedAt = SystemClock.elapsedRealtime()
-                val loopGeneration = XRayCore.startLoop(configJson, fd.fd)
                 SafeDiagnostics.trace(
                     TAG,
                     "XRay loop started: connection_generation=$generation " +
                         "loop_generation=$loopGeneration running=${XRayCore.isRunning} " +
                         "duration_ms=${SystemClock.elapsedRealtime() - xrayStartedAt}",
                 )
-                if (cleanedUp || generation != activeConnectionGeneration) {
-                    XRayCore.stopLoop(loopGeneration)
-                    if (vpnInterface === fd) vpnInterface = null
+                val becameStale = synchronized(coreLifecycleLock) {
+                    if (cleanedUp || generation != activeConnectionGeneration) {
+                        XRayCore.stopLoop(loopGeneration)
+                        if (vpnInterface === fd) vpnInterface = null
+                        true
+                    } else {
+                        false
+                    }
+                }
+                if (becameStale) {
                     fd.close()
                     return@launch
                 }
 
-                connectionManager.updateState(ConnectionState.Connected, generation)
                 SafeDiagnostics.info(
                     TAG,
-                    "VPN tunnel pipeline completed: generation=$generation $serverDiagnostic " +
+                    "VPN tunnel core ready for validation: generation=$generation $serverDiagnostic " +
                         "duration_ms=${SystemClock.elapsedRealtime() - tunnelPipelineStartedAt}",
                 )
-                updateNotification(getString(R.string.vpn_notification_connected_to, serverLocation))
                 registerNetworkCallback()
+                connectionManager.handleTunnelCoreStarted(generation)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -305,34 +332,49 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
      * called, so cleanup can force the started service down immediately.
      */
     private fun cleanupVpn(expectedGeneration: Int? = null) {
-        if (expectedGeneration != null && expectedGeneration != activeConnectionGeneration) {
-            SafeDiagnostics.trace(
+        val cleanedGeneration: Int
+        val loopGenerationToStop: Int
+        val tunToClose: ParcelFileDescriptor?
+        synchronized(coreLifecycleLock) {
+            if (expectedGeneration != null && expectedGeneration != activeConnectionGeneration) {
+                SafeDiagnostics.trace(
+                    TAG,
+                    "VPN service cleanup ignored for stale generation: expected=$expectedGeneration " +
+                        "active=$activeConnectionGeneration",
+                )
+                return
+            }
+            if (cleanedUp) {
+                SafeDiagnostics.trace(TAG, "VPN service cleanup skipped: already_clean")
+                return
+            }
+            cleanedUp = true
+            cleanedGeneration = activeConnectionGeneration
+            SafeDiagnostics.info(
                 TAG,
-                "VPN service cleanup ignored for stale generation: expected=$expectedGeneration " +
-                    "active=$activeConnectionGeneration",
+                "VPN service cleanup started: generation=$cleanedGeneration " +
+                    "tun_open=${vpnInterface != null} xray_running=${XRayCore.isRunning}",
             )
-            return
+            activeConnectionGeneration = -1
+            loopGenerationToStop = XRayCore.currentLoopGeneration
+            tunToClose = vpnInterface
+            vpnInterface = null
+            activeConfigJson = null
+            activeServerName = ""
+            activeServerCountry = ""
+            activeServerDiagnostic = "server_ref=UNKNOWN"
         }
-        if (cleanedUp) {
-            SafeDiagnostics.trace(TAG, "VPN service cleanup skipped: already_clean")
-            return
-        }
-        cleanedUp = true
-        SafeDiagnostics.info(
-            TAG,
-            "VPN service cleanup started: generation=$activeConnectionGeneration " +
-                "tun_open=${vpnInterface != null} xray_running=${XRayCore.isRunning}",
-        )
-        activeConnectionGeneration = -1
-        val loopGenerationToStop = XRayCore.currentLoopGeneration
         unregisterNetworkCallback()
-        // Stop routing before completing native teardown.
-        vpnInterface?.close()
-        vpnInterface = null
-        // Release XRay synchronously. If Android revokes this VPN because the
-        // user starts another VPN app, the local SOCKS port must be free before
-        // the other app tries to bind its own listener.
-        XRayCore.stopLoop(loopGenerationToStop)
+        synchronized(coreLifecycleLock) {
+            // Stop routing before completing native teardown. The lifecycle
+            // lock prevents a handover/recovery reload from starting Xray
+            // between closing the TUN and stopping the native loop.
+            runCatching { tunToClose?.close() }
+            // Release XRay synchronously. If Android revokes this VPN because
+            // the user starts another VPN app, the local SOCKS port must be
+            // free before the other app tries to bind its own listener.
+            XRayCore.stopLoop(loopGenerationToStop)
+        }
         SafeDiagnostics.trace(
             TAG,
             "VPN native resources stopped: loop_generation=$loopGenerationToStop " +
@@ -352,50 +394,197 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         SafeDiagnostics.info(TAG, "VPN service cleanup completed")
     }
 
+    /**
+     * Restarts only the native Xray loop while retaining the established TUN,
+     * foreground service and Android VPN permission. This is used for a real
+     * Wi-Fi/mobile handover and for a bounded watchdog retry; recreating the
+     * whole VpnService here causes visible disconnect/connect oscillation.
+     */
+    private fun reloadCore(
+        expectedGeneration: Int,
+        configJson: String?,
+        serverName: String?,
+        serverCountry: String?,
+        serverDiagnostic: String?,
+        reason: String,
+        showConnectedNotification: Boolean,
+    ): Boolean = synchronized(coreLifecycleLock) {
+        if (cleanedUp || expectedGeneration != activeConnectionGeneration) {
+            SafeDiagnostics.trace(
+                TAG,
+                "XRay core reload rejected as stale: reason=$reason " +
+                    "expected_generation=$expectedGeneration " +
+                    "active_generation=$activeConnectionGeneration",
+            )
+            return@synchronized false
+        }
+
+        val tun = vpnInterface ?: run {
+            SafeDiagnostics.warn(TAG, "XRay core reload rejected: reason=$reason tun_open=false")
+            return@synchronized false
+        }
+        val targetConfig = configJson ?: activeConfigJson ?: run {
+            SafeDiagnostics.warn(TAG, "XRay core reload rejected: reason=$reason config_missing=true")
+            return@synchronized false
+        }
+        val targetName = serverName ?: activeServerName
+        val targetCountry = serverCountry ?: activeServerCountry
+        val targetDiagnostic = serverDiagnostic ?: activeServerDiagnostic
+        val previousLoopGeneration = XRayCore.currentLoopGeneration
+        val startedAt = SystemClock.elapsedRealtime()
+
+        SafeDiagnostics.info(
+            TAG,
+            "XRay core reload started: reason=$reason generation=$expectedGeneration " +
+                targetDiagnostic,
+        )
+        try {
+            // startLoop stops the old controller loop synchronously before it
+            // starts the replacement on the same application-owned TUN fd.
+            val newLoopGeneration = XRayCore.startLoop(targetConfig, tun.fd)
+            if (cleanedUp || expectedGeneration != activeConnectionGeneration) {
+                XRayCore.stopLoop(newLoopGeneration)
+                return@synchronized false
+            }
+            activeConfigJson = targetConfig
+            activeServerName = targetName
+            activeServerCountry = targetCountry
+            activeServerDiagnostic = targetDiagnostic
+            if (showConnectedNotification) {
+                updateNotification(
+                    getString(
+                        R.string.vpn_notification_connected_to,
+                        serverLocationLabel(targetName, targetCountry),
+                    ),
+                )
+            }
+            SafeDiagnostics.info(
+                TAG,
+                "XRay core reload completed: reason=$reason generation=$expectedGeneration " +
+                    "previous_loop_generation=$previousLoopGeneration " +
+                    "new_loop_generation=$newLoopGeneration " +
+                    "duration_ms=${SystemClock.elapsedRealtime() - startedAt} " +
+                    targetDiagnostic,
+            )
+            true
+        } catch (error: Exception) {
+            SafeDiagnostics.warn(
+                TAG,
+                "XRay core reload failed: reason=$reason generation=$expectedGeneration " +
+                    "failure=${SafeDiagnostics.failureCategory(error)} " +
+                    targetDiagnostic,
+            )
+            false
+        }
+    }
+
+    private fun markTunnelValidated(expectedGeneration: Int): Boolean =
+        synchronized(coreLifecycleLock) {
+            if (cleanedUp || expectedGeneration != activeConnectionGeneration || !XRayCore.isRunning) {
+                return@synchronized false
+            }
+            updateNotification(
+                getString(
+                    R.string.vpn_notification_connected_to,
+                    serverLocationLabel(activeServerName, activeServerCountry),
+                ),
+            )
+            true
+        }
+
     private fun registerNetworkCallback() {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return
         val request = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             .build()
 
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                val summary = cm.getNetworkCapabilities(network)
-                    ?.let(::networkSummary)
-                    ?: "capabilities=UNKNOWN"
-                lastUnderlyingNetworkSummary = summary
-                SafeDiagnostics.info(TAG, "Underlying network available: $summary")
+                if (cleanedUp) return
+                val availability = underlyingNetworkTracker.onAvailable(network)
                 setUnderlyingNetworks(arrayOf(network))
-                connectionManager.requestTunnelHealthCheck()
+                when (availability) {
+                    UnderlyingNetworkTracker.Availability.INITIAL -> {
+                        // requestNetwork immediately reports the network that
+                        // already exists. It is the baseline, not a handover.
+                        SafeDiagnostics.info(TAG, "Underlying network baseline established")
+                    }
+                    UnderlyingNetworkTracker.Availability.UNCHANGED -> {
+                        SafeDiagnostics.trace(TAG, "Underlying network callback repeated")
+                    }
+                    UnderlyingNetworkTracker.Availability.HANDOVER -> {
+                        val generation = activeConnectionGeneration
+                        SafeDiagnostics.info(
+                            TAG,
+                            "Underlying network handover detected: generation=$generation",
+                        )
+                        networkHandoverJob?.cancel()
+                        networkHandoverJob = serviceScope.launch {
+                            delay(NETWORK_HANDOVER_DEBOUNCE_MS)
+                            if (!cleanedUp &&
+                                generation == activeConnectionGeneration &&
+                                underlyingNetworkTracker.isAvailable(network)
+                            ) {
+                                connectionManager.handleUnderlyingNetworkHandover(generation)
+                            }
+                        }
+                    }
+                }
             }
 
             override fun onCapabilitiesChanged(
                 network: Network,
                 networkCapabilities: NetworkCapabilities,
             ) {
+                if (cleanedUp) return
+                if (!underlyingNetworkTracker.isAvailable(network)) return
                 val summary = networkSummary(networkCapabilities)
                 if (summary != lastUnderlyingNetworkSummary) {
                     lastUnderlyingNetworkSummary = summary
                     SafeDiagnostics.info(TAG, "Underlying network changed: $summary")
                 }
+                setUnderlyingNetworks(arrayOf(network))
             }
 
             override fun onLost(network: Network) {
+                if (cleanedUp) return
+                if (!underlyingNetworkTracker.onLost(network)) return
                 SafeDiagnostics.warn(
                     TAG,
                     "Underlying network lost: previous=${lastUnderlyingNetworkSummary ?: "UNKNOWN"}",
                 )
+                networkHandoverJob?.cancel()
+                networkHandoverJob = null
                 lastUnderlyingNetworkSummary = null
                 setUnderlyingNetworks(null)
             }
+
+            override fun onUnavailable() {
+                SafeDiagnostics.warn(TAG, "Underlying network request unavailable")
+            }
         }
         networkCallback = callback
-        cm.registerNetworkCallback(request, callback)
-        SafeDiagnostics.trace(TAG, "Underlying network callback registered")
+        try {
+            // Unlike registerNetworkCallback(), requestNetwork() follows one
+            // best physical upstream instead of reporting every concurrently
+            // available Wi-Fi/cellular network as if each were active.
+            cm.requestNetwork(request, callback)
+            SafeDiagnostics.trace(TAG, "Underlying network request registered")
+        } catch (error: Exception) {
+            networkCallback = null
+            underlyingNetworkTracker.reset()
+            SafeDiagnostics.warn(
+                TAG,
+                "Underlying network request failed: ${SafeDiagnostics.failureCategory(error)}",
+            )
+        }
     }
 
     private fun unregisterNetworkCallback() {
+        networkHandoverJob?.cancel()
+        networkHandoverJob = null
         networkCallback?.let { cb ->
             try {
                 val cm = getSystemService(ConnectivityManager::class.java)
@@ -403,8 +592,9 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             } catch (_: Exception) { }
             networkCallback = null
             lastUnderlyingNetworkSummary = null
-            SafeDiagnostics.trace(TAG, "Underlying network callback unregistered")
+            SafeDiagnostics.trace(TAG, "Underlying network request unregistered")
         }
+        underlyingNetworkTracker.reset()
     }
 
     private fun networkSummary(capabilities: NetworkCapabilities): String {
@@ -565,7 +755,34 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         const val EXTRA_FORCE_STOP = "force_stop"
         private const val CHANNEL_ID = "tobevpn_channel"
         private const val NOTIFICATION_ID = 1
+        private const val NETWORK_HANDOVER_DEBOUNCE_MS = 1_000L
         private val activeInstance = AtomicReference<ToBeVpnService?>()
+
+        fun reloadActiveCore(
+            expectedGeneration: Int,
+            configJson: String? = null,
+            serverName: String? = null,
+            serverCountry: String? = null,
+            serverDiagnostic: String? = null,
+            reason: String,
+            showConnectedNotification: Boolean = true,
+        ): Boolean {
+            val service = activeInstance.get() ?: return false
+            return service.reloadCore(
+                expectedGeneration = expectedGeneration,
+                configJson = configJson,
+                serverName = serverName,
+                serverCountry = serverCountry,
+                serverDiagnostic = serverDiagnostic,
+                reason = reason,
+                showConnectedNotification = showConnectedNotification,
+            )
+        }
+
+        fun markActiveTunnelValidated(expectedGeneration: Int): Boolean {
+            val service = activeInstance.get() ?: return false
+            return service.markTunnelValidated(expectedGeneration)
+        }
 
         fun cleanupActiveInstance(): Boolean {
             val service = activeInstance.get() ?: return false

@@ -14,64 +14,110 @@ jobs:
   check:
     runs-on: ubuntu-22.04
     steps:
-      - name: Compare upstream Xray-core with latest app release
+      - name: Check out Android client
+        uses: actions/checkout@v4
+
+      - name: Compare upstream Xray-core with embedded native core
         env:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM_REPO: XTLS/Xray-core
+          VERSION_FILE: app/libs/libv2ray.version
+          AAR_FILE: app/libs/libv2ray.aar
         run: |
           set -euo pipefail
 
-          upstream_json=$(gh api "repos/${UPSTREAM_REPO}/releases/latest")
+          value_from_file() {
+            local key="$1"
+            sed -n "s/^${key}=//p" "$VERSION_FILE" | head -n 1
+          }
+
+          embedded_tag=$(value_from_file xray_core)
+          embedded_commit=$(value_from_file xray_core_commit)
+          wrapper_tag=$(value_from_file android_lib_xray_lite)
+          expected_aar_sha=$(value_from_file aar_sha256)
+          actual_aar_sha=$(sha256sum "$AAR_FILE" | awk '{print $1}')
+
+          if [ -z "$embedded_tag" ] || [ -z "$embedded_commit" ] || \
+             [ -z "$wrapper_tag" ] || [ -z "$expected_aar_sha" ]; then
+            echo "Xray version metadata is incomplete: ${VERSION_FILE}"
+            exit 1
+          fi
+
+          if [ "$actual_aar_sha" != "$expected_aar_sha" ]; then
+            echo "libv2ray.aar checksum does not match ${VERSION_FILE}"
+            echo "Expected: ${expected_aar_sha}"
+            echo "Actual:   ${actual_aar_sha}"
+            exit 1
+          fi
+
+          native_library="${RUNNER_TEMP}/libgojni.so"
+          unzip -p "$AAR_FILE" jni/arm64-v8a/libgojni.so > "$native_library"
+          build_info=$(readelf -p .go.buildinfo "$native_library")
+          if ! grep -Fq "${embedded_commit:0:12}" <<<"$build_info"; then
+            echo "Embedded Xray commit does not match ${VERSION_FILE}: ${embedded_commit}"
+            exit 1
+          fi
+
+          # Xray-core currently marks its regular dated releases as pre-releases,
+          # so /releases/latest is unsuitable: GitHub excludes them by design.
+          upstream_json=$(gh api "repos/${UPSTREAM_REPO}/releases?per_page=100" \
+            --jq '[.[] | select(.draft == false)] | max_by(.published_at)')
           upstream_tag=$(jq -r '.tag_name' <<<"$upstream_json")
           upstream_url=$(jq -r '.html_url' <<<"$upstream_json")
           upstream_published=$(jq -r '.published_at' <<<"$upstream_json")
+          upstream_commit=$(gh api "repos/${UPSTREAM_REPO}/commits/${upstream_tag}" --jq '.sha')
+
+          echo "Embedded: ${embedded_tag} (${embedded_commit}), AndroidLibXrayLite ${wrapper_tag}"
+          echo "Upstream: ${upstream_tag} (${upstream_commit}), published ${upstream_published}"
+
+          if [ "$embedded_commit" = "$upstream_commit" ]; then
+            echo "The embedded native core matches the newest Xray-core release."
+            exit 0
+          fi
 
           app_json=$(gh api "repos/${GITHUB_REPOSITORY}/releases/latest")
           app_tag=$(jq -r '.tag_name' <<<"$app_json")
           app_url=$(jq -r '.html_url' <<<"$app_json")
-          app_published=$(jq -r '.published_at' <<<"$app_json")
-
-          upstream_ts=$(date -u -d "$upstream_published" +%s)
-          app_ts=$(date -u -d "$app_published" +%s)
-
-          echo "Upstream Xray-core: ${upstream_tag} (${upstream_published})"
-          echo "Latest app release: ${app_tag} (${app_published})"
-
-          if [ "$upstream_ts" -le "$app_ts" ]; then
-            echo "Latest app release was published after the latest Xray-core release."
-            exit 0
-          fi
-
-          title="Xray-core ${upstream_tag} is newer than Android ${app_tag}"
-          existing=$(gh issue list \
-            --state open \
-            --search "\"${title}\" in:title" \
-            --json number \
-            --jq '.[0].number // empty')
-
-          if [ -n "$existing" ]; then
-            echo "Issue already exists: #${existing}"
-            exit 0
-          fi
+          title="Update Xray-core from ${embedded_tag} to ${upstream_tag}"
 
           cat > issue-body.md <<EOF
-          Upstream Xray-core ${upstream_tag} was published after the current Android release ${app_tag}.
+          A newer Xray-core release is available.
+
+          Native dependency currently embedded in the Android client:
+          - Xray-core: \`${embedded_tag}\` (\`${embedded_commit}\`)
+          - AndroidLibXrayLite: \`${wrapper_tag}\`
+
+          Upstream release:
+          - Xray-core: \`${upstream_tag}\` (\`${upstream_commit}\`)
+          - Published: \`${upstream_published}\`
 
           Release rule:
           - keep Xray updates inside a normal APK/AAB app release;
           - do not add an in-app Xray-only updater;
-          - ship a small Android patch release when Xray-core ships a new release or security fix.
+          - review Xray and Android wrapper changes before replacing the native AAR.
 
-          Android release steps:
-          1. Rebuild/update \`app/libs/libv2ray.aar\` through the approved libv2ray/Xray build process.
-          2. Verify Settings shows the real native core version via \`Libv2ray.checkVersionX()\`.
-          3. Bump the Android app patch version.
-          4. Create and push the new \`v*\` tag.
-          5. Confirm APK splits and AAB are present in GitHub Releases.
+          Android update steps:
+          1. Update \`app/libs/libv2ray.aar\` through the approved AndroidLibXrayLite/Xray build process.
+          2. Update \`app/libs/libv2ray.version\` and verify its SHA-256 and embedded commit.
+          3. Verify Settings shows the real native core version via \`Libv2ray.checkVersionX()\`.
+          4. Test VPN start, stop, reconnect, server switching and background operation.
+          5. Ship the update through a normal Android patch release.
 
           Current app release: ${app_url}
           Upstream Xray-core release: ${upstream_url}
           EOF
+
+          existing=$(gh issue list \
+            --state open \
+            --label "xray-core" \
+            --json number \
+            --jq '.[0].number // empty')
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --title "$title" --body-file issue-body.md
+            echo "Updated existing Xray-core issue: #${existing}"
+            exit 0
+          fi
 
           gh issue create \
             --title "$title" \

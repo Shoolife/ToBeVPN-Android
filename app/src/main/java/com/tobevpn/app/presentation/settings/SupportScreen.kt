@@ -88,8 +88,11 @@ fun SupportScreen(
     // Question → answer string-resource pairs, rendered as an expandable list.
     val faq = listOf(
         R.string.faq_q_connect to R.string.faq_a_connect,
+        R.string.faq_q_connecting_check to R.string.faq_a_connecting_check,
         R.string.faq_q_slow to R.string.faq_a_slow,
         R.string.faq_q_server to R.string.faq_a_server,
+        R.string.faq_q_stats to R.string.faq_a_stats,
+        R.string.faq_q_quick_settings to R.string.faq_a_quick_settings,
         R.string.faq_q_pay to R.string.faq_a_pay,
         R.string.faq_q_activate to R.string.faq_a_activate,
         R.string.faq_q_discount to R.string.faq_a_discount,
@@ -98,6 +101,7 @@ fun SupportScreen(
         R.string.faq_q_referrals to R.string.faq_a_referrals,
         R.string.faq_q_updates to R.string.faq_a_updates,
         R.string.faq_q_display_scale to R.string.faq_a_display_scale,
+        R.string.faq_q_diagnostics to R.string.faq_a_diagnostics,
         R.string.faq_q_privacy to R.string.faq_a_privacy,
         R.string.faq_q_support_details to R.string.faq_a_support_details,
     )

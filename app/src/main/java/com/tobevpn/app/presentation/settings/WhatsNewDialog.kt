@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.outlined.HelpOutline
-import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -78,24 +77,24 @@ private data class WhatsNewHighlight(
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Outlined.LocalOffer,
-        titleRes = R.string.whats_new_promocodes_title,
-        descriptionRes = R.string.whats_new_promocodes_desc,
-    ),
-    WhatsNewHighlight(
         icon = Icons.Filled.Tune,
-        titleRes = R.string.whats_new_navigation_title,
-        descriptionRes = R.string.whats_new_navigation_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Outlined.HelpOutline,
-        titleRes = R.string.whats_new_support_title,
-        descriptionRes = R.string.whats_new_support_desc,
+        titleRes = R.string.whats_new_connection_title,
+        descriptionRes = R.string.whats_new_connection_desc,
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.CheckCircle,
-        titleRes = R.string.whats_new_fixes_title,
-        descriptionRes = R.string.whats_new_fixes_desc,
+        titleRes = R.string.whats_new_validation_title,
+        descriptionRes = R.string.whats_new_validation_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.AutoAwesome,
+        titleRes = R.string.whats_new_xray_title,
+        descriptionRes = R.string.whats_new_xray_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Outlined.HelpOutline,
+        titleRes = R.string.whats_new_help_title,
+        descriptionRes = R.string.whats_new_help_desc,
     ),
 )
 

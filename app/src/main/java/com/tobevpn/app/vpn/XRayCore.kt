@@ -77,6 +77,7 @@ object XRayCore {
     val isRunning: Boolean
         get() = controller?.isRunning == true
 
+    @Synchronized
     fun queryStats(tag: String, direct: String): Long {
         return try {
             controller?.queryStats(tag, direct) ?: 0
