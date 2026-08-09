@@ -197,9 +197,6 @@ class MainViewModel @Inject constructor(
     val subscriptionUsageBlocked: StateFlow<Boolean> = authRepository.observeSubscriptionUsageBlocked()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    val updateRequired: StateFlow<Boolean> = prefsDataStore.observeUpdateRequired()
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
-
     // Home screen visibility — gates the periodic ping loop so it doesn't
     // keep opening TCP probes while the app is backgrounded.
     private val screenActive = MutableStateFlow(false)
@@ -410,11 +407,17 @@ class MainViewModel @Inject constructor(
         connectionPreparationJob = viewModelScope.launch {
             var submittedToManager = false
             try {
+                if (prefsDataStore.isUpdateRequired()) {
+                    return@launch
+                }
                 val selectedServer = currentServer.value ?: run {
                     connectionManager.showError(context.getString(R.string.error_no_servers))
                     return@launch
                 }
                 val server = vpnToggleController.prepareServerForConnect(selectedServer) ?: run {
+                    if (prefsDataStore.isUpdateRequired()) {
+                        return@launch
+                    }
                     val message = if (
                         selectedServer.source == ServerSource.BASE_STATION_BYPASS &&
                         !authRepository.getAuthStateSnapshot().canUseBaseStationBypass()

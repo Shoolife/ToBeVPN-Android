@@ -12,7 +12,10 @@ import java.time.LocalDate
 internal object DiagnosticLogPolicy {
     private const val FILE_PREFIX = "ToBeVPN-diagnostic-"
     private const val FILE_SUFFIX = ".log"
-    private const val MAX_MESSAGE_LENGTH = 600
+    // Rich VPN state snapshots and four-attempt probe histories can exceed the
+    // old 600-character ceiling. Keep the entry bounded, but large enough that
+    // the decisive fields at the end are not silently discarded.
+    private const val MAX_MESSAGE_LENGTH = 1_200
 
     private val lineBreaks = Regex("""[\r\n\t]+""")
     private val urls = Regex(

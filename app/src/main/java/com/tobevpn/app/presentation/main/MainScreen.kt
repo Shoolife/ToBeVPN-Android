@@ -114,7 +114,6 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import com.tobevpn.app.data.remote.dto.PurchasePlanDto
 import com.tobevpn.app.domain.model.AuthState
@@ -161,7 +160,6 @@ fun MainScreen(
     val connectionPreparation by viewModel.connectionPreparation.collectAsStateWithLifecycle()
     val paymentSuccessVisible by viewModel.paymentSuccessVisible.collectAsStateWithLifecycle()
     val subscriptionUsageBlocked by viewModel.subscriptionUsageBlocked.collectAsStateWithLifecycle()
-    val updateRequired by viewModel.updateRequired.collectAsStateWithLifecycle()
     val activity = LocalActivity.current
     val pageMaxWidth = responsiveMaxWidth(560.dp)
 
@@ -542,12 +540,6 @@ fun MainScreen(
         exit = fadeOut(tween(0)),
     ) {
         BlockedDialog(onDismiss = { showBlockedDialog = false })
-    }
-
-    if (updateRequired && BuildConfig.IN_APP_UPDATES_ENABLED) {
-        UpdateRequiredDialog(
-            onQuit = { activity?.finishAffinity() },
-        )
     }
 
     if (showSubscriptionSheet) {
@@ -1491,7 +1483,7 @@ private fun BlockedDialog(onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun UpdateRequiredDialog(onQuit: () -> Unit) {
+internal fun DirectDownloadUpdateRequiredDialog(onQuit: () -> Unit) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val buttonTextColor = if (isDark) MaterialTheme.colorScheme.onSurface else Color.Black
     val updateViewModel = com.tobevpn.app.update.rememberAppUpdateViewModel()

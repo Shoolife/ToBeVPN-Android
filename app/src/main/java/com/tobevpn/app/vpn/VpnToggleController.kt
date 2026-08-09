@@ -44,6 +44,8 @@ class VpnToggleController @Inject constructor(
 
     fun isOwnVpnNetworkActive(): Boolean = connectionManager.isOwnVpnNetworkActive()
 
+    suspend fun isUpdateRequired(): Boolean = prefsDataStore.isUpdateRequired()
+
     fun startVpn(server: Server, onAttemptHandled: (() -> Unit)? = null) {
         connectionManager.startVpn(server, onAttemptHandled)
     }
@@ -113,6 +115,10 @@ class VpnToggleController @Inject constructor(
     }
 
     suspend fun prepareServerForConnect(server: Server?): Server? {
+        if (prefsDataStore.isUpdateRequired()) {
+            SafeDiagnostics.warn(TAG, "Connection preparation blocked: UPDATE_REQUIRED_CACHED")
+            return null
+        }
         val selection = readSelection()
         SafeDiagnostics.trace(
             TAG,
@@ -129,6 +135,10 @@ class VpnToggleController @Inject constructor(
             overwriteUsage = true,
             force = true,
         )
+        if (prefsDataStore.isUpdateRequired()) {
+            SafeDiagnostics.warn(TAG, "Connection preparation blocked: UPDATE_REQUIRED")
+            return null
+        }
 
         if (server?.source == ServerSource.BASE_STATION_BYPASS) {
             if (!authRepository.getAuthStateSnapshot().canUseBaseStationBypass()) {

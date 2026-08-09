@@ -38,11 +38,13 @@ import com.tobevpn.app.presentation.navigation.AppNavHost
 import com.tobevpn.app.presentation.splash.SplashScreen
 import com.tobevpn.app.domain.model.ThemeMode
 import com.tobevpn.app.presentation.theme.ToBeVPNTheme
+import com.tobevpn.app.update.MandatoryUpdateGate
 import com.tobevpn.app.update.UpdateBannerCheck
 import com.tobevpn.app.update.UpdateBannerHost
 import com.tobevpn.app.util.DeepLinkBus
 import com.tobevpn.app.util.DeepLinkDestination
 import com.tobevpn.app.util.SafeDiagnostics
+import com.tobevpn.app.vpn.VpnToggleController
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -56,6 +58,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var deepLinkBus: DeepLinkBus
+
+    @Inject
+    lateinit var vpnToggleController: VpnToggleController
 
     private val quickSettingsConnectRequests = MutableStateFlow(0)
 
@@ -75,6 +80,8 @@ class MainActivity : AppCompatActivity() {
 
         setContent {
             val quickSettingsConnectRequest by quickSettingsConnectRequests.collectAsStateWithLifecycle()
+            val updateRequired by prefsDataStore.observeUpdateRequired()
+                .collectAsStateWithLifecycle(initialValue = false)
             val notificationPermissionPrompted by prefsDataStore.notificationPermissionPrompted
                 .collectAsStateWithLifecycle(initialValue = true)
             val themeModeFlow = remember(prefsDataStore) {
@@ -110,6 +117,14 @@ class MainActivity : AppCompatActivity() {
                     ) != PackageManager.PERMISSION_GRANTED
                 ) {
                     notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+
+            LaunchedEffect(updateRequired) {
+                if (updateRequired) {
+                    // A minimum-version block applies to an already-running
+                    // tunnel too, not only to the next press of Connect.
+                    vpnToggleController.stopVpn()
                 }
             }
 
@@ -159,8 +174,6 @@ class MainActivity : AppCompatActivity() {
                     // and this overlay stay in sync. The banner persists until
                     // the user dismisses it via the in-card "Later" button.
                     if (BuildConfig.IN_APP_UPDATES_ENABLED) {
-                        val updateRequired by prefsDataStore.observeUpdateRequired()
-                            .collectAsStateWithLifecycle(initialValue = false)
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -179,6 +192,13 @@ class MainActivity : AppCompatActivity() {
 
                     if (showStartupSplash) {
                         SplashScreen(onFinished = { showStartupSplash = false })
+                    }
+
+                    if (!showStartupSplash) {
+                        MandatoryUpdateGate(
+                            updateRequired = updateRequired,
+                            onQuit = { finishAffinity() },
+                        )
                     }
                 }
             }

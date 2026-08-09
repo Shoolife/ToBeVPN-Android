@@ -105,14 +105,34 @@ class VpnConnectionManager @Inject constructor(
     private val recoveryJobLock = Any()
     private var recoveryJob: Job? = null
     private val activeTunnelProbeCall = AtomicReference<Call?>(null)
+    @Volatile
     private var connectionStartTime = 0L
     private var connectionAttemptStartedAt = 0L
+    @Volatile
     private var sessionBytesAccumulated = 0L
+    @Volatile
     private var sessionUplinkBytesAccumulated = 0L
+    @Volatile
     private var sessionDownlinkBytesAccumulated = 0L
     private var sessionStartUsageBytes = 0L
+    @Volatile
     private var trafficQualityConfirmed = false
-    private var lastTunnelTrafficAt = 0L
+    @Volatile
+    private var lastTunnelTrafficElapsedMs = 0L
+    @Volatile
+    private var lastTunnelUplinkElapsedMs = 0L
+    @Volatile
+    private var lastTunnelDownlinkElapsedMs = 0L
+    @Volatile
+    private var lastTunnelProbeElapsedMs = 0L
+    @Volatile
+    private var lastTunnelProbeSource = "NONE"
+    @Volatile
+    private var lastTunnelProbeResult = "NONE"
+    @Volatile
+    private var lastTunnelProbeFailure = "NONE"
+    @Volatile
+    private var lastTunnelProbeDurationMs = -1L
     private var watchdogRecoveryAttempts = 0
     private var confirmedConnectionSuccessKey: String? = null
     // Monotonic counter to invalidate stale operations
@@ -135,6 +155,7 @@ class VpnConnectionManager @Inject constructor(
         .build()
 
     init {
+        SafeDiagnostics.installStateSnapshotProvider(::diagnosticStateSnapshot)
         scope.launch {
             try {
                 usageRepository.ensureInitialized()
@@ -148,6 +169,66 @@ class VpnConnectionManager @Inject constructor(
             } catch (error: Exception) {
                 SafeDiagnostics.warn(TAG, "App filter observer failed: ${SafeDiagnostics.failureCategory(error)}")
             }
+        }
+    }
+
+    /**
+     * Privacy-safe point-in-time state used when diagnostic collection starts
+     * or stops. It deliberately excludes endpoint addresses, credentials,
+     * account identifiers, request URLs, and traffic contents.
+     */
+    internal fun diagnosticStateSnapshot(): String {
+        val state = _connectionState.value
+        val server = _currentServer.value
+        val nowElapsedMs = SystemClock.elapsedRealtime()
+        val recoveryActive = synchronized(recoveryJobLock) {
+            recoveryJob?.isActive == true
+        }
+        return buildString {
+            append("connection_state=")
+            append(connectionStateName(state))
+            append(" generation=")
+            append(latestConnectionGeneration.get())
+            append(" requested_operation=")
+            append(requestedOperation.get())
+            append(" permitted_service_generation=")
+            append(permittedServiceStartGeneration.get())
+            append(" xray_running=")
+            append(XRayCore.isRunning)
+            append(" xray_loop_generation=")
+            append(XRayCore.currentLoopGeneration)
+            append(" own_vpn_network=")
+            append(isOwnVpnNetworkActive())
+            append(" health_monitor_active=")
+            append(healthCheckJob?.isActive == true)
+            append(" recovery_active=")
+            append(recoveryActive)
+            append(" probe_active=")
+            append(activeTunnelProbeCall.get() != null)
+            append(" session_s=")
+            append(currentSessionSeconds())
+            append(" total_kib=")
+            append(sessionBytesAccumulated / 1024L)
+            append(" uplink_kib=")
+            append(sessionUplinkBytesAccumulated / 1024L)
+            append(" downlink_kib=")
+            append(sessionDownlinkBytesAccumulated / 1024L)
+            append(' ')
+            append(trafficRecencySummary(nowElapsedMs))
+            append(" last_probe_age_ms=")
+            append(elapsedAgeMs(lastTunnelProbeElapsedMs, nowElapsedMs))
+            append(" last_probe_source=")
+            append(lastTunnelProbeSource)
+            append(" last_probe_result=")
+            append(lastTunnelProbeResult)
+            append(" last_probe_duration_ms=")
+            append(lastTunnelProbeDurationMs)
+            append(" last_probe_failure=")
+            append(lastTunnelProbeFailure)
+            append(' ')
+            append(underlyingNetworkSummary())
+            append(' ')
+            append(server?.let(::diagnosticServerDescriptor) ?: "server_ref=NONE")
         }
     }
 
@@ -243,6 +324,10 @@ class VpnConnectionManager @Inject constructor(
         onAttemptHandled: (() -> Unit)? = null,
     ) {
         scope.launch {
+            if (enforceMinimumVersionBlock(request = request)) {
+                onAttemptHandled?.invoke()
+                return@launch
+            }
             val gen: Int
             mutex.withLock {
                 if (request != requestedOperation.get()) {
@@ -392,6 +477,7 @@ class VpnConnectionManager @Inject constructor(
      * backgrounded and no foreground service is currently running).
      */
     private suspend fun launchTunnelService(intent: Intent, request: Int, generation: Int) {
+        if (enforceMinimumVersionBlock(request, generation)) return
         try {
             context.startForegroundService(intent)
             SafeDiagnostics.trace(
@@ -425,6 +511,7 @@ class VpnConnectionManager @Inject constructor(
         permittedServiceStartGeneration.set(-1)
         val request = requestedOperation.incrementAndGet()
         scope.launch {
+            if (enforceMinimumVersionBlock(request = request)) return@launch
             if (server.isSentinel) {
                 mutex.withLock {
                     if (request != requestedOperation.get()) return@launch
@@ -605,6 +692,7 @@ class VpnConnectionManager @Inject constructor(
                 "VPN access guard unavailable: ${SafeDiagnostics.failureSummary(error)}",
             )
         }
+        if (enforceMinimumVersionBlock(request, generation)) return true
         val blocked = result.getOrDefault(false)
         SafeDiagnostics.trace(
             TAG,
@@ -623,6 +711,47 @@ class VpnConnectionManager @Inject constructor(
                     context.getString(R.string.error_usage_blocked)
                 )
             }
+        }
+        return true
+    }
+
+    /**
+     * Final domain-level minimum-version guard. UI dialogs are presentation;
+     * this check is what prevents Home, Quick Settings, server switches, and
+     * watchdog recovery from creating or keeping a tunnel on a blocked build.
+     */
+    private suspend fun enforceMinimumVersionBlock(
+        request: Int? = null,
+        expectedGeneration: Int? = null,
+    ): Boolean {
+        if (!prefsDataStore.isUpdateRequired()) return false
+
+        var accepted = false
+        var active = false
+        mutex.withLock {
+            if (request != null && request != requestedOperation.get()) return@withLock
+            if (expectedGeneration != null && expectedGeneration != connectionGeneration) {
+                return@withLock
+            }
+            accepted = true
+            active = _connectionState.value is ConnectionState.Connecting ||
+                _connectionState.value is ConnectionState.Connected
+            permittedServiceStartGeneration.set(-1)
+            if (!active) {
+                _connectionState.value = ConnectionState.Error(
+                    context.getString(R.string.update_required_message),
+                )
+            }
+        }
+        if (!accepted) return false
+
+        SafeDiagnostics.warn(TAG, "VPN blocked: MINIMUM_APP_VERSION")
+        if (active) {
+            performStop(
+                errorMessage = context.getString(R.string.update_required_message),
+                request = request,
+                expectedGeneration = expectedGeneration,
+            )
         }
         return true
     }
@@ -1200,10 +1329,18 @@ class VpnConnectionManager @Inject constructor(
                             "${kilobitsPerSecond(intervalUplinkBytes, intervalDurationMs)} " +
                             "interval_down_kbps=" +
                             "${kilobitsPerSecond(intervalDownlinkBytes, intervalDurationMs)} " +
+                            trafficRecencySummary(SystemClock.elapsedRealtime()) + " " +
                             "xray_running=${XRayCore.isRunning} " +
                             underlyingNetworkSummary(),
                     )
-                    if (runCatching { authRepository.pingHwidOnly() }.getOrDefault(false)) {
+                    val serverAccessBlocked = runCatching {
+                        authRepository.pingHwidOnly()
+                    }.getOrDefault(false)
+                    if (enforceMinimumVersionBlock(request, gen)) {
+                        SafeDiagnostics.warn(TAG, "VPN heartbeat detected minimum-version block")
+                        break
+                    }
+                    if (serverAccessBlocked) {
                         SafeDiagnostics.warn(TAG, "VPN heartbeat detected server-side access block")
                         performStop(
                             errorMessage = context.getString(R.string.error_usage_blocked),
@@ -1367,7 +1504,8 @@ class VpnConnectionManager @Inject constructor(
                 SafeDiagnostics.warn(
                     TAG,
                     "Startup tunnel validation failed: generation=$generation " +
-                        "source=$source terminal=${probe.terminalFailure}",
+                        "source=$source terminal=${probe.terminalFailure} " +
+                        diagnosticStateSnapshot(),
                 )
                 _currentServer.value?.let { serverQualityRepository.recordTunnelFailure(it) }
                 scheduleTunnelRecovery(
@@ -1414,7 +1552,9 @@ class VpnConnectionManager @Inject constructor(
             sessionDownlinkBytesAccumulated = 0L
             _sessionBytes.value = 0L
             trafficQualityConfirmed = false
-            lastTunnelTrafficAt = 0L
+            lastTunnelTrafficElapsedMs = 0L
+            lastTunnelUplinkElapsedMs = 0L
+            lastTunnelDownlinkElapsedMs = 0L
             _sessionTimeSeconds.value = 0L
             // Drain any leftovers before starting accounting for the validated
             // session. Startup probe traffic must not count as user traffic.
@@ -1498,13 +1638,21 @@ class VpnConnectionManager @Inject constructor(
                 } else if (hasRecentTunnelTraffic()) {
                     SafeDiagnostics.warn(
                         TAG,
-                        "Tunnel probe failed but recent tunnel traffic confirmed liveness",
+                        "Tunnel probe failed but recent tunnel traffic confirmed liveness: " +
+                            trafficRecencySummary(SystemClock.elapsedRealtime()) +
+                            " uplink_kib=${sessionUplinkBytesAccumulated / 1024L}" +
+                            " downlink_kib=${sessionDownlinkBytesAccumulated / 1024L}",
                     )
                     confirmTunnelHealthy(gen, "${source}_TRAFFIC")
                 } else {
                     SafeDiagnostics.warn(
                         TAG,
-                        "Tunnel health failure confirmed: source=$source generation=$gen",
+                        "Tunnel health failure confirmed: source=$source generation=$gen " +
+                            trafficRecencySummary(SystemClock.elapsedRealtime()),
+                    )
+                    SafeDiagnostics.warn(
+                        TAG,
+                        "Tunnel failure state snapshot: ${diagnosticStateSnapshot()}",
                     )
                     _currentServer.value?.let { serverQualityRepository.recordTunnelFailure(it) }
                     scheduleTunnelRecovery(gen, source)
@@ -1621,7 +1769,8 @@ class VpnConnectionManager @Inject constructor(
             SafeDiagnostics.warn(
                 TAG,
                 "VPN tunnel recovery unavailable: attempts=$watchdogRecoveryAttempts " +
-                    "max_attempts=$maxAttempts automatic=$automaticSelection",
+                    "max_attempts=$maxAttempts automatic=$automaticSelection " +
+                    diagnosticStateSnapshot(),
             )
             performStop(
                 errorMessage = errorMessage,
@@ -1679,6 +1828,10 @@ class VpnConnectionManager @Inject constructor(
             false
         }
         if (!reloaded) {
+            SafeDiagnostics.warn(
+                TAG,
+                "VPN tunnel recovery reload rejected: ${diagnosticStateSnapshot()}",
+            )
             performStop(
                 errorMessage = context.getString(R.string.error_tunnel_unhealthy),
                 request = recoveryRequest,
@@ -1723,8 +1876,10 @@ class VpnConnectionManager @Inject constructor(
         tunnelProbeMutex.withLock {
             val startedAt = SystemClock.elapsedRealtime()
             var lastFailure = "UNKNOWN"
+            val attemptDetails = mutableListOf<String>()
             repeat(attempts) { index ->
                 val attempt = probeTunnelOnce()
+                attemptDetails += "A${index + 1}[${attempt.outcomes.joinToString(separator = "|")}]"
                 if (attempt.healthy) {
                     return@withLock TunnelProbeResult(
                         healthy = true,
@@ -1732,6 +1887,7 @@ class VpnConnectionManager @Inject constructor(
                         durationMs = SystemClock.elapsedRealtime() - startedAt,
                         lastFailure = null,
                         terminalFailure = false,
+                        details = attemptDetails.joinToString(separator = ";"),
                     )
                 }
                 lastFailure = attempt.failure
@@ -1742,6 +1898,7 @@ class VpnConnectionManager @Inject constructor(
                         durationMs = SystemClock.elapsedRealtime() - startedAt,
                         lastFailure = lastFailure,
                         terminalFailure = true,
+                        details = attemptDetails.joinToString(separator = ";"),
                     )
                 }
                 if (index < attempts - 1) delay(retryDelayMs)
@@ -1752,15 +1909,18 @@ class VpnConnectionManager @Inject constructor(
                 durationMs = SystemClock.elapsedRealtime() - startedAt,
                 lastFailure = lastFailure,
                 terminalFailure = false,
+                details = attemptDetails.joinToString(separator = ";"),
             )
         }
 
     private suspend fun probeTunnelOnce(): TunnelProbeAttempt {
         var lastFailure = "NO_SUCCESS_RESPONSE"
         var everyTargetFailedWithTls = true
-        for ((index, url) in TUNNEL_PROBE_URLS.withIndex()) {
-            val attempt = probeTunnelUrl(url, index)
-            if (attempt.healthy) return attempt
+        val outcomes = mutableListOf<String>()
+        for (target in TUNNEL_PROBE_TARGETS) {
+            val attempt = probeTunnelUrl(target)
+            outcomes += attempt.outcomes
+            if (attempt.healthy) return attempt.copy(outcomes = outcomes)
             lastFailure = attempt.failure
             if (!attempt.terminalFailure) everyTargetFailedWithTls = false
         }
@@ -1768,11 +1928,12 @@ class VpnConnectionManager @Inject constructor(
             healthy = false,
             failure = lastFailure,
             terminalFailure = everyTargetFailedWithTls,
+            outcomes = outcomes,
         )
     }
 
-    private suspend fun probeTunnelUrl(url: String, index: Int): TunnelProbeAttempt {
-        val request = Request.Builder().url(url).get().build()
+    private suspend fun probeTunnelUrl(target: TunnelProbeTarget): TunnelProbeAttempt {
+        val request = Request.Builder().url(target.url).get().build()
         return suspendCancellableCoroutine { continuation ->
             val call = tunnelProbeClient.newCall(request)
             if (!activeTunnelProbeCall.compareAndSet(null, call)) {
@@ -1780,7 +1941,8 @@ class VpnConnectionManager @Inject constructor(
                 continuation.resume(
                     TunnelProbeAttempt(
                         healthy = false,
-                        failure = "CONCURRENT_PROBE_GUARD",
+                        failure = "${target.name}_CONCURRENT_PROBE_GUARD",
+                        outcomes = listOf("${target.name}=CONCURRENT_GUARD"),
                     ),
                 )
                 return@suspendCancellableCoroutine
@@ -1798,8 +1960,9 @@ class VpnConnectionManager @Inject constructor(
                         continuation.resume(
                             TunnelProbeAttempt(
                                 healthy = false,
-                                failure = "TARGET_${index + 1}_$failureCategory",
+                                failure = "${target.name}_$failureCategory",
                                 terminalFailure = failureCategory == "TLS",
+                                outcomes = listOf("${target.name}=$failureCategory"),
                             ),
                         )
                     }
@@ -1808,11 +1971,15 @@ class VpnConnectionManager @Inject constructor(
                 override fun onResponse(call: Call, response: Response) {
                     val result = response.use {
                         if (it.code in 200..399) {
-                            TunnelProbeAttempt(healthy = true)
+                            TunnelProbeAttempt(
+                                healthy = true,
+                                outcomes = listOf("${target.name}=HTTP_${it.code}"),
+                            )
                         } else {
                             TunnelProbeAttempt(
                                 healthy = false,
-                                failure = "TARGET_${index + 1}_HTTP_${it.code}",
+                                failure = "${target.name}_HTTP_${it.code}",
+                                outcomes = listOf("${target.name}=HTTP_${it.code}"),
                             )
                         }
                     }
@@ -1829,8 +1996,9 @@ class VpnConnectionManager @Inject constructor(
                     continuation.resume(
                         TunnelProbeAttempt(
                             healthy = false,
-                            failure = "TARGET_${index + 1}_$failureCategory",
+                            failure = "${target.name}_$failureCategory",
                             terminalFailure = failureCategory == "TLS",
+                            outcomes = listOf("${target.name}=$failureCategory"),
                         ),
                     )
                 }
@@ -1839,6 +2007,11 @@ class VpnConnectionManager @Inject constructor(
     }
 
     private fun logTunnelProbe(source: String, result: TunnelProbeResult) {
+        lastTunnelProbeElapsedMs = SystemClock.elapsedRealtime()
+        lastTunnelProbeSource = source
+        lastTunnelProbeResult = if (result.healthy) "HEALTHY" else "FAILED"
+        lastTunnelProbeFailure = result.lastFailure ?: "NONE"
+        lastTunnelProbeDurationMs = result.durationMs
         val message = buildString {
             append("Tunnel health probe: source=")
             append(source)
@@ -1853,6 +2026,10 @@ class VpnConnectionManager @Inject constructor(
                 append(it)
             }
             if (result.terminalFailure) append(" terminal=true")
+            if (result.details.isNotBlank()) {
+                append(" details=")
+                append(result.details)
+            }
         }
         if (result.healthy) {
             SafeDiagnostics.trace(TAG, message)
@@ -1888,8 +2065,15 @@ class VpnConnectionManager @Inject constructor(
                 sessionUplinkBytesAccumulated += upBytes
                 sessionDownlinkBytesAccumulated += downBytes
                 _sessionBytes.value = sessionBytesAccumulated
+                val nowElapsedMs = SystemClock.elapsedRealtime()
                 if (delta > 0L) {
-                    lastTunnelTrafficAt = System.currentTimeMillis()
+                    lastTunnelTrafficElapsedMs = nowElapsedMs
+                }
+                if (upBytes > 0L) {
+                    lastTunnelUplinkElapsedMs = nowElapsedMs
+                }
+                if (downBytes > 0L) {
+                    lastTunnelDownlinkElapsedMs = nowElapsedMs
                 }
                 if (!trafficQualityConfirmed &&
                     sessionBytesAccumulated >= QUALITY_TRAFFIC_CONFIRM_BYTES
@@ -1924,9 +2108,22 @@ class VpnConnectionManager @Inject constructor(
     }
 
     private fun hasRecentTunnelTraffic(): Boolean {
-        return lastTunnelTrafficAt > 0L &&
-            System.currentTimeMillis() - lastTunnelTrafficAt <= RECENT_TUNNEL_TRAFFIC_GRACE_MS
+        return elapsedAgeMs(
+            timestampMs = lastTunnelTrafficElapsedMs,
+            nowMs = SystemClock.elapsedRealtime(),
+        ) in 0..RECENT_TUNNEL_TRAFFIC_GRACE_MS
     }
+
+    private fun trafficRecencySummary(nowElapsedMs: Long): String =
+        "last_any_traffic_age_ms=" +
+            elapsedAgeMs(lastTunnelTrafficElapsedMs, nowElapsedMs) +
+            " last_uplink_age_ms=" +
+            elapsedAgeMs(lastTunnelUplinkElapsedMs, nowElapsedMs) +
+            " last_downlink_age_ms=" +
+            elapsedAgeMs(lastTunnelDownlinkElapsedMs, nowElapsedMs)
+
+    private fun elapsedAgeMs(timestampMs: Long, nowMs: Long): Long =
+        if (timestampMs <= 0L) -1L else (nowMs - timestampMs).coerceAtLeast(0L)
 
     private fun currentSessionSeconds(): Long =
         if (connectionStartTime > 0L) {
@@ -1983,6 +2180,14 @@ class VpnConnectionManager @Inject constructor(
             append(!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED))
             append(" roaming=")
             append(!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING))
+            append(" suspended=")
+            append(!capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED))
+            append(" captive_portal=")
+            append(capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL))
+            append(" link_up_kbps=")
+            append(capabilities.linkUpstreamBandwidthKbps)
+            append(" link_down_kbps=")
+            append(capabilities.linkDownstreamBandwidthKbps)
         }
     }
 
@@ -1997,6 +2202,7 @@ class VpnConnectionManager @Inject constructor(
         val healthy: Boolean,
         val failure: String = "",
         val terminalFailure: Boolean = false,
+        val outcomes: List<String> = emptyList(),
     )
 
     private data class TunnelProbeResult(
@@ -2005,6 +2211,12 @@ class VpnConnectionManager @Inject constructor(
         val durationMs: Long,
         val lastFailure: String?,
         val terminalFailure: Boolean,
+        val details: String = "",
+    )
+
+    private data class TunnelProbeTarget(
+        val name: String,
+        val url: String,
     )
 
     companion object {
@@ -2023,10 +2235,10 @@ class VpnConnectionManager @Inject constructor(
         private const val UNDERLYING_NETWORK_WAIT_TIMEOUT_MS = 15_000L
         private const val QUALITY_TRAFFIC_CONFIRM_BYTES = 64L * 1024L
         private const val RECENT_TUNNEL_TRAFFIC_GRACE_MS = 60_000L
-        private val TUNNEL_PROBE_URLS = listOf(
-            "https://www.gstatic.com/generate_204",
-            "https://www.example.com/",
-            "https://repo1.maven.org/maven2/",
+        private val TUNNEL_PROBE_TARGETS = listOf(
+            TunnelProbeTarget("GSTATIC_204", "https://www.gstatic.com/generate_204"),
+            TunnelProbeTarget("EXAMPLE", "https://www.example.com/"),
+            TunnelProbeTarget("MAVEN", "https://repo1.maven.org/maven2/"),
         )
     }
 }

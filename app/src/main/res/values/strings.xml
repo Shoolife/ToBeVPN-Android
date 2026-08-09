@@ -40,6 +40,7 @@
     <string name="block_appeal_button">Contact support</string>
     <string name="update_required_title">Update required</string>
     <string name="update_required_message">Please update the app to continue</string>
+    <string name="update_required_play_store_message">Install the latest version from Google Play to continue using the app</string>
     <string name="update_required_button">Update</string>
     <string name="update_required_quit">Quit</string>
     <string name="error_vpn_interface">Failed to create VPN interface</string>
@@ -65,6 +66,7 @@
     <string name="base_station_bypass_standard_action">Standard servers</string>
     <string name="base_station_bypass_empty">Base-station bypass servers are currently unavailable</string>
     <string name="base_station_bypass_load_error">Could not refresh base-station bypass servers. Check your connection and try again.</string>
+    <string name="base_station_bypass_experimental_notice">Experimental feature: it may be unstable. We recommend using it only on mobile data when internet access is restricted to allowlisted services.</string>
     <string name="error_base_station_bypass_access">Sign in to use base-station bypass. The first 3 days are free; an active subscription is required afterwards.</string>
     <string name="server_auto">Automatic</string>
     <string name="server_auto_description">Fastest available server</string>
@@ -467,14 +469,12 @@
     <string name="whats_new_version">Version %1$s</string>
     <string name="whats_new_intro">Highlights in the installed version</string>
     <string name="whats_new_done">Got it</string>
-    <string name="whats_new_bypass_title">Base-station bypass — beta</string>
-    <string name="whats_new_bypass_desc">Added a separate server tab for BS bypass mode. It is available after sign-in: the first 3 days are free, then an active subscription is required.</string>
-    <string name="whats_new_auto_selection_title">Ping and automatic selection</string>
-    <string name="whats_new_auto_selection_desc">Base-station bypass latency is measured manually with Refresh. Automatic selection picks the fastest reachable server, while unavailable servers move to the bottom.</string>
-    <string name="whats_new_traffic_sources_title">Separate traffic statistics</string>
-    <string name="whats_new_traffic_sources_desc">Statistics now has All, Servers, and BS bypass filters, so traffic from different connection types is kept separate.</string>
-    <string name="whats_new_network_safety_title">Safer network handovers</string>
-    <string name="whats_new_network_safety_desc">Improved physical-network selection and VPN recovery when switching between Wi-Fi and mobile data. If internet access disappears, the VPN no longer leaves device traffic blocked.</string>
+    <string name="whats_new_play_updates_title">Updates through Google Play</string>
+    <string name="whats_new_play_updates_desc">If the installed version is no longer supported by the server, the app will require an update and open the official ToBeVPN page in Google Play.</string>
+    <string name="whats_new_diagnostics_title">Extended diagnostics</string>
+    <string name="whats_new_diagnostics_desc">The local journal now records connection stages, VPN and network state, and failure causes in greater detail. Sensitive data and traffic contents are never recorded.</string>
+    <string name="whats_new_bypass_notice_title">Base-station bypass — beta</string>
+    <string name="whats_new_bypass_notice_desc">Added a clear experimental-mode notice and guidance to use it on mobile data when internet access is restricted to allowlisted services.</string>
     <string name="version">Version</string>
     <string name="xray">XRay</string>
     <string name="language">Language</string>

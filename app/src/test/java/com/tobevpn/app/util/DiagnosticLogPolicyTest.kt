@@ -90,6 +90,38 @@ class DiagnosticLogPolicyTest {
     }
 
     @Test
+    fun `rich state snapshot is kept beyond the former six hundred character limit`() {
+        val safePrefix = "connection_state=CONNECTED "
+        val safeBody = "probe=HEALTHY ".repeat(55)
+        val decisiveTail = "last_downlink_age_ms=65432"
+
+        val sanitized = DiagnosticLogPolicy.sanitizeMessage(
+            safePrefix + safeBody + decisiveTail,
+        )
+
+        assertTrue(sanitized.length > 600)
+        assertTrue(sanitized.contains(decisiveTail))
+        assertTrue(sanitized.length <= 1_200)
+    }
+
+    @Test
+    fun `rich state snapshot redacts secrets while retaining operational fields`() {
+        val sanitized = DiagnosticLogPolicy.sanitizeMessage(
+            "connection_state=CONNECTED endpoint=https://192.168.1.10/path " +
+                "uuid=550e8400-e29b-41d4-a716-446655440000 " +
+                "Authorization: Bearer secret_token_value " +
+                "underlying_transport=CELLULAR downlink_kib=0",
+        )
+
+        assertTrue(sanitized.contains("connection_state=CONNECTED"))
+        assertTrue(sanitized.contains("underlying_transport=CELLULAR"))
+        assertTrue(sanitized.contains("downlink_kib=0"))
+        assertFalse(sanitized.contains("192.168.1.10"))
+        assertFalse(sanitized.contains("550e8400"))
+        assertFalse(sanitized.contains("secret_token_value"))
+    }
+
+    @Test
     fun `tag sanitizer removes unsafe characters and enforces a fallback`() {
         assertEquals("Vpn_Manager", DiagnosticLogPolicy.sanitizeTag("Vpn Manager"))
         assertEquals("App", DiagnosticLogPolicy.sanitizeTag("   "))

@@ -62,17 +62,28 @@ class VpnQuickSettingsTileService : TileService() {
             updateTile(ConnectionState.Disconnected)
             return
         }
-        if (!vpnToggleController.hasVpnPermission()) {
-            openMainActivityForVpnPermission()
-            return
-        }
         if (toggleJob?.isActive == true) return
         updateTile(ConnectionState.Connecting)
         toggleJob = serviceScope.launch {
             try {
+                if (vpnToggleController.isUpdateRequired()) {
+                    updateTile(ConnectionState.Disconnected)
+                    openMainActivity(showConnectRequest = false)
+                    return@launch
+                }
+                if (!vpnToggleController.hasVpnPermission()) {
+                    updateTile(ConnectionState.Disconnected)
+                    openMainActivity(showConnectRequest = true)
+                    return@launch
+                }
                 val server = vpnToggleController.prepareSelectedServerForConnect()
                 if (server == null) {
-                    vpnToggleController.showNoServersError()
+                    if (vpnToggleController.isUpdateRequired()) {
+                        updateTile(ConnectionState.Disconnected)
+                        openMainActivity(showConnectRequest = false)
+                    } else {
+                        vpnToggleController.showNoServersError()
+                    }
                     return@launch
                 }
                 vpnToggleController.startVpn(server)
@@ -105,19 +116,25 @@ class VpnQuickSettingsTileService : TileService() {
         tile.updateTile()
     }
 
-    private fun openMainActivityForVpnPermission() {
+    private fun openMainActivity(showConnectRequest: Boolean) {
         if (isLocked) {
-            unlockAndRun { startMainActivityAndCollapse() }
+            unlockAndRun { startMainActivityAndCollapse(showConnectRequest) }
         } else {
-            startMainActivityAndCollapse()
+            startMainActivityAndCollapse(showConnectRequest)
         }
     }
 
     @SuppressLint("StartActivityAndCollapseDeprecated")
-    private fun startMainActivityAndCollapse() {
+    private fun startMainActivityAndCollapse(showConnectRequest: Boolean) {
         val intent = Intent(this, MainActivity::class.java).apply {
-            action = MainActivity.ACTION_CONNECT_FROM_QS_TILE
-            putExtra(MainActivity.EXTRA_CONNECT_FROM_QS_TILE, true)
+            action = if (showConnectRequest) {
+                MainActivity.ACTION_CONNECT_FROM_QS_TILE
+            } else {
+                Intent.ACTION_MAIN
+            }
+            if (showConnectRequest) {
+                putExtra(MainActivity.EXTRA_CONNECT_FROM_QS_TILE, true)
+            }
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)

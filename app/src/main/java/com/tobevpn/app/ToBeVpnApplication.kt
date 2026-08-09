@@ -2,7 +2,11 @@ package com.tobevpn.app
 
 import android.app.Application
 import android.app.ActivityManager
+import android.content.ComponentCallbacks2
+import android.content.res.Configuration
+import android.os.Looper
 import android.os.PowerManager
+import android.util.Log
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.local.SessionStore
 import com.tobevpn.app.data.local.dao.SessionDao
@@ -47,6 +51,7 @@ class ToBeVpnApplication : Application() {
             value = diagnosticLogManager::record,
             isDetailedLoggingEnabled = diagnosticLogManager::isCollectionActive,
         )
+        installCrashDiagnostics()
         // Hydrate cached tokens from the encrypted DB and obtain a fresh access token
         // before the UI starts hitting the API. If we're offline this fails silently
         // and the AuthHeaderInterceptor will re-try on the first request.
@@ -73,6 +78,68 @@ class ToBeVpnApplication : Application() {
             runCatching { bootstrapManager.ensureBootstrapped() }
             runCatching { migrateLegacyEmail() }
         }
+    }
+
+    private fun installCrashDiagnostics() {
+        val delegate = Thread.getDefaultUncaughtExceptionHandler() ?: return
+        Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+            try {
+                val threadKind = if (thread === Looper.getMainLooper().thread) {
+                    "MAIN"
+                } else {
+                    "BACKGROUND"
+                }
+                diagnosticLogManager.recordCritical(
+                    level = Log.ERROR,
+                    tag = "UncaughtFailure",
+                    message = "Uncaught application failure: thread=$threadKind " +
+                        SafeDiagnostics.failureSummary(error),
+                )
+            } finally {
+                delegate.uncaughtException(thread, error)
+            }
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        val message =
+            "Android memory trim callback: level=$level category=${memoryTrimCategory(level)}"
+        if (level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW ||
+            level == ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+            level >= ComponentCallbacks2.TRIM_MEMORY_MODERATE
+        ) {
+            SafeDiagnostics.warn(TAG, message)
+        } else {
+            SafeDiagnostics.trace(TAG, message)
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        SafeDiagnostics.warn(TAG, "Android low-memory callback received")
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        SafeDiagnostics.trace(
+            TAG,
+            "Runtime configuration changed: orientation=${newConfig.orientation} " +
+                "ui_mode=${newConfig.uiMode} font_scale=${newConfig.fontScale}",
+        )
+    }
+
+    @Suppress("DEPRECATION")
+    private fun memoryTrimCategory(level: Int): String = when (level) {
+        ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE -> "RUNNING_MODERATE"
+        ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> "RUNNING_LOW"
+        ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> "RUNNING_CRITICAL"
+        ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN -> "UI_HIDDEN"
+        ComponentCallbacks2.TRIM_MEMORY_BACKGROUND -> "BACKGROUND"
+        ComponentCallbacks2.TRIM_MEMORY_MODERATE -> "MODERATE"
+        ComponentCallbacks2.TRIM_MEMORY_COMPLETE -> "COMPLETE"
+        else -> "OTHER"
     }
 
     /**

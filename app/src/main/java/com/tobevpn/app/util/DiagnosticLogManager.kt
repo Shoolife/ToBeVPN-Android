@@ -1,7 +1,13 @@
 package com.tobevpn.app.util
 
+import android.app.ActivityManager
+import android.app.ApplicationExitInfo
 import android.content.Context
+import android.net.ConnectivityManager
+import android.os.BatteryManager
 import android.os.Build
+import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.data.local.PrefsDataStore
@@ -13,8 +19,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.time.Clock
 import java.time.LocalDate
@@ -85,6 +93,7 @@ class DiagnosticLogManager @Inject constructor(
                     tag = TAG,
                     message = "Diagnostic collection resumed after application start",
                 )
+                appendContextSnapshotsLocked(reason = "PROCESS_RESUME")
             } else {
                 refreshStateLocked()
             }
@@ -99,6 +108,7 @@ class DiagnosticLogManager @Inject constructor(
             if (!enabled) {
                 if (collecting.get()) {
                     runCatching {
+                        appendContextSnapshotsLocked(reason = "DEBUG_MODE_STOPPING")
                         appendLocked(
                             level = Log.INFO,
                             tag = TAG,
@@ -128,8 +138,10 @@ class DiagnosticLogManager @Inject constructor(
                     tag = TAG,
                     message = "Diagnostic collection started manually",
                 )
+                appendContextSnapshotsLocked(reason = "COLLECTION_STARTED")
             } else {
                 if (!collecting.get()) return@withLock
+                appendContextSnapshotsLocked(reason = "COLLECTION_STOPPING")
                 runCatching {
                     appendLocked(
                         level = Log.INFO,
@@ -156,6 +168,25 @@ class DiagnosticLogManager @Inject constructor(
             writeMutex.withLock {
                 if (!collecting.get()) return@withLock
                 appendLocked(level, tag, message)
+            }
+        }
+    }
+
+    /**
+     * Best-effort synchronous write for an uncaught Kotlin/Java failure. The
+     * normal sink is asynchronous and the process may terminate before that
+     * event reaches disk, so the crash path gets a short bounded flush.
+     */
+    fun recordCritical(level: Int, tag: String, message: String) {
+        if (!initialized.get() || !collecting.get()) return
+        runBlocking(Dispatchers.IO) {
+            withTimeoutOrNull(CRITICAL_WRITE_TIMEOUT_MS) {
+                writeMutex.withLock {
+                    if (collecting.get()) {
+                        appendLocked(level, tag, message)
+                        appendContextSnapshotsLocked(reason = "UNCAUGHT_FAILURE")
+                    }
+                }
             }
         }
     }
@@ -224,6 +255,138 @@ class DiagnosticLogManager @Inject constructor(
         }
         pruneHistoryLocked()
         refreshStateLocked()
+    }
+
+    private fun appendContextSnapshotsLocked(reason: String) {
+        appendLocked(
+            level = Log.INFO,
+            tag = "RuntimeSnapshot",
+            message = runtimeStateSnapshot(reason),
+        )
+        SafeDiagnostics.currentStateSnapshot()?.let { snapshot ->
+            appendLocked(
+                level = Log.INFO,
+                tag = "VpnSnapshot",
+                message = "reason=$reason $snapshot",
+            )
+        }
+        previousProcessExitSnapshot()?.let { snapshot ->
+            appendLocked(
+                level = Log.INFO,
+                tag = "PreviousProcessExit",
+                message = "snapshot_reason=$reason $snapshot",
+            )
+        }
+    }
+
+    private fun runtimeStateSnapshot(reason: String): String {
+        val activityManager = context.getSystemService(ActivityManager::class.java)
+        val memoryInfo = ActivityManager.MemoryInfo()
+        val memoryAvailable = runCatching {
+            activityManager?.getMemoryInfo(memoryInfo)
+            activityManager != null
+        }.getOrDefault(false)
+        val powerManager = context.getSystemService(PowerManager::class.java)
+        val batteryManager = context.getSystemService(BatteryManager::class.java)
+        val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
+        val runtime = Runtime.getRuntime()
+        val batteryPercent = batteryManager
+            ?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            ?.takeIf { it in 0..100 }
+            ?: -1
+        return buildString {
+            append("reason=")
+            append(reason)
+            append(" device_uptime_s=")
+            append(SystemClock.elapsedRealtime() / 1_000L)
+            append(" available_mem_mib=")
+            append(if (memoryAvailable) memoryInfo.availMem / MIB else -1L)
+            append(" total_mem_mib=")
+            append(if (memoryAvailable) memoryInfo.totalMem / MIB else -1L)
+            append(" low_memory=")
+            append(memoryAvailable && memoryInfo.lowMemory)
+            append(" memory_threshold_mib=")
+            append(if (memoryAvailable) memoryInfo.threshold / MIB else -1L)
+            append(" low_ram_device=")
+            append(activityManager?.isLowRamDevice ?: false)
+            append(" app_heap_used_mib=")
+            append((runtime.totalMemory() - runtime.freeMemory()) / MIB)
+            append(" app_heap_max_mib=")
+            append(runtime.maxMemory() / MIB)
+            append(" storage_free_mib=")
+            append(context.filesDir.usableSpace / MIB)
+            append(" cpu_cores=")
+            append(runtime.availableProcessors())
+            append(" background_restricted=")
+            append(activityManager?.isBackgroundRestricted ?: false)
+            append(" data_saver_status=")
+            append(connectivityManager?.restrictBackgroundStatus ?: -1)
+            append(" power_save=")
+            append(powerManager?.isPowerSaveMode ?: false)
+            append(" device_idle=")
+            append(powerManager?.isDeviceIdleMode ?: false)
+            append(" thermal_status=")
+            append(powerManager?.currentThermalStatus ?: -1)
+            append(" battery_optimization_exempt=")
+            append(
+                runCatching {
+                    powerManager?.isIgnoringBatteryOptimizations(context.packageName)
+                        ?: false
+                }.getOrDefault(false),
+            )
+            append(" battery_percent=")
+            append(batteryPercent)
+            append(" battery_charging=")
+            append(batteryManager?.isCharging ?: false)
+        }
+    }
+
+    private fun previousProcessExitSnapshot(): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        val activityManager = context.getSystemService(ActivityManager::class.java)
+            ?: return null
+        val exit = runCatching {
+            activityManager.getHistoricalProcessExitReasons(
+                context.packageName,
+                0,
+                1,
+            ).firstOrNull()
+        }.getOrNull() ?: return null
+        val ageMinutes = ((clock.millis() - exit.timestamp).coerceAtLeast(0L) / 60_000L)
+        return buildString {
+            append("reason=")
+            append(processExitReasonName(exit.reason))
+            append(" status=")
+            append(exit.status)
+            append(" importance=")
+            append(exit.importance)
+            append(" pss_mib=")
+            append(exit.pss / 1024L)
+            append(" rss_mib=")
+            append(exit.rss / 1024L)
+            append(" age_min=")
+            append(ageMinutes)
+        }
+    }
+
+    private fun processExitReasonName(reason: Int): String = when (reason) {
+        ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"
+        ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
+        ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY"
+        ApplicationExitInfo.REASON_CRASH -> "CRASH"
+        ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
+        ApplicationExitInfo.REASON_ANR -> "ANR"
+        ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INITIALIZATION_FAILURE"
+        ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "PERMISSION_CHANGE"
+        ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE_USAGE"
+        ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
+        ApplicationExitInfo.REASON_USER_STOPPED -> "USER_STOPPED"
+        ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "DEPENDENCY_DIED"
+        ApplicationExitInfo.REASON_FREEZER -> "FREEZER"
+        ApplicationExitInfo.REASON_PACKAGE_STATE_CHANGE -> "PACKAGE_STATE_CHANGE"
+        ApplicationExitInfo.REASON_PACKAGE_UPDATED -> "PACKAGE_UPDATED"
+        ApplicationExitInfo.REASON_OTHER -> "OTHER"
+        else -> "UNKNOWN_$reason"
     }
 
     private fun ensureHeaderLocked(file: File) {
@@ -334,6 +497,8 @@ class DiagnosticLogManager @Inject constructor(
         const val LOG_DIRECTORY = "diagnostic_logs"
         const val MAX_LOG_BYTES = 10L * 1024L * 1024L
         const val MAX_HISTORY_FILES = 7
+        const val CRITICAL_WRITE_TIMEOUT_MS = 1_200L
+        const val MIB = 1024L * 1024L
         val LINE_TIME_FORMAT: DateTimeFormatter =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
     }

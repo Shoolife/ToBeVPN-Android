@@ -23,11 +23,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -61,8 +61,10 @@ import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.highlightBetaWord
 import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.AppScaledContent
+import com.tobevpn.app.presentation.theme.VpnRed
 
 // One highlight in the "What's new" dialog: an icon with a title and a short
 // description. All icons share the same accent, matching the desktop client.
@@ -77,24 +79,19 @@ private data class WhatsNewHighlight(
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.Language,
-        titleRes = R.string.whats_new_bypass_title,
-        descriptionRes = R.string.whats_new_bypass_desc,
+        icon = Icons.Filled.SystemUpdate,
+        titleRes = R.string.whats_new_play_updates_title,
+        descriptionRes = R.string.whats_new_play_updates_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.Speed,
-        titleRes = R.string.whats_new_auto_selection_title,
-        descriptionRes = R.string.whats_new_auto_selection_desc,
+        icon = Icons.Filled.BugReport,
+        titleRes = R.string.whats_new_diagnostics_title,
+        descriptionRes = R.string.whats_new_diagnostics_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.BarChart,
-        titleRes = R.string.whats_new_traffic_sources_title,
-        descriptionRes = R.string.whats_new_traffic_sources_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Filled.Tune,
-        titleRes = R.string.whats_new_network_safety_title,
-        descriptionRes = R.string.whats_new_network_safety_desc,
+        icon = Icons.Filled.Info,
+        titleRes = R.string.whats_new_bypass_notice_title,
+        descriptionRes = R.string.whats_new_bypass_notice_desc,
     ),
 )
 
@@ -355,7 +352,10 @@ private fun HighlightCard(highlight: WhatsNewHighlight, accent: Color) {
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = stringResource(highlight.titleRes),
+                text = highlightBetaWord(
+                    text = stringResource(highlight.titleRes),
+                    betaColor = VpnRed,
+                ),
                 style = fixedLayoutTextStyle(
                     TextStyle(
                         fontSize = 15.sp,

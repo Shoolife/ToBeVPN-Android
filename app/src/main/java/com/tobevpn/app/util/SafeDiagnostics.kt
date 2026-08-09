@@ -16,6 +16,8 @@ object SafeDiagnostics {
     private var sink: ((level: Int, tag: String, message: String) -> Unit)? = null
     @Volatile
     private var detailedLoggingEnabled: (() -> Boolean)? = null
+    @Volatile
+    private var stateSnapshotProvider: (() -> String)? = null
 
     fun installSink(
         value: (level: Int, tag: String, message: String) -> Unit,
@@ -23,6 +25,18 @@ object SafeDiagnostics {
     ) {
         sink = value
         detailedLoggingEnabled = isDetailedLoggingEnabled
+    }
+
+    fun installStateSnapshotProvider(value: () -> String) {
+        stateSnapshotProvider = value
+    }
+
+    internal fun currentStateSnapshot(): String? = runCatching {
+        stateSnapshotProvider?.invoke()
+    }.getOrNull()?.takeIf(String::isNotBlank)
+
+    fun error(tag: String, message: String) {
+        write(Log.ERROR, tag, message)
     }
 
     fun info(tag: String, message: String) {
@@ -69,6 +83,18 @@ object SafeDiagnostics {
                 "${frame.className.substringAfterLast('.')}.${frame.methodName}:${frame.lineNumber}"
             }
             ?: "external"
-        return "category=${failureCategory(error)} types=$types origin=$origin"
+        val appFrames = generateSequence(error) { it.cause }
+            .flatMap { cause -> cause.stackTrace.asSequence() }
+            .filter { frame -> frame.className.startsWith("com.tobevpn.app.") }
+            .distinctBy { frame ->
+                Triple(frame.className, frame.methodName, frame.lineNumber)
+            }
+            .take(4)
+            .joinToString(separator = ">") { frame ->
+                "${frame.className.substringAfterLast('.')}.${frame.methodName}:${frame.lineNumber}"
+            }
+            .ifBlank { "NONE" }
+        return "category=${failureCategory(error)} types=$types origin=$origin " +
+            "app_frames=$appFrames"
     }
 }

@@ -42,6 +42,7 @@
     <string name="block_appeal_button">Написать в поддержку</string>
     <string name="update_required_title">Требуется обновление</string>
     <string name="update_required_message">Для продолжения работы необходимо обновить приложение</string>
+    <string name="update_required_play_store_message">Чтобы продолжить работу, установите последнюю версию из Google Play</string>
     <string name="update_required_button">Обновить</string>
     <string name="update_required_quit">Выйти</string>
     <string name="error_vpn_interface">Не удалось создать VPN-интерфейс</string>
@@ -67,6 +68,7 @@
     <string name="base_station_bypass_standard_action">Обычные серверы</string>
     <string name="base_station_bypass_empty">Серверы обхода БС пока недоступны</string>
     <string name="base_station_bypass_load_error">Не удалось обновить серверы обхода БС. Проверьте интернет и повторите попытку.</string>
+    <string name="base_station_bypass_experimental_notice">Экспериментальная функция: возможна нестабильная работа. Рекомендуем использовать только через мобильную сеть, когда доступ в интернет ограничен белыми списками.</string>
     <string name="error_base_station_bypass_access">Для обхода БС войдите в аккаунт. После входа первые 3 дня доступны бесплатно, далее нужна активная подписка.</string>
     <string name="server_auto">Автоматически</string>
     <string name="server_auto_description">Самый быстрый доступный сервер</string>
@@ -481,14 +483,12 @@
     <string name="whats_new_version">Версия %1$s</string>
     <string name="whats_new_intro">Главные изменения установленной версии</string>
     <string name="whats_new_done">Понятно</string>
-    <string name="whats_new_bypass_title">Обход БС — beta</string>
-    <string name="whats_new_bypass_desc">Добавили отдельную вкладку серверов для режима «Обход БС». Она доступна после входа: первые 3 дня бесплатно, затем — по активной подписке.</string>
-    <string name="whats_new_auto_selection_title">Ping и автоматический выбор</string>
-    <string name="whats_new_auto_selection_desc">Задержка серверов обхода БС измеряется вручную по кнопке обновления. Автовыбор подключает самый быстрый доступный сервер, а недоступные перемещаются вниз списка.</string>
-    <string name="whats_new_traffic_sources_title">Раздельная статистика</string>
-    <string name="whats_new_traffic_sources_desc">В статистике появились фильтры «Всё», «Серверы» и «Обход БС», чтобы трафик разных типов подключений не смешивался.</string>
-    <string name="whats_new_network_safety_title">Стабильнее при смене сети</string>
-    <string name="whats_new_network_safety_desc">Улучшили выбор физической сети и восстановление VPN при переходе между Wi‑Fi и мобильным интернетом. Если интернет пропал, VPN больше не оставляет устройство с заблокированным трафиком.</string>
+    <string name="whats_new_play_updates_title">Обновление через Google Play</string>
+    <string name="whats_new_play_updates_desc">Если установленная версия больше не поддерживается сервером, приложение предложит обязательное обновление и откроет официальную страницу ToBeVPN в Google Play.</string>
+    <string name="whats_new_diagnostics_title">Расширенная диагностика</string>
+    <string name="whats_new_diagnostics_desc">Локальный журнал теперь подробнее фиксирует этапы подключения, состояние VPN, сети и причины сбоев. Конфиденциальные данные и содержимое трафика не записываются.</string>
+    <string name="whats_new_bypass_notice_title">Обход БС — beta</string>
+    <string name="whats_new_bypass_notice_desc">Добавили заметное предупреждение об экспериментальном режиме и рекомендации по его использованию через мобильную сеть при ограничении интернета белыми списками.</string>
     <string name="version">Версия</string>
     <string name="xray">XRay</string>
     <string name="language">Язык</string>

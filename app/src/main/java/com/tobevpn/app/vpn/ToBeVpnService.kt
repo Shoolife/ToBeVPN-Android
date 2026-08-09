@@ -803,6 +803,22 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                     NetworkCapabilities.NET_CAPABILITY_NOT_ROAMING,
                 ),
             )
+            append(" suspended=")
+            append(
+                !capabilities.hasCapability(
+                    NetworkCapabilities.NET_CAPABILITY_NOT_SUSPENDED,
+                ),
+            )
+            append(" captive_portal=")
+            append(
+                capabilities.hasCapability(
+                    NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL,
+                ),
+            )
+            append(" link_up_kbps=")
+            append(capabilities.linkUpstreamBandwidthKbps)
+            append(" link_down_kbps=")
+            append(capabilities.linkDownstreamBandwidthKbps)
         }
     }
 

@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
@@ -84,6 +85,7 @@ import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.presentation.components.countryFlagForUi
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.highlightBetaWord
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import com.tobevpn.app.presentation.components.serverDisplayName
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
@@ -480,6 +482,11 @@ fun ServerListScreen(
                                         .width(listWidth)
                                         .padding(vertical = metrics.listVerticalPadding),
                                 ) {
+                                    if (showingBypass) {
+                                        item(key = "bypass-experimental-notice") {
+                                            BaseStationBypassExperimentalNotice(metrics)
+                                        }
+                                    }
                                     item(
                                         key = if (showingBypass) {
                                             "automatic-bypass"
@@ -593,6 +600,11 @@ private fun ServerCategoryTabs(
                     R.string.server_tab_base_station_bypass,
                 )
             }
+            val labelColor = if (isSelected) {
+                if (isSystemInDarkTheme()) VpnGreen else Color(0xFF16652E)
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -611,14 +623,10 @@ private fun ServerCategoryTabs(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = label,
+                    text = highlightBetaWord(label, betaColor = VpnRed),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                    color = if (isSelected) {
-                        if (isSystemInDarkTheme()) VpnGreen else Color(0xFF16652E)
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color = labelColor,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
@@ -737,6 +745,54 @@ internal fun ServerListScalePreview(
                 metrics = metrics,
                 isTv = false,
                 onClick = {},
+            )
+        }
+    }
+}
+
+@Composable
+private fun BaseStationBypassExperimentalNotice(metrics: ServerListMetrics) {
+    val isDark = isSystemInDarkTheme()
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = metrics.cardHorizontalPadding,
+                vertical = metrics.cardVerticalPadding,
+            ),
+        shape = RoundedCornerShape(metrics.cardCornerRadius),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDark) {
+                VpnOrange.copy(alpha = 0.11f)
+            } else {
+                Color(0xFFFFF3E0)
+            },
+        ),
+        border = BorderStroke(
+            width = 1.dp,
+            color = VpnOrange.copy(alpha = if (isDark) 0.42f else 0.34f),
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 13.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = VpnOrange,
+                modifier = Modifier.size(21.dp),
+            )
+            Spacer(modifier = Modifier.width(11.dp))
+            Text(
+                text = stringResource(R.string.base_station_bypass_experimental_notice),
+                style = fixedLayoutTextStyle(
+                    MaterialTheme.typography.bodySmall.copy(lineHeight = 18.sp),
+                ),
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
             )
         }
     }
