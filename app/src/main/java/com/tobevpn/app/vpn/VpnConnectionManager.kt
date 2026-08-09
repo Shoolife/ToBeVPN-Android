@@ -13,14 +13,17 @@ import com.tobevpn.app.data.local.dao.TrafficLogDao
 import com.tobevpn.app.data.local.entity.TrafficLogEntity
 import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.data.repository.AuthRepository
+import com.tobevpn.app.data.repository.BaseStationBypassRepository
 import com.tobevpn.app.data.repository.ServerQualityRepository
 import com.tobevpn.app.data.repository.UsageRepository
 import com.tobevpn.app.data.repository.VpnRepository
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.presentation.servers.serverSelectionKey
 import com.tobevpn.app.presentation.servers.stableServerId
+import com.tobevpn.app.presentation.servers.isSelectedServer
 import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.util.diagnosticServerDescriptor
@@ -74,6 +77,7 @@ class VpnConnectionManager @Inject constructor(
     private val appFilterRepository: AppFilterRepository,
     private val vpnRepository: VpnRepository,
     private val serverQualityRepository: ServerQualityRepository,
+    private val baseStationBypassRepository: BaseStationBypassRepository,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val mutex = Mutex()
@@ -210,6 +214,12 @@ class VpnConnectionManager @Inject constructor(
             session.authState == "AUTHENTICATED"
     }
 
+    private suspend fun isBaseStationBypassAllowed(): Boolean {
+        val session = sessionDao.getSession() ?: return false
+        return session.authState == "AUTHENTICATED" &&
+            session.userPlan in setOf("FREE_TRIAL", "PAID", "ADMIN")
+    }
+
 
     fun startVpn(server: Server, onAttemptHandled: (() -> Unit)? = null) {
         cancelPendingRecovery("CONNECT_REQUEST")
@@ -270,6 +280,16 @@ class VpnConnectionManager @Inject constructor(
                     onAttemptHandled?.invoke()
                     return@launch
                 }
+                if (server.source == ServerSource.BASE_STATION_BYPASS &&
+                    !isBaseStationBypassAllowed()
+                ) {
+                    SafeDiagnostics.warn(TAG, "VPN connect blocked: BASE_STATION_BYPASS_ACCESS")
+                    _connectionState.value = ConnectionState.Error(
+                        context.getString(R.string.error_base_station_bypass_access),
+                    )
+                    onAttemptHandled?.invoke()
+                    return@launch
+                }
 
                 val paidUser = isPaidUser()
                 if (!paidUser && usageRepository.isExhausted()) {
@@ -323,7 +343,16 @@ class VpnConnectionManager @Inject constructor(
 
             val serverToStart = refreshServerAfterAccessCheck(server) ?: run {
                 performStop(
-                    errorMessage = context.getString(R.string.error_no_servers),
+                    errorMessage = context.getString(
+                        if (
+                            server.source == ServerSource.BASE_STATION_BYPASS &&
+                            !isBaseStationBypassAllowed()
+                        ) {
+                            R.string.error_base_station_bypass_access
+                        } else {
+                            R.string.error_no_servers
+                        },
+                    ),
                     request = request,
                     expectedGeneration = gen,
                 )
@@ -414,6 +443,16 @@ class VpnConnectionManager @Inject constructor(
                 }
                 return@launch
             }
+            if (server.source == ServerSource.BASE_STATION_BYPASS &&
+                !isBaseStationBypassAllowed()
+            ) {
+                SafeDiagnostics.warn(TAG, "VPN server switch blocked: BASE_STATION_BYPASS_ACCESS")
+                performStop(
+                    errorMessage = context.getString(R.string.error_base_station_bypass_access),
+                    request = request,
+                )
+                return@launch
+            }
 
             var shouldStartDirectly = false
             var restartGeneration = -1
@@ -469,7 +508,16 @@ class VpnConnectionManager @Inject constructor(
                 allowStaleOnRefreshMiss = allowStaleOnRefreshMiss,
             ) ?: run {
                 performStop(
-                    errorMessage = context.getString(R.string.error_no_servers),
+                    errorMessage = context.getString(
+                        if (
+                            server.source == ServerSource.BASE_STATION_BYPASS &&
+                            !isBaseStationBypassAllowed()
+                        ) {
+                            R.string.error_base_station_bypass_access
+                        } else {
+                            R.string.error_no_servers
+                        },
+                    ),
                     request = request,
                     expectedGeneration = restartGeneration,
                 )
@@ -584,6 +632,13 @@ class VpnConnectionManager @Inject constructor(
         avoidCurrentInAuto: Boolean = false,
         allowStaleOnRefreshMiss: Boolean = true,
     ): Server? {
+        if (server.source == ServerSource.BASE_STATION_BYPASS) {
+            return refreshBaseStationBypassServer(
+                server = server,
+                avoidCurrentInAuto = avoidCurrentInAuto,
+                allowStaleOnRefreshMiss = allowStaleOnRefreshMiss,
+            )
+        }
         SafeDiagnostics.trace(
             TAG,
             "VPN server revalidation started: auto=${prefsDataStore.isAutomaticServerSelection()} " +
@@ -598,6 +653,7 @@ class VpnConnectionManager @Inject constructor(
                     serverQualityRepository.selectBestServer(
                         servers = availableServers,
                         excludeServerId = if (avoidCurrentInAuto) server.id else null,
+                        excludeEndpoint = server.takeIf { avoidCurrentInAuto },
                     )
                 } else {
                     availableServers.firstOrNull { it.id == server.id }
@@ -612,6 +668,52 @@ class VpnConnectionManager @Inject constructor(
             "VPN server revalidation completed: refresh_success=${refreshResult.isSuccess} " +
                 "received=${refreshed.size} stale_fallback=$staleFallback selected=" +
                 (selected?.let(::diagnosticServerDescriptor) ?: "NONE"),
+        )
+        return selected
+    }
+
+    private suspend fun refreshBaseStationBypassServer(
+        server: Server,
+        avoidCurrentInAuto: Boolean,
+        allowStaleOnRefreshMiss: Boolean,
+    ): Server? {
+        if (!isBaseStationBypassAllowed()) {
+            SafeDiagnostics.warn(TAG, "Base-station bypass revalidation denied by access state")
+            return null
+        }
+        SafeDiagnostics.trace(TAG, "Base-station bypass server revalidation started")
+        val refreshResult = baseStationBypassRepository.refreshServers()
+        val refreshed = refreshResult.getOrNull().orEmpty()
+        val automatic = prefsDataStore.isAutomaticServerSelection()
+        val resolved = if (automatic && avoidCurrentInAuto) {
+            // Normal connects keep the choice made by the explicit refresh or
+            // automatic button. Only recovery probes again, and excludes the
+            // failed endpoint so it cannot immediately restart the same one.
+            serverQualityRepository.selectBestServer(
+                servers = refreshed,
+                excludeServerId = server.id,
+                excludeEndpoint = server,
+                forceProbe = true,
+            )
+        } else {
+            refreshed.firstOrNull {
+                isSelectedServer(
+                    server = it,
+                    selectedId = server.id,
+                    selectedKey = serverSelectionKey(server),
+                )
+            } ?: refreshed.firstOrNull().takeIf { automatic }
+        }
+        val staleFallback = refreshResult.isFailure &&
+            allowStaleOnRefreshMiss &&
+            server.isAvailable &&
+            isBaseStationBypassAllowed()
+        val selected = resolved ?: server.takeIf { staleFallback }
+        SafeDiagnostics.trace(
+            TAG,
+            "Base-station bypass revalidation completed: " +
+                "refresh_success=${refreshResult.isSuccess} received=${refreshed.size} " +
+                "stale_fallback=$staleFallback selected=${selected != null}",
         )
         return selected
     }
@@ -638,9 +740,9 @@ class VpnConnectionManager @Inject constructor(
 
     /**
      * Called only after ToBeVpnService has distinguished a real physical
-     * network handover from requestNetwork()'s initial callback. Keep the TUN
-     * alive, reload Xray on the newly selected underlay, then restart the one
-     * serialized health monitor.
+     * network handover from the passive physical-network callback's initial
+     * baseline. Keep the TUN alive, reload Xray on the newly selected
+     * underlay, then restart the one serialized health monitor.
      */
     fun handleUnderlyingNetworkHandover(generation: Int) {
         scope.launch {
@@ -698,6 +800,35 @@ class VpnConnectionManager @Inject constructor(
                     duringStartup = duringStartup,
                 )
             }
+        }
+    }
+
+    /**
+     * A physical network did not become validated within the service grace
+     * period. Tear down the TUN instead of leaving Android routing traffic into
+     * a dead VPN until the process or phone is restarted.
+     */
+    fun handleUnderlyingNetworkUnavailable(generation: Int) {
+        cancelPendingRecovery("UNDERLYING_NETWORK_UNAVAILABLE")
+        scope.launch {
+            val active = generation == latestConnectionGeneration.get() &&
+                (_connectionState.value is ConnectionState.Connecting ||
+                    _connectionState.value is ConnectionState.Connected)
+            if (!active) {
+                SafeDiagnostics.trace(
+                    TAG,
+                    "Underlying-network timeout ignored as stale: generation=$generation",
+                )
+                return@launch
+            }
+            SafeDiagnostics.warn(
+                TAG,
+                "VPN stopped after validated physical network timeout: generation=$generation",
+            )
+            performStop(
+                errorMessage = context.getString(R.string.error_underlying_network_unavailable),
+                expectedGeneration = generation,
+            )
         }
     }
 
@@ -1134,6 +1265,8 @@ class VpnConnectionManager @Inject constructor(
                 bytesUsed = sessionBytes,
                 timeUsedSeconds = sessionTime,
                 serverId = _currentServer.value?.id ?: "",
+                serverSource = _currentServer.value?.source?.name
+                    ?: ServerSource.STANDARD.name,
                 timestamp = timestampSeconds,
                 isAuthenticated = authenticated,
             )
@@ -1175,16 +1308,40 @@ class VpnConnectionManager @Inject constructor(
                 "source=$source delay_ms=$TUNNEL_STARTUP_VALIDATION_DELAY_MS",
         )
         healthCheckJob = scope.launch {
+            val networkDeadline = NetworkAvailabilityDeadline(
+                startedAtMs = SystemClock.elapsedRealtime(),
+                timeoutMs = UNDERLYING_NETWORK_WAIT_TIMEOUT_MS,
+            )
             delay(TUNNEL_STARTUP_VALIDATION_DELAY_MS)
             while (generation == latestConnectionGeneration.get() &&
                 _connectionState.value is ConnectionState.Connecting
             ) {
                 if (!hasUnderlyingInternet()) {
+                    val now = SystemClock.elapsedRealtime()
+                    if (networkDeadline.isExpired(now)) {
+                        SafeDiagnostics.warn(
+                            TAG,
+                            "Startup tunnel validation aborted: no validated physical network " +
+                                "generation=$generation " +
+                                "timeout_ms=$UNDERLYING_NETWORK_WAIT_TIMEOUT_MS",
+                        )
+                        // This coroutine is the active healthCheckJob and
+                        // performStop() cancels that job. Delegate the stop to
+                        // a fresh scope child so cleanup cannot cancel itself
+                        // before accounting and service teardown finish.
+                        handleUnderlyingNetworkUnavailable(generation)
+                        return@launch
+                    }
                     SafeDiagnostics.trace(
                         TAG,
                         "Startup tunnel validation waiting for validated underlying internet",
                     )
-                    delay(TUNNEL_HEALTH_NO_NETWORK_RETRY_MS)
+                    delay(
+                        networkDeadline.nextCheckDelayMs(
+                            nowMs = now,
+                            maximumDelayMs = TUNNEL_HEALTH_NO_NETWORK_RETRY_MS,
+                        ),
+                    )
                     continue
                 }
 
@@ -1292,15 +1449,47 @@ class VpnConnectionManager @Inject constructor(
         healthCheckJob = scope.launch {
             delay(initialDelayMs)
             var source = initialSource
+            var networkDeadline: NetworkAvailabilityDeadline? = null
             while (gen == latestConnectionGeneration.get() && _connectionState.value is ConnectionState.Connected) {
                 if (!hasUnderlyingInternet()) {
+                    val now = SystemClock.elapsedRealtime()
+                    val deadline = networkDeadline ?: NetworkAvailabilityDeadline(
+                        startedAtMs = now,
+                        timeoutMs = UNDERLYING_NETWORK_WAIT_TIMEOUT_MS,
+                    ).also {
+                        networkDeadline = it
+                        SafeDiagnostics.trace(
+                            TAG,
+                            "Tunnel watchdog started physical-network deadline: " +
+                                "generation=$gen timeout_ms=$UNDERLYING_NETWORK_WAIT_TIMEOUT_MS",
+                        )
+                    }
+                    if (deadline.isExpired(now)) {
+                        SafeDiagnostics.warn(
+                            TAG,
+                            "Tunnel watchdog stopped VPN without validated physical network: " +
+                                "generation=$gen timeout_ms=$UNDERLYING_NETWORK_WAIT_TIMEOUT_MS",
+                        )
+                        // The service callback normally reaches the same
+                        // deadline first. This independent guard covers a rare
+                        // callback-registration failure and keeps the TUN from
+                        // blocking the device indefinitely.
+                        handleUnderlyingNetworkUnavailable(gen)
+                        return@launch
+                    }
                     SafeDiagnostics.trace(
                         TAG,
                         "Tunnel health cycle skipped: no validated underlying internet",
                     )
-                    delay(TUNNEL_HEALTH_NO_NETWORK_RETRY_MS)
+                    delay(
+                        deadline.nextCheckDelayMs(
+                            nowMs = now,
+                            maximumDelayMs = TUNNEL_HEALTH_NO_NETWORK_RETRY_MS,
+                        ),
+                    )
                     continue
                 }
+                networkDeadline = null
 
                 val probe = probeTunnelWithRetries(TUNNEL_HEALTH_ATTEMPTS)
                 logTunnelProbe(source, probe)
@@ -1831,6 +2020,7 @@ class VpnConnectionManager @Inject constructor(
         private const val TUNNEL_STARTUP_VALIDATION_TIMEOUT_MS = 6_000L
         private const val TUNNEL_STARTUP_VALIDATION_RETRY_MS = 750L
         private const val TUNNEL_STARTUP_VALIDATION_ATTEMPTS = 2
+        private const val UNDERLYING_NETWORK_WAIT_TIMEOUT_MS = 15_000L
         private const val QUALITY_TRAFFIC_CONFIRM_BYTES = 64L * 1024L
         private const val RECENT_TUNNEL_TRAFFIC_GRACE_MS = 60_000L
         private val TUNNEL_PROBE_URLS = listOf(

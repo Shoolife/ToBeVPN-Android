@@ -9,7 +9,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -70,15 +72,23 @@ class ServerQualityRepository @Inject constructor(
         servers: List<Server>,
         force: Boolean = false,
     ): Map<String, Long> = coroutineScope {
-        val results = servers.map { server ->
+        val uniqueEndpoints = servers.distinctBy(::qualityKey)
+        val probeSlots = Semaphore(MAX_CONCURRENT_PINGS)
+        val endpointPings = uniqueEndpoints.map { server ->
             async {
-                server.id to measurePing(server, force)
+                probeSlots.withPermit {
+                    qualityKey(server) to measurePing(server, force)
+                }
             }
         }.awaitAll().toMap()
+        val results = servers.associate { server ->
+            server.id to (endpointPings[qualityKey(server)] ?: -1L)
+        }
         val reachable = results.values.filter { it >= 0L }
         SafeDiagnostics.trace(
             TAG,
             "Server TCP probe batch completed: total=${results.size} " +
+                "unique_endpoints=${uniqueEndpoints.size} " +
                 "reachable=${reachable.size} unreachable=${results.size - reachable.size} " +
                 "min_ms=${reachable.minOrNull() ?: -1L} max_ms=${reachable.maxOrNull() ?: -1L}",
         )
@@ -88,12 +98,17 @@ class ServerQualityRepository @Inject constructor(
     suspend fun selectBestServer(
         servers: List<Server>,
         excludeServerId: String? = null,
+        excludeEndpoint: Server? = null,
         forceProbe: Boolean = false,
     ): Server? {
         val available = servers.filter { it.isAvailable }
         if (available.isEmpty()) return null
 
-        val preferredCandidates = available.filterNot { it.id == excludeServerId }
+        val excludedEndpointKey = excludeEndpoint?.let(::qualityKey)
+        val preferredCandidates = available.filterNot {
+            it.id == excludeServerId ||
+                (excludedEndpointKey != null && qualityKey(it) == excludedEndpointKey)
+        }
             .ifEmpty { available }
         val pings = measurePings(available, force = forceProbe)
         val records = stateMutex.withLock { loadStateLocked().records }
@@ -367,6 +382,7 @@ class ServerQualityRepository @Inject constructor(
 
     private companion object {
         const val PING_TIMEOUT_MS = 3_000
+        const val MAX_CONCURRENT_PINGS = 16
         const val PING_CACHE_TTL_MS = 15_000L
         const val PING_DIAGNOSTIC_INTERVAL_MS = 30_000L
         const val HEALTHY_WRITE_INTERVAL_MS = 5L * 60L * 1000L

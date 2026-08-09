@@ -84,6 +84,7 @@ fun StatsScreen(
 ) {
     val pageMaxWidth = responsiveMaxWidth(560.dp)
     val period by viewModel.period.collectAsStateWithLifecycle()
+    val serverSource by viewModel.serverSource.collectAsStateWithLifecycle()
     val stats by viewModel.stats.collectAsStateWithLifecycle()
     val totalBytes by viewModel.totalBytes.collectAsStateWithLifecycle()
 
@@ -133,6 +134,13 @@ fun StatsScreen(
                 )
 
                 Spacer(Modifier.height(12.dp))
+
+                StatsServerSourceSelector(
+                    selected = serverSource,
+                    onSelected = viewModel::setServerSource,
+                )
+
+                Spacer(Modifier.height(8.dp))
 
                 // Period selector
                 Row(
@@ -222,6 +230,55 @@ fun StatsScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StatsServerSourceSelector(
+    selected: StatsServerSource,
+    onSelected: (StatsServerSource) -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        StatsServerSource.entries.forEach { source ->
+            val accent = if (source == StatsServerSource.BASE_STATION_BYPASS) {
+                VpnGreen
+            } else {
+                VpnBlue
+            }
+            FilterChip(
+                selected = selected == source,
+                onClick = { onSelected(source) },
+                modifier = Modifier.weight(1f),
+                label = {
+                    Text(
+                        text = when (source) {
+                            StatsServerSource.ALL -> stringResource(R.string.stats_source_all)
+                            StatsServerSource.STANDARD -> stringResource(
+                                R.string.stats_source_standard,
+                            )
+                            StatsServerSource.BASE_STATION_BYPASS -> stringResource(
+                                R.string.stats_source_base_station_bypass,
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
+                },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = accent.copy(alpha = 0.25f),
+                    selectedLabelColor = accent,
+                ),
+            )
         }
     }
 }

@@ -2891,5 +2891,6 @@ private fun countryName(code: String): String = when (code.uppercase()) {
     "CA" -> stringResource(R.string.country_CA)
     "AU" -> stringResource(R.string.country_AU)
     "TR" -> stringResource(R.string.country_TR)
+    "UN" -> stringResource(R.string.country_UN)
     else -> code
 }

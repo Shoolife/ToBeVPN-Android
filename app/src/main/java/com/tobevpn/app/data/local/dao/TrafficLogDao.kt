@@ -79,10 +79,15 @@ interface TrafficLogDao {
             COUNT(*) AS sessions
         FROM traffic_log
         WHERE timestamp >= :dayStart AND timestamp < :dayEnd
+          AND (:serverSource IS NULL OR serverSource = :serverSource)
         GROUP BY period
         ORDER BY period ASC
     """)
-    fun getDeviceHourlyStats(dayStart: Long, dayEnd: Long): Flow<List<TrafficStat>>
+    fun getDeviceHourlyStats(
+        dayStart: Long,
+        dayEnd: Long,
+        serverSource: String?,
+    ): Flow<List<TrafficStat>>
 
     @Query("""
         SELECT
@@ -92,10 +97,16 @@ interface TrafficLogDao {
             COUNT(*) AS sessions
         FROM traffic_log
         WHERE timestamp >= :weekStart AND timestamp < :weekEnd
+          AND (:serverSource IS NULL OR serverSource = :serverSource)
         GROUP BY ((timestamp + :tzOffsetSec) / 86400)
         ORDER BY period ASC
     """)
-    fun getDeviceDailyStats(weekStart: Long, weekEnd: Long, tzOffsetSec: Long): Flow<List<TrafficStat>>
+    fun getDeviceDailyStats(
+        weekStart: Long,
+        weekEnd: Long,
+        tzOffsetSec: Long,
+        serverSource: String?,
+    ): Flow<List<TrafficStat>>
 
     @Query("""
         SELECT
@@ -105,11 +116,19 @@ interface TrafficLogDao {
             COUNT(*) AS sessions
         FROM traffic_log
         WHERE timestamp >= :monthStart AND timestamp < :monthEnd
+          AND (:serverSource IS NULL OR serverSource = :serverSource)
         GROUP BY period
         ORDER BY period ASC
     """)
-    fun getDeviceWeeklyStats(monthStart: Long, monthEnd: Long): Flow<List<TrafficStat>>
+    fun getDeviceWeeklyStats(
+        monthStart: Long,
+        monthEnd: Long,
+        serverSource: String?,
+    ): Flow<List<TrafficStat>>
 
-    @Query("SELECT COALESCE(SUM(bytesUsed), 0) FROM traffic_log")
-    fun getDeviceTotalBytes(): Flow<Long>
+    @Query(
+        "SELECT COALESCE(SUM(bytesUsed), 0) FROM traffic_log " +
+            "WHERE (:serverSource IS NULL OR serverSource = :serverSource)",
+    )
+    fun getDeviceTotalBytes(serverSource: String?): Flow<Long>
 }

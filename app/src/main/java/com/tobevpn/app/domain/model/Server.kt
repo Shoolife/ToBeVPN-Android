@@ -19,6 +19,7 @@ data class Server(
     val country: String = "",
     val ping: Long = -1,
     val isOnline: Boolean = true,
+    val source: ServerSource = ServerSource.STANDARD,
 ) {
     /**
      * True for the placeholder "subscription expired" entry the panel
@@ -70,4 +71,9 @@ data class Server(
             path == other.path &&
             mode == other.mode &&
             spx == other.spx
+}
+
+enum class ServerSource {
+    STANDARD,
+    BASE_STATION_BYPASS,
 }

@@ -7,10 +7,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Keeps a single best non-VPN underlay requested while the tunnel is
-         active, so LTE/Wi-Fi handovers are observed without treating every
-         simultaneously available network as the active upstream. -->
-    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <!-- Required so the in-app updater can hand the downloaded APK to the
          system package installer. The user still has to flip an explicit
          "Install unknown apps" toggle once on Android 8+. -->

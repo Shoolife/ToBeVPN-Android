@@ -5,13 +5,17 @@ import android.net.VpnService
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.repository.AuthRepository
+import com.tobevpn.app.data.repository.BaseStationBypassRepository
 import com.tobevpn.app.data.repository.ServerQualityRepository
 import com.tobevpn.app.data.repository.VpnRepository
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.domain.model.UserPlan
+import com.tobevpn.app.domain.model.canUseBaseStationBypass
 import com.tobevpn.app.presentation.servers.isSelectedServer
+import com.tobevpn.app.presentation.servers.automaticSelectionSource
 import com.tobevpn.app.presentation.servers.resolveSelectedServer
 import com.tobevpn.app.presentation.servers.serverSelectionKey
 import com.tobevpn.app.presentation.servers.stableServerId
@@ -31,6 +35,7 @@ class VpnToggleController @Inject constructor(
     private val authRepository: AuthRepository,
     private val prefsDataStore: PrefsDataStore,
     private val serverQualityRepository: ServerQualityRepository,
+    private val baseStationBypassRepository: BaseStationBypassRepository,
 ) {
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
     val currentServer: StateFlow<Server?> = connectionManager.currentServer
@@ -61,11 +66,22 @@ class VpnToggleController @Inject constructor(
     ) {
         if (!prefsDataStore.isAutomaticServerSelection()) return
         val selectedId = prefsDataStore.getSelectedServerId()
-        if (!forceSelection && selectedId != null && servers.any { it.id == selectedId && it.isAvailable }) {
+        val selectedKey = prefsDataStore.selectedServerKey.first()
+        val sourceServers = servers.filter {
+            it.source == automaticSelectionSource(selectedKey)
+        }
+        // MainViewModel refreshes the normal subscription on startup. Do not
+        // let that unrelated refresh overwrite automatic selection enabled in
+        // the bypass tab.
+        if (sourceServers.isEmpty()) return
+        if (!forceSelection && sourceServers.any {
+                it.isAvailable && isSelectedServer(it, selectedId, selectedKey)
+            }
+        ) {
             SafeDiagnostics.trace(TAG, "Automatic server selection kept the cached choice")
             return
         }
-        val best = serverQualityRepository.selectBestServer(servers) ?: return
+        val best = serverQualityRepository.selectBestServer(sourceServers) ?: return
         SafeDiagnostics.trace(
             TAG,
             "Automatic server selected: ${diagnosticServerDescriptor(best)}",
@@ -78,8 +94,14 @@ class VpnToggleController @Inject constructor(
 
     suspend fun resolveSelectedServerFromCache(): Server? {
         val selection = readSelection()
+        val standardServers = vpnRepository.getServers()
+        val bypassServers = if (authRepository.getAuthStateSnapshot().canUseBaseStationBypass()) {
+            baseStationBypassRepository.getServers()
+        } else {
+            emptyList()
+        }
         return resolveSelectedServer(
-            servers = vpnRepository.getServers(),
+            servers = standardServers + bypassServers,
             selectedId = selection.selectedId,
             selectedKey = selection.selectedKey,
             allowFallback = selection.automatic,
@@ -107,6 +129,20 @@ class VpnToggleController @Inject constructor(
             overwriteUsage = true,
             force = true,
         )
+
+        if (server?.source == ServerSource.BASE_STATION_BYPASS) {
+            if (!authRepository.getAuthStateSnapshot().canUseBaseStationBypass()) {
+                SafeDiagnostics.warn(TAG, "Base-station bypass selection rejected by access state")
+                return null
+            }
+            val cachedBypassServers = baseStationBypassRepository.getServers()
+            return resolveSelectedServer(
+                servers = cachedBypassServers,
+                selectedId = selection.selectedId,
+                selectedKey = selection.selectedKey,
+                allowFallback = false,
+            ) ?: server.takeIf(Server::isAvailable)
+        }
 
         val availableServers = vpnRepository.refreshServers()
             .getOrNull()
@@ -159,6 +195,9 @@ class VpnToggleController @Inject constructor(
     private suspend fun canUseSelectedServerFallback(server: Server?): Boolean {
         if (server?.isAvailable != true) return false
         val authState = authRepository.getAuthStateSnapshot()
+        if (server.source == ServerSource.BASE_STATION_BYPASS) {
+            return authState.canUseBaseStationBypass()
+        }
         return authState !is AuthState.Authenticated || authState.plan != UserPlan.EXPIRED
     }
 

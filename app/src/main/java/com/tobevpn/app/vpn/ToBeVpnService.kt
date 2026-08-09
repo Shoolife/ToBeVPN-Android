@@ -24,6 +24,7 @@ import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import com.tobevpn.app.util.SafeDiagnostics
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -46,9 +47,14 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     private var vpnInterface: ParcelFileDescriptor? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private val coreLifecycleLock = Any()
+    private val networkJobLock = Any()
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private val underlyingNetworkTracker = UnderlyingNetworkTracker<Network>()
+    private val physicalNetworkSelector = PhysicalNetworkSelector<Network>()
     private var networkHandoverJob: Job? = null
+    private var networkBaselineJob: Job? = null
+    private var underlyingNetworkTimeoutJob: Job? = null
+    @Volatile
+    private var networkBaselineReady = false
     private var lastUnderlyingNetworkSummary: String? = null
     private var activeConfigJson: String? = null
     private var activeServerName = ""
@@ -503,35 +509,12 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         val callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
                 if (cleanedUp) return
-                val availability = underlyingNetworkTracker.onAvailable(network)
-                setUnderlyingNetworks(arrayOf(network))
-                when (availability) {
-                    UnderlyingNetworkTracker.Availability.INITIAL -> {
-                        // requestNetwork immediately reports the network that
-                        // already exists. It is the baseline, not a handover.
-                        SafeDiagnostics.info(TAG, "Underlying network baseline established")
-                    }
-                    UnderlyingNetworkTracker.Availability.UNCHANGED -> {
-                        SafeDiagnostics.trace(TAG, "Underlying network callback repeated")
-                    }
-                    UnderlyingNetworkTracker.Availability.HANDOVER -> {
-                        val generation = activeConnectionGeneration
-                        SafeDiagnostics.info(
-                            TAG,
-                            "Underlying network handover detected: generation=$generation",
-                        )
-                        networkHandoverJob?.cancel()
-                        networkHandoverJob = serviceScope.launch {
-                            delay(NETWORK_HANDOVER_DEBOUNCE_MS)
-                            if (!cleanedUp &&
-                                generation == activeConnectionGeneration &&
-                                underlyingNetworkTracker.isAvailable(network)
-                            ) {
-                                connectionManager.handleUnderlyingNetworkHandover(generation)
-                            }
-                        }
-                    }
-                }
+                updatePhysicalNetworkCandidate(
+                    cm = cm,
+                    network = network,
+                    capabilities = cm.getNetworkCapabilities(network),
+                    source = "AVAILABLE",
+                )
             }
 
             override fun onCapabilitiesChanged(
@@ -539,52 +522,246 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                 networkCapabilities: NetworkCapabilities,
             ) {
                 if (cleanedUp) return
-                if (!underlyingNetworkTracker.isAvailable(network)) return
-                val summary = networkSummary(networkCapabilities)
-                if (summary != lastUnderlyingNetworkSummary) {
-                    lastUnderlyingNetworkSummary = summary
-                    SafeDiagnostics.info(TAG, "Underlying network changed: $summary")
-                }
-                setUnderlyingNetworks(arrayOf(network))
+                updatePhysicalNetworkCandidate(
+                    cm = cm,
+                    network = network,
+                    capabilities = networkCapabilities,
+                    source = "CAPABILITIES_CHANGED",
+                )
             }
 
             override fun onLost(network: Network) {
                 if (cleanedUp) return
-                if (!underlyingNetworkTracker.onLost(network)) return
-                SafeDiagnostics.warn(
-                    TAG,
-                    "Underlying network lost: previous=${lastUnderlyingNetworkSummary ?: "UNKNOWN"}",
-                )
-                networkHandoverJob?.cancel()
-                networkHandoverJob = null
-                lastUnderlyingNetworkSummary = null
-                setUnderlyingNetworks(null)
-            }
-
-            override fun onUnavailable() {
-                SafeDiagnostics.warn(TAG, "Underlying network request unavailable")
+                val change = physicalNetworkSelector.onLost(network)
+                if (physicalNetworkSelector.hasUsableNetwork()) {
+                    cancelUnderlyingNetworkTimeout()
+                } else {
+                    scheduleUnderlyingNetworkTimeout(cm, "LOST")
+                }
+                handlePhysicalNetworkSelectionChange(cm, change, "LOST")
             }
         }
         networkCallback = callback
         try {
-            // Unlike registerNetworkCallback(), requestNetwork() follows one
-            // best physical upstream instead of reporting every concurrently
-            // available Wi-Fi/cellular network as if each were active.
-            cm.requestNetwork(request, callback)
-            SafeDiagnostics.trace(TAG, "Underlying network request registered")
+            // This callback only listens to already-existing non-VPN networks.
+            // registerNetworkCallback is passive; unlike requestNetwork it
+            // cannot bring up or retain Wi-Fi/cellular. The selector above
+            // collapses concurrently visible Wi-Fi and cellular callbacks into
+            // one stable upstream.
+            cm.registerNetworkCallback(request, callback)
+            scheduleUnderlyingNetworkTimeout(cm, "CALLBACK_REGISTERED")
+            scheduleNetworkBaselineCompletion(cm)
+            SafeDiagnostics.trace(TAG, "Passive physical-network callback registered")
         } catch (error: Exception) {
             networkCallback = null
-            underlyingNetworkTracker.reset()
+            physicalNetworkSelector.reset()
             SafeDiagnostics.warn(
                 TAG,
-                "Underlying network request failed: ${SafeDiagnostics.failureCategory(error)}",
+                "Physical-network callback registration failed: " +
+                    SafeDiagnostics.failureCategory(error),
             )
         }
     }
 
+    private fun updatePhysicalNetworkCandidate(
+        cm: ConnectivityManager,
+        network: Network,
+        capabilities: NetworkCapabilities?,
+        source: String,
+    ) {
+        val validated = capabilities != null && isValidatedPhysicalInternet(capabilities)
+        val change = physicalNetworkSelector.update(
+            network = network,
+            validated = validated,
+            priority = capabilities?.let(::physicalNetworkPriority) ?: 0,
+        )
+
+        if (physicalNetworkSelector.hasUsableNetwork()) {
+            cancelUnderlyingNetworkTimeout()
+        } else {
+            scheduleUnderlyingNetworkTimeout(cm, source)
+        }
+
+        if (physicalNetworkSelector.isSelected(network) && capabilities != null) {
+            val summary = networkSummary(capabilities)
+            if (summary != lastUnderlyingNetworkSummary) {
+                lastUnderlyingNetworkSummary = summary
+                SafeDiagnostics.info(TAG, "Underlying network changed: $summary")
+            }
+        }
+        handlePhysicalNetworkSelectionChange(cm, change, source)
+    }
+
+    private fun handlePhysicalNetworkSelectionChange(
+        cm: ConnectivityManager,
+        change: PhysicalNetworkSelector.SelectionChange<Network>,
+        source: String,
+    ) {
+        when (change.type) {
+            PhysicalNetworkSelector.ChangeType.UNCHANGED -> Unit
+            PhysicalNetworkSelector.ChangeType.UNAVAILABLE -> {
+                SafeDiagnostics.warn(
+                    TAG,
+                    "Validated physical network unavailable: " +
+                        "previous=${lastUnderlyingNetworkSummary ?: "UNKNOWN"}",
+                )
+                cancelNetworkHandover()
+                lastUnderlyingNetworkSummary = null
+                scheduleUnderlyingNetworkTimeout(cm, source)
+            }
+            PhysicalNetworkSelector.ChangeType.INITIAL,
+            PhysicalNetworkSelector.ChangeType.HANDOVER -> {
+                val selected = change.current ?: return
+                val summary = cm.getNetworkCapabilities(selected)?.let(::networkSummary)
+                    ?: "capabilities=UNKNOWN"
+                lastUnderlyingNetworkSummary = summary
+                if (!networkBaselineReady) {
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "Physical-network baseline candidate updated: $summary",
+                    )
+                    return
+                }
+                val generation = activeConnectionGeneration
+                SafeDiagnostics.info(
+                    TAG,
+                    "Underlying network handover detected: generation=$generation " +
+                        "source=$source $summary",
+                )
+                scheduleNetworkHandover(selected, generation)
+            }
+        }
+    }
+
+    private fun scheduleNetworkBaselineCompletion(cm: ConnectivityManager) {
+        val previousJob: Job?
+        val replacementJob: Job
+        synchronized(networkJobLock) {
+            previousJob = networkBaselineJob
+            replacementJob = serviceScope.launch(start = CoroutineStart.LAZY) {
+                delay(NETWORK_CALLBACK_BASELINE_MS)
+                if (cleanedUp) return@launch
+                networkBaselineReady = true
+                val selected = physicalNetworkSelector.selectedOrNull()
+                if (selected == null) {
+                    SafeDiagnostics.warn(TAG, "Physical-network baseline has no validated network")
+                    scheduleUnderlyingNetworkTimeout(cm, "BASELINE_EMPTY")
+                } else {
+                    val summary = cm.getNetworkCapabilities(selected)?.let(::networkSummary)
+                        ?: "capabilities=UNKNOWN"
+                    lastUnderlyingNetworkSummary = summary
+                    cancelUnderlyingNetworkTimeout()
+                    SafeDiagnostics.info(TAG, "Underlying network baseline established: $summary")
+                }
+            }
+            networkBaselineJob = replacementJob
+        }
+        previousJob?.cancel()
+        replacementJob.start()
+    }
+
+    private fun scheduleNetworkHandover(network: Network, generation: Int) {
+        val previousJob: Job?
+        val replacementJob: Job
+        synchronized(networkJobLock) {
+            previousJob = networkHandoverJob
+            replacementJob = serviceScope.launch(start = CoroutineStart.LAZY) {
+                delay(NETWORK_HANDOVER_DEBOUNCE_MS)
+                if (!cleanedUp &&
+                    generation == activeConnectionGeneration &&
+                    physicalNetworkSelector.isSelected(network)
+                ) {
+                    connectionManager.handleUnderlyingNetworkHandover(generation)
+                }
+            }
+            networkHandoverJob = replacementJob
+        }
+        previousJob?.cancel()
+        replacementJob.start()
+    }
+
+    private fun cancelNetworkHandover() {
+        val job = synchronized(networkJobLock) {
+            networkHandoverJob.also { networkHandoverJob = null }
+        }
+        job?.cancel()
+    }
+
+    private fun cancelNetworkBaselineCompletion() {
+        val job = synchronized(networkJobLock) {
+            networkBaselineJob.also { networkBaselineJob = null }
+        }
+        job?.cancel()
+    }
+
+    private fun cancelUnderlyingNetworkTimeout() {
+        val job = synchronized(networkJobLock) {
+            underlyingNetworkTimeoutJob.also { underlyingNetworkTimeoutJob = null }
+        }
+        job?.cancel()
+    }
+
+    private fun scheduleUnderlyingNetworkTimeout(
+        cm: ConnectivityManager,
+        source: String,
+    ) {
+        if (cleanedUp || activeConnectionGeneration < 0) return
+        val generation = activeConnectionGeneration
+        synchronized(networkJobLock) {
+            if (underlyingNetworkTimeoutJob?.isCompleted == false) return
+            SafeDiagnostics.trace(
+                TAG,
+                "Underlying-network timeout scheduled: generation=$generation " +
+                    "source=$source delay_ms=$UNDERLYING_NETWORK_TIMEOUT_MS",
+            )
+            val job = serviceScope.launch(start = CoroutineStart.LAZY) {
+                delay(UNDERLYING_NETWORK_TIMEOUT_MS)
+                if (cleanedUp || generation != activeConnectionGeneration) return@launch
+                if (physicalNetworkSelector.hasUsableNetwork() ||
+                    hasValidatedPhysicalInternet(cm)
+                ) {
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "Underlying-network timeout cancelled by final validation",
+                    )
+                    return@launch
+                }
+                SafeDiagnostics.warn(
+                    TAG,
+                    "Validated physical network unavailable: generation=$generation " +
+                        "source=$source timeout_ms=$UNDERLYING_NETWORK_TIMEOUT_MS",
+                )
+                connectionManager.handleUnderlyingNetworkUnavailable(generation)
+            }
+            underlyingNetworkTimeoutJob = job
+            job.start()
+        }
+    }
+
+    private fun isValidatedPhysicalInternet(capabilities: NetworkCapabilities): Boolean =
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+            !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+
+    @Suppress("DEPRECATION")
+    private fun hasValidatedPhysicalInternet(cm: ConnectivityManager): Boolean =
+        cm.allNetworks.any { network ->
+            cm.getNetworkCapabilities(network)?.let(::isValidatedPhysicalInternet) == true
+        }
+
+    private fun physicalNetworkPriority(capabilities: NetworkCapabilities): Int = when {
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> 300
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> 200
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> 100
+        capabilities.hasTransport(NetworkCapabilities.TRANSPORT_BLUETOOTH) -> 50
+        else -> 0
+    }
+
     private fun unregisterNetworkCallback() {
-        networkHandoverJob?.cancel()
-        networkHandoverJob = null
+        cancelNetworkHandover()
+        cancelNetworkBaselineCompletion()
+        cancelUnderlyingNetworkTimeout()
+        networkBaselineReady = false
         networkCallback?.let { cb ->
             try {
                 val cm = getSystemService(ConnectivityManager::class.java)
@@ -592,9 +769,9 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             } catch (_: Exception) { }
             networkCallback = null
             lastUnderlyingNetworkSummary = null
-            SafeDiagnostics.trace(TAG, "Underlying network request unregistered")
+            SafeDiagnostics.trace(TAG, "Passive physical-network callback unregistered")
         }
-        underlyingNetworkTracker.reset()
+        physicalNetworkSelector.reset()
     }
 
     private fun networkSummary(capabilities: NetworkCapabilities): String {
@@ -756,6 +933,8 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         private const val CHANNEL_ID = "tobevpn_channel"
         private const val NOTIFICATION_ID = 1
         private const val NETWORK_HANDOVER_DEBOUNCE_MS = 1_000L
+        private const val NETWORK_CALLBACK_BASELINE_MS = 500L
+        private const val UNDERLYING_NETWORK_TIMEOUT_MS = 15_000L
         private val activeInstance = AtomicReference<ToBeVpnService?>()
 
         fun reloadActiveCore(

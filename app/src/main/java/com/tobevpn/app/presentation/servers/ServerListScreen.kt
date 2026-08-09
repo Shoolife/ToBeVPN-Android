@@ -10,6 +10,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -42,12 +45,14 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -72,8 +77,11 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.saveable.rememberSaveable
 import com.tobevpn.app.R
+import com.tobevpn.app.domain.model.BaseStationBypassAccess
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.presentation.components.countryFlagForUi
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
@@ -87,6 +95,11 @@ import kotlinx.coroutines.launch
 
 private val ServerFlagColumnWidth = 40.dp
 private val ServerFlagTextGap = 16.dp
+
+private enum class ServerCategory {
+    STANDARD,
+    BASE_STATION_BYPASS,
+}
 
 private data class ServerListMetrics(
     val maxListWidth: Dp,
@@ -158,9 +171,20 @@ private fun serverListMetrics(isTv: Boolean): ServerListMetrics =
 @Composable
 fun ServerListScreen(
     onBack: () -> Unit,
+    onNavigateToAuth: () -> Unit,
     viewModel: ServerListViewModel = hiltViewModel(),
 ) {
     val servers by viewModel.servers.collectAsStateWithLifecycle()
+    val baseStationBypassServers by
+        viewModel.baseStationBypassServers.collectAsStateWithLifecycle()
+    val baseStationBypassAccess by
+        viewModel.baseStationBypassAccess.collectAsStateWithLifecycle()
+    val baseStationBypassLoading by
+        viewModel.baseStationBypassLoading.collectAsStateWithLifecycle()
+    val baseStationBypassPingsMeasured by
+        viewModel.baseStationBypassPingsMeasured.collectAsStateWithLifecycle()
+    val baseStationBypassError by
+        viewModel.baseStationBypassError.collectAsStateWithLifecycle()
     val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
     val selectedServerKey by viewModel.selectedServerKey.collectAsStateWithLifecycle()
     val automaticServerSelection by viewModel.automaticServerSelection.collectAsStateWithLifecycle()
@@ -169,13 +193,40 @@ fun ServerListScreen(
     val error by viewModel.error.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val isTv = isTelevisionUi()
+    var selectedCategory by rememberSaveable { mutableStateOf(ServerCategory.STANDARD) }
+    val showingBypass = !isTv && selectedCategory == ServerCategory.BASE_STATION_BYPASS
+    val displayedServers = if (showingBypass) {
+        sortBaseStationBypassServersForDisplay(
+            servers = baseStationBypassServers,
+            pingsMeasured = baseStationBypassPingsMeasured,
+        )
+    } else {
+        servers
+    }
+    val displayedLoading = if (showingBypass) baseStationBypassLoading else isLoading
+    val automaticSource = automaticSelectionSource(selectedServerKey)
+    val automaticSelectionForCurrentTab = automaticServerSelection &&
+        automaticSource == if (showingBypass) {
+            ServerSource.BASE_STATION_BYPASS
+        } else {
+            ServerSource.STANDARD
+        }
+    val displayedError = if (showingBypass && baseStationBypassError) {
+        stringResource(R.string.base_station_bypass_load_error)
+    } else if (!showingBypass) {
+        error
+    } else {
+        null
+    }
     val refreshIconColor = if (isSystemInDarkTheme()) {
         MaterialTheme.colorScheme.onSurface
     } else {
         Color.Black
     }
     val metrics = serverListMetrics(isTv)
-    val listState = rememberLazyListState()
+    val standardListState = rememberLazyListState()
+    val bypassListState = rememberLazyListState()
+    val listState = if (showingBypass) bypassListState else standardListState
     val topFadeAlpha by animateFloatAsState(
         targetValue = if (listState.canScrollBackward) 1f else 0f,
         animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
@@ -188,8 +239,17 @@ fun ServerListScreen(
     )
 
     // Pause the 5-second ping loop while the list isn't on screen.
-    LifecycleResumeEffect(Unit) {
-        viewModel.setScreenActive(true)
+    LaunchedEffect(showingBypass, baseStationBypassAccess) {
+        if (showingBypass &&
+            baseStationBypassAccess == BaseStationBypassAccess.ALLOWED &&
+            baseStationBypassServers.isEmpty()
+        ) {
+            viewModel.refreshBaseStationBypassServers(force = false)
+        }
+    }
+
+    LifecycleResumeEffect(showingBypass) {
+        viewModel.setScreenActive(!showingBypass)
         onPauseOrDispose { viewModel.setScreenActive(false) }
     }
 
@@ -215,9 +275,19 @@ fun ServerListScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.refreshServers() }) {
+                    IconButton(
+                        onClick = {
+                            if (showingBypass) {
+                                viewModel.refreshBaseStationBypassServers()
+                            } else {
+                                viewModel.refreshServers()
+                            }
+                        },
+                        enabled = !showingBypass ||
+                            baseStationBypassAccess == BaseStationBypassAccess.ALLOWED,
+                    ) {
                         com.tobevpn.app.presentation.components.SpinningRefreshIcon(
-                            spinning = isLoading,
+                            spinning = displayedLoading,
                             contentDescription = stringResource(R.string.refresh),
                             tint = refreshIconColor,
                         )
@@ -226,36 +296,88 @@ fun ServerListScreen(
             )
         },
     ) { paddingValues ->
-        Box(
+        Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues),
         ) {
-            when {
-                isLoading && servers.isEmpty() -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.align(Alignment.Center),
-                    )
-                }
-                error != null && servers.isEmpty() -> {
-                    Text(
-                        text = error ?: stringResource(R.string.servers_load_error),
-                        modifier = Modifier.align(Alignment.Center),
-                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
-                        color = MaterialTheme.colorScheme.error,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-                servers.isEmpty() -> {
-                    Text(
-                        text = stringResource(R.string.servers_empty),
-                        modifier = Modifier.align(Alignment.Center),
-                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        textAlign = TextAlign.Center,
-                    )
-                }
-                else -> {
+            if (!isTv) {
+                ServerCategoryTabs(
+                    selected = selectedCategory,
+                    onSelected = { selectedCategory = it },
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+            ) {
+                when {
+                    showingBypass && baseStationBypassAccess == null -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+                    }
+                    showingBypass &&
+                        baseStationBypassAccess == BaseStationBypassAccess.AUTH_REQUIRED -> {
+                        BaseStationBypassAccessMessage(
+                            title = stringResource(R.string.base_station_bypass_auth_title),
+                            description = stringResource(
+                                R.string.base_station_bypass_auth_description,
+                            ),
+                            action = stringResource(R.string.base_station_bypass_auth_action),
+                            onAction = onNavigateToAuth,
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+                    }
+                    showingBypass &&
+                        baseStationBypassAccess == BaseStationBypassAccess.ACCESS_EXPIRED -> {
+                        BaseStationBypassAccessMessage(
+                            title = stringResource(R.string.base_station_bypass_expired_title),
+                            description = stringResource(
+                                R.string.base_station_bypass_expired_description,
+                            ),
+                            action = stringResource(
+                                R.string.base_station_bypass_standard_action,
+                            ),
+                            onAction = { selectedCategory = ServerCategory.STANDARD },
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+                    }
+                    displayedLoading && displayedServers.isEmpty() -> {
+                        CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+                    }
+                    displayedError != null && displayedServers.isEmpty() -> {
+                        Text(
+                            text = displayedError,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(horizontal = 32.dp),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
+                            color = MaterialTheme.colorScheme.error,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                    displayedServers.isEmpty() -> {
+                        Text(
+                            text = stringResource(
+                                if (showingBypass) {
+                                    R.string.base_station_bypass_empty
+                                } else {
+                                    R.string.servers_empty
+                                },
+                            ),
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(horizontal = 32.dp),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                    else -> {
                     val offlineText = stringResource(R.string.server_offline)
                     val unavailableText = stringResource(R.string.server_unavailable)
                     val titleStyle = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium)
@@ -278,12 +400,14 @@ fun ServerListScreen(
                         } else {
                             maxWidth
                         }
-                        val names = servers.map { serverDisplayName(it.name, it.country) }
+                        val names = displayedServers.map {
+                            serverDisplayName(it.name, it.country)
+                        }
                         val pingBlockWidthPx = with(density) {
                             (if (isAdminProfile) metrics.adminPingWidth else metrics.pingWidth)
                                 .roundToPx()
                         }
-                        val trailingWidthPx = servers.maxOf { server ->
+                        val trailingWidthPx = displayedServers.maxOf { server ->
                             when {
                                 !server.isSelectable -> textMeasurer.measure(
                                     text = AnnotatedString(offlineText),
@@ -356,22 +480,36 @@ fun ServerListScreen(
                                         .width(listWidth)
                                         .padding(vertical = metrics.listVerticalPadding),
                                 ) {
-                                    item(key = "automatic") {
+                                    item(
+                                        key = if (showingBypass) {
+                                            "automatic-bypass"
+                                        } else {
+                                            "automatic-standard"
+                                        },
+                                    ) {
                                         AutomaticServerItem(
-                                            selected = automaticServerSelection,
-                                            enabled = servers.any { it.isSelectable },
+                                            selected = automaticSelectionForCurrentTab,
+                                            enabled = !displayedLoading &&
+                                                displayedServers.any { it.isSelectable },
                                             metrics = metrics,
                                             isTv = isTv,
                                             onClick = {
                                                 scope.launch {
-                                                    if (viewModel.selectAutomaticServer()) {
-                                                        onBack()
+                                                    val selected = if (showingBypass) {
+                                                        viewModel
+                                                            .selectAutomaticBaseStationBypassServer()
+                                                    } else {
+                                                        viewModel.selectAutomaticServer()
                                                     }
+                                                    if (selected) onBack()
                                                 }
                                             },
                                         )
                                     }
-                                    items(servers, key = { serverListItemKey(it) }) { server ->
+                                    items(
+                                        displayedServers,
+                                        key = { serverListItemKey(it) },
+                                    ) { server ->
                                         val selectable = server.isSelectable
                                         ServerItem(
                                             server = server,
@@ -382,12 +520,22 @@ fun ServerListScreen(
                                             ),
                                             enabled = selectable,
                                             showEndpoint = isAdminProfile,
+                                            showStatus = true,
+                                            showUnmeasuredStatus = showingBypass &&
+                                                !baseStationBypassPingsMeasured &&
+                                                !displayedLoading,
+                                            forceStatusLoading = showingBypass && displayedLoading,
                                             serverNameFontSize = serverNameFontSize,
                                             metrics = metrics,
                                             isTv = isTv,
                                             onClick = {
                                                 scope.launch {
-                                                    if (viewModel.selectServer(server)) {
+                                                    val selected = if (showingBypass) {
+                                                        viewModel.selectBaseStationBypassServer(server)
+                                                    } else {
+                                                        viewModel.selectServer(server)
+                                                    }
+                                                    if (selected) {
                                                         onBack()
                                                     }
                                                 }
@@ -416,7 +564,134 @@ fun ServerListScreen(
                             )
                         }
                     }
+                    }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ServerCategoryTabs(
+    selected: ServerCategory,
+    onSelected: (ServerCategory) -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, shape)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        ServerCategory.entries.forEach { category ->
+            val isSelected = category == selected
+            val label = when (category) {
+                ServerCategory.STANDARD -> stringResource(R.string.server_tab_standard)
+                ServerCategory.BASE_STATION_BYPASS -> stringResource(
+                    R.string.server_tab_base_station_bypass,
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(
+                        if (isSelected) {
+                            VpnGreen.copy(
+                                alpha = if (isSystemInDarkTheme()) 0.22f else 0.16f,
+                            )
+                        } else {
+                            Color.Transparent
+                        },
+                    )
+                    .clickable { onSelected(category) }
+                    .padding(horizontal = 8.dp, vertical = 11.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = label,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isSelected) {
+                        if (isSystemInDarkTheme()) VpnGreen else Color(0xFF16652E)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BaseStationBypassAccessMessage(
+    title: String,
+    description: String,
+    action: String,
+    onAction: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier
+            .padding(horizontal = 24.dp)
+            .widthIn(max = 520.dp),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Text(
+                text = title,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+                fontWeight = FontWeight.Bold,
+                color = if (isSystemInDarkTheme()) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    Color.Black
+                },
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = description,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+            Button(
+                onClick = onAction,
+                modifier = Modifier
+                    .padding(top = 4.dp)
+                    .widthIn(min = 180.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = if (isSystemInDarkTheme()) {
+                    ButtonDefaults.buttonColors()
+                } else {
+                    ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF3F3F3F),
+                        contentColor = Color.White,
+                    )
+                },
+            ) {
+                Text(
+                    text = action,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -552,6 +827,9 @@ private fun ServerItem(
     selected: Boolean,
     enabled: Boolean,
     showEndpoint: Boolean,
+    showStatus: Boolean = true,
+    showUnmeasuredStatus: Boolean = false,
+    forceStatusLoading: Boolean = false,
     serverNameFontSize: TextUnit,
     metrics: ServerListMetrics,
     isTv: Boolean,
@@ -671,11 +949,19 @@ private fun ServerItem(
                     }
                 }
 
-                Spacer(modifier = Modifier.width(metrics.statusGap))
-                ServerStatusBlock(
-                    server = server,
-                    width = if (showEndpoint) metrics.adminPingWidth else metrics.pingWidth,
-                )
+                if (showStatus) {
+                    Spacer(modifier = Modifier.width(metrics.statusGap))
+                    val statusWidth = if (showEndpoint) {
+                        metrics.adminPingWidth
+                    } else {
+                        metrics.pingWidth
+                    }
+                    when {
+                        forceStatusLoading -> LoadingPingChip(width = statusWidth)
+                        showUnmeasuredStatus -> UnmeasuredPingChip(width = statusWidth)
+                        else -> ServerStatusBlock(server = server, width = statusWidth)
+                    }
+                }
             }
 
             if (showEndpoint) {
@@ -851,6 +1137,33 @@ private fun LoadingPingChip(width: Dp) {
 }
 
 @Composable
+private fun UnmeasuredPingChip(width: Dp) {
+    EndpointChipContainer(
+        modifier = Modifier
+            .width(width)
+            .height(38.dp),
+        shape = RoundedCornerShape(10.dp),
+    ) {
+        Text(
+            text = "—",
+            style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+        )
+        Text(
+            text = "ms",
+            style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
 private fun PingChip(
     ping: Long,
     width: Dp,
@@ -972,15 +1285,6 @@ private fun countryName(code: String): String = when (code.uppercase()) {
     "CA" -> stringResource(R.string.country_CA)
     "AU" -> stringResource(R.string.country_AU)
     "TR" -> stringResource(R.string.country_TR)
+    "UN" -> stringResource(R.string.country_UN)
     else -> code
 }
-
-private fun serverListItemKey(server: Server): String = listOf(
-    serverSelectionKey(server),
-    server.address,
-    server.port.toString(),
-    server.uuid,
-    server.sni,
-    server.publicKey,
-    server.shortId,
-).joinToString("|")

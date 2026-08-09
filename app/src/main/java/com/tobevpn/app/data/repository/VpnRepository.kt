@@ -8,6 +8,7 @@ import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.remote.SubscriptionPinger
 import com.tobevpn.app.data.remote.BotApi
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.vpn.VlessUrlParser
 import kotlinx.coroutines.CoroutineScope
@@ -142,6 +143,12 @@ class VpnRepository @Inject constructor(
 
         val cachedServers = serverDao.getAll()
         val cachedById = cachedServers.associateBy { it.id }
+        val cachedCountryByName = cachedServers
+            .filter { it.country.isNotBlank() }
+            .associateBy({ normalizedServerName(it.name) }, ServerEntity::country)
+        val cachedCountryByAddress = cachedServers
+            .filter { it.country.isNotBlank() }
+            .associateBy({ it.address.lowercase(Locale.ROOT) }, ServerEntity::country)
         val stableServers = keepStableServerOrder(
             servers = servers,
             cachedServers = cachedServers,
@@ -149,8 +156,15 @@ class VpnRepository @Inject constructor(
         val entities = stableServers.mapIndexed { index, server ->
             val id = serverId(server)
             val cached = cachedById[id]
+            val cachedCountry = cached?.country?.takeIf(String::isNotBlank)
+                ?: cachedCountryByName[normalizedServerName(server.name)]
+                ?: cachedCountryByAddress[server.address.lowercase(Locale.ROOT)]
             server.toEntity(
-                country = cached?.country.orEmpty(),
+                country = resolveRefreshedServerCountry(
+                    serverName = server.name,
+                    freshCountry = null,
+                    fallbackCountry = cachedCountry,
+                ),
                 isOnline = cached?.isOnline ?: true,
                 sortOrder = index,
             )
@@ -162,7 +176,12 @@ class VpnRepository @Inject constructor(
             TAG,
             "Server cache replaced: previous=${cachedServers.size} current=${entities.size}",
         )
-        enrichMetadataInBackground(shortUuid, generation, stableServers)
+        enrichMetadataInBackground(
+            shortUuid = shortUuid,
+            generation = generation,
+            servers = stableServers,
+            initialEntities = entities,
+        )
         return Result.success(entities.map { it.toDomain() })
     }
 
@@ -174,6 +193,7 @@ class VpnRepository @Inject constructor(
         shortUuid: String,
         generation: Long,
         servers: List<Server>,
+        initialEntities: List<ServerEntity>,
     ) {
         enrichmentScope.launch {
             try {
@@ -183,6 +203,7 @@ class VpnRepository @Inject constructor(
                     .filter { it.isDisabled || !it.isConnected }
                     .map { it.address }
                     .toSet()
+                val initialById = initialEntities.associateBy(ServerEntity::id)
 
                 val enriched = coroutineScope {
                     servers.mapIndexed { index, server ->
@@ -192,10 +213,15 @@ class VpnRepository @Inject constructor(
                             } catch (_: Exception) {
                                 server.address
                             }
+                            val freshCountry = countryByAddress[server.address]
+                                ?.takeIf(String::isNotBlank)
+                                ?: countryByAddress[resolvedIp]?.takeIf(String::isNotBlank)
                             server.toEntity(
-                                country = countryByAddress[server.address]
-                                    ?: countryByAddress[resolvedIp]
-                                    ?: "",
+                                country = resolveRefreshedServerCountry(
+                                    serverName = server.name,
+                                    freshCountry = freshCountry,
+                                    fallbackCountry = initialById[serverId(server)]?.country,
+                                ),
                                 isOnline = resolvedIp !in disabledNodeIps,
                                 sortOrder = index,
                             )
@@ -281,10 +307,7 @@ class VpnRepository @Inject constructor(
     }
 
     private fun serverNameParts(name: String): ServerNameParts {
-        val normalized = name
-            .trim()
-            .replace(Regex("\\s+"), " ")
-            .lowercase(Locale.ROOT)
+        val normalized = normalizedServerName(name)
         val match = TRAILING_NUMBER_REGEX.matchEntire(normalized)
         return if (match != null) {
             ServerNameParts(
@@ -333,6 +356,11 @@ class VpnRepository @Inject constructor(
 
     private fun serverId(server: Server) = "${server.address}:${server.port}:${server.sni}"
 
+    private fun normalizedServerName(name: String): String = name
+        .trim()
+        .replace(Regex("\\s+"), " ")
+        .lowercase(Locale.ROOT)
+
     private fun Server.toEntity(
         country: String,
         isOnline: Boolean,
@@ -376,5 +404,27 @@ class VpnRepository @Inject constructor(
         spx = spx,
         country = country,
         isOnline = isOnline,
+    )
+}
+
+/**
+ * A refresh is published before optional node metadata finishes. Resolve a
+ * country from the new profile label first, then from fresh metadata, and
+ * finally retain the previously displayed country. An empty/partial metadata
+ * response must never turn an existing flag back into the globe placeholder.
+ */
+internal fun resolveRefreshedServerCountry(
+    serverName: String,
+    freshCountry: String?,
+    fallbackCountry: String?,
+): String {
+    val freshResolved = serverCountryCodeForUi(
+        countryCode = freshCountry.orEmpty(),
+        serverName = serverName,
+    )
+    if (freshResolved.isNotBlank()) return freshResolved
+    return serverCountryCodeForUi(
+        countryCode = fallbackCountry.orEmpty(),
+        serverName = serverName,
     )
 }

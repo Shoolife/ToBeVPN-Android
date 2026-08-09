@@ -34,6 +34,8 @@ internal fun diagnosticServerDescriptor(server: Server): String {
         append(server.network.toDiagnosticToken())
         append(" security=")
         append(server.security.toDiagnosticToken())
+        append(" source=")
+        append(server.source.name.toDiagnosticToken())
         append(" panel_online=")
         append(server.isOnline)
     }

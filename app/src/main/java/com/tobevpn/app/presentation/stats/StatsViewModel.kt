@@ -4,11 +4,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tobevpn.app.data.local.dao.TrafficLogDao
 import com.tobevpn.app.data.local.dao.TrafficStat
+import com.tobevpn.app.domain.model.ServerSource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import java.util.Calendar
@@ -16,6 +18,12 @@ import java.util.TimeZone
 import javax.inject.Inject
 
 enum class StatsPeriod { DAY, WEEK, MONTH }
+
+enum class StatsServerSource(val databaseValue: String?) {
+    ALL(null),
+    STANDARD(ServerSource.STANDARD.name),
+    BASE_STATION_BYPASS(ServerSource.BASE_STATION_BYPASS.name),
+}
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
@@ -26,11 +34,18 @@ class StatsViewModel @Inject constructor(
     private val _period = MutableStateFlow(StatsPeriod.DAY)
     val period: StateFlow<StatsPeriod> = _period.asStateFlow()
 
-    val totalBytes: StateFlow<Long> = trafficLogDao.getDeviceTotalBytes()
+    private val _serverSource = MutableStateFlow(StatsServerSource.ALL)
+    val serverSource: StateFlow<StatsServerSource> = _serverSource.asStateFlow()
+
+    val totalBytes: StateFlow<Long> = _serverSource
+        .flatMapLatest { source ->
+            trafficLogDao.getDeviceTotalBytes(source.databaseValue)
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
     val stats: StateFlow<List<TrafficStat>> = _period
-        .flatMapLatest { p ->
+        .combine(_serverSource) { period, source -> period to source }
+        .flatMapLatest { (p, source) ->
             val cal = Calendar.getInstance(TimeZone.getDefault())
 
             when (p) {
@@ -41,7 +56,11 @@ class StatsViewModel @Inject constructor(
                     cal.set(Calendar.MILLISECOND, 0)
                     val dayStart = cal.timeInMillis / 1000
                     val dayEnd = dayStart + 86400
-                    trafficLogDao.getDeviceHourlyStats(dayStart, dayEnd)
+                    trafficLogDao.getDeviceHourlyStats(
+                        dayStart = dayStart,
+                        dayEnd = dayEnd,
+                        serverSource = source.databaseValue,
+                    )
                 }
                 StatsPeriod.WEEK -> {
                     cal.set(Calendar.HOUR_OF_DAY, 0)
@@ -61,7 +80,12 @@ class StatsViewModel @Inject constructor(
                     // off by an hour for half the year in DST zones.
                     val tzOffsetSec = TimeZone.getDefault()
                         .getOffset(System.currentTimeMillis()).toLong() / 1000
-                    trafficLogDao.getDeviceDailyStats(weekStart, weekEnd, tzOffsetSec)
+                    trafficLogDao.getDeviceDailyStats(
+                        weekStart = weekStart,
+                        weekEnd = weekEnd,
+                        tzOffsetSec = tzOffsetSec,
+                        serverSource = source.databaseValue,
+                    )
                 }
                 StatsPeriod.MONTH -> {
                     cal.set(Calendar.HOUR_OF_DAY, 0)
@@ -72,12 +96,20 @@ class StatsViewModel @Inject constructor(
                     val monthStart = cal.timeInMillis / 1000
                     cal.add(Calendar.MONTH, 1)
                     val monthEnd = cal.timeInMillis / 1000
-                    trafficLogDao.getDeviceWeeklyStats(monthStart, monthEnd)
+                    trafficLogDao.getDeviceWeeklyStats(
+                        monthStart = monthStart,
+                        monthEnd = monthEnd,
+                        serverSource = source.databaseValue,
+                    )
                 }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun setPeriod(p: StatsPeriod) {
         _period.value = p
+    }
+
+    fun setServerSource(source: StatsServerSource) {
+        _serverSource.value = source
     }
 }

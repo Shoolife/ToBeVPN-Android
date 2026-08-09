@@ -23,11 +23,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.outlined.HelpOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -77,24 +77,24 @@ private data class WhatsNewHighlight(
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
+        icon = Icons.Filled.Language,
+        titleRes = R.string.whats_new_bypass_title,
+        descriptionRes = R.string.whats_new_bypass_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.Speed,
+        titleRes = R.string.whats_new_auto_selection_title,
+        descriptionRes = R.string.whats_new_auto_selection_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.BarChart,
+        titleRes = R.string.whats_new_traffic_sources_title,
+        descriptionRes = R.string.whats_new_traffic_sources_desc,
+    ),
+    WhatsNewHighlight(
         icon = Icons.Filled.Tune,
-        titleRes = R.string.whats_new_connection_title,
-        descriptionRes = R.string.whats_new_connection_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Filled.CheckCircle,
-        titleRes = R.string.whats_new_validation_title,
-        descriptionRes = R.string.whats_new_validation_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Filled.AutoAwesome,
-        titleRes = R.string.whats_new_xray_title,
-        descriptionRes = R.string.whats_new_xray_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Outlined.HelpOutline,
-        titleRes = R.string.whats_new_help_title,
-        descriptionRes = R.string.whats_new_help_desc,
+        titleRes = R.string.whats_new_network_safety_title,
+        descriptionRes = R.string.whats_new_network_safety_desc,
     ),
 )
 
@@ -183,7 +183,7 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.AutoAwesome,
+                            imageVector = Icons.Filled.Language,
                             contentDescription = null,
                             tint = onAccent,
                             modifier = Modifier.size(30.dp),

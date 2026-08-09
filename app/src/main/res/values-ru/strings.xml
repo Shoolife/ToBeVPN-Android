@@ -46,6 +46,7 @@
     <string name="update_required_quit">Выйти</string>
     <string name="error_vpn_interface">Не удалось создать VPN-интерфейс</string>
     <string name="error_tunnel_unhealthy">Не удалось передать трафик через выбранный VPN-сервер. Попробуйте другой сервер.</string>
+    <string name="error_underlying_network_unavailable">Нет рабочего подключения к интернету. VPN остановлен, чтобы не блокировать сеть.</string>
     <string name="error_unknown">Неизвестная ошибка</string>
     <string name="error_network">Ошибка сети</string>
     <string name="error_auth_required">Требуется авторизация</string>
@@ -56,6 +57,17 @@
 
     <!-- Servers -->
     <string name="server_select">Выберите сервер</string>
+    <string name="server_tab_standard">Серверы</string>
+    <string name="server_tab_base_station_bypass">ОБХОД БС (beta)</string>
+    <string name="base_station_bypass_auth_title">Войдите для доступа к обходу БС</string>
+    <string name="base_station_bypass_auth_description">Функция доступна авторизованным пользователям: первые 3 дня бесплатно, затем — с активной подпиской.</string>
+    <string name="base_station_bypass_auth_action">Авторизоваться</string>
+    <string name="base_station_bypass_expired_title">Доступ к обходу БС закончился</string>
+    <string name="base_station_bypass_expired_description">Бесплатный период или подписка закончились. Продлите подписку на главном экране, чтобы снова открыть серверы.</string>
+    <string name="base_station_bypass_standard_action">Обычные серверы</string>
+    <string name="base_station_bypass_empty">Серверы обхода БС пока недоступны</string>
+    <string name="base_station_bypass_load_error">Не удалось обновить серверы обхода БС. Проверьте интернет и повторите попытку.</string>
+    <string name="error_base_station_bypass_access">Для обхода БС войдите в аккаунт. После входа первые 3 дня доступны бесплатно, далее нужна активная подписка.</string>
     <string name="server_auto">Автоматически</string>
     <string name="server_auto_description">Самый быстрый доступный сервер</string>
     <string name="server_auto_selected">Выбран автоматически</string>
@@ -469,14 +481,14 @@
     <string name="whats_new_version">Версия %1$s</string>
     <string name="whats_new_intro">Главные изменения установленной версии</string>
     <string name="whats_new_done">Понятно</string>
-    <string name="whats_new_connection_title">Надёжнее подключение</string>
-    <string name="whats_new_connection_desc">Убрали повторные перезапуски VPN при восстановлении и смене Wi‑Fi или мобильной сети. Проверки туннеля теперь выполняются последовательно.</string>
-    <string name="whats_new_validation_title">Только подтверждённое соединение</string>
-    <string name="whats_new_validation_desc">Статус «Подключено» появляется только после проверки реального трафика через сервер — неисправный сервер больше не выглядит рабочим.</string>
-    <string name="whats_new_xray_title">Обновлён Xray-core</string>
-    <string name="whats_new_xray_desc">Встроенное VPN-ядро обновлено до Xray-core 26.7.28. Автоматическая проверка обновлений теперь сверяет фактическую версию и исходный коммит ядра.</string>
-    <string name="whats_new_help_title">Поддержка и диагностика</string>
-    <string name="whats_new_help_desc">Добавили ответы о проверке соединения, статистике, быстрых настройках и логах, а окно диагностики сделали компактным и прокручиваемым.</string>
+    <string name="whats_new_bypass_title">Обход БС — beta</string>
+    <string name="whats_new_bypass_desc">Добавили отдельную вкладку серверов для режима «Обход БС». Она доступна после входа: первые 3 дня бесплатно, затем — по активной подписке.</string>
+    <string name="whats_new_auto_selection_title">Ping и автоматический выбор</string>
+    <string name="whats_new_auto_selection_desc">Задержка серверов обхода БС измеряется вручную по кнопке обновления. Автовыбор подключает самый быстрый доступный сервер, а недоступные перемещаются вниз списка.</string>
+    <string name="whats_new_traffic_sources_title">Раздельная статистика</string>
+    <string name="whats_new_traffic_sources_desc">В статистике появились фильтры «Всё», «Серверы» и «Обход БС», чтобы трафик разных типов подключений не смешивался.</string>
+    <string name="whats_new_network_safety_title">Стабильнее при смене сети</string>
+    <string name="whats_new_network_safety_desc">Улучшили выбор физической сети и восстановление VPN при переходе между Wi‑Fi и мобильным интернетом. Если интернет пропал, VPN больше не оставляет устройство с заблокированным трафиком.</string>
     <string name="version">Версия</string>
     <string name="xray">XRay</string>
     <string name="language">Язык</string>
@@ -499,6 +511,9 @@
     <!-- Stats -->
     <string name="stats_title">Статистика</string>
     <string name="stats_total_used">Всего использовано</string>
+    <string name="stats_source_all">Всё</string>
+    <string name="stats_source_standard">Серверы</string>
+    <string name="stats_source_base_station_bypass">Обход БС</string>
     <string name="stats_period_day">День</string>
     <string name="stats_period_week">Неделя</string>
     <string name="stats_period_month">Месяц</string>
@@ -579,6 +594,7 @@
     <string name="country_CA">Канада</string>
     <string name="country_AU">Австралия</string>
     <string name="country_TR">Турция</string>
+    <string name="country_UN">Международный сервер</string>
     <string name="country_to_NL">Нидерландам</string>
     <string name="country_to_DE">Германии</string>
     <string name="country_to_US">США</string>

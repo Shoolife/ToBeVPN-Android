@@ -8,6 +8,7 @@ import androidx.room.RoomDatabase
 import com.tobevpn.app.data.local.AppDatabase
 import com.tobevpn.app.data.local.DatabasePassphrase
 import com.tobevpn.app.data.local.dao.AppFilterDao
+import com.tobevpn.app.data.local.dao.BaseStationBypassServerDao
 import com.tobevpn.app.data.local.dao.PendingPromocodeActivationDao
 import com.tobevpn.app.data.local.dao.ServerDao
 import com.tobevpn.app.data.local.dao.SessionDao
@@ -50,6 +51,8 @@ object DatabaseModule {
                 MIGRATION_14_15,
                 MIGRATION_15_16,
                 MIGRATION_16_17,
+                MIGRATION_17_18,
+                MIGRATION_18_19,
             )
             .fallbackToDestructiveMigration(dropAllTables = false)
             // TRUNCATE journal (no WAL) — committed writes land in the
@@ -160,6 +163,48 @@ object DatabaseModule {
         }
     }
 
+    // v17 -> v18: keep the public base-station-bypass profile separate from
+    // the user's normal subscription servers. The database is SQLCipher-backed,
+    // so VLESS credentials are never copied into plaintext DataStore prefs.
+    private val MIGRATION_17_18 = object : Migration(17, 18) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS base_station_bypass_servers (" +
+                    "id TEXT NOT NULL PRIMARY KEY, " +
+                    "name TEXT NOT NULL, " +
+                    "address TEXT NOT NULL, " +
+                    "port INTEGER NOT NULL, " +
+                    "uuid TEXT NOT NULL, " +
+                    "flow TEXT NOT NULL, " +
+                    "security TEXT NOT NULL, " +
+                    "sni TEXT NOT NULL, " +
+                    "fingerprint TEXT NOT NULL, " +
+                    "publicKey TEXT NOT NULL, " +
+                    "shortId TEXT NOT NULL, " +
+                    "network TEXT NOT NULL, " +
+                    "path TEXT NOT NULL, " +
+                    "mode TEXT NOT NULL, " +
+                    "spx TEXT NOT NULL, " +
+                    "country TEXT NOT NULL, " +
+                    "isOnline INTEGER NOT NULL, " +
+                    "sortOrder INTEGER NOT NULL)",
+            )
+        }
+    }
+
+    // v18 -> v19: traffic history now distinguishes normal subscription
+    // servers from the Android-only base-station-bypass profile. The bypass
+    // feature did not exist before v18, so historical rows are correctly
+    // classified as STANDARD.
+    private val MIGRATION_18_19 = object : Migration(18, 19) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE traffic_log ADD COLUMN " +
+                    "serverSource TEXT NOT NULL DEFAULT 'STANDARD'",
+            )
+        }
+    }
+
     /**
      * Probe the DB file to make sure it's openable with the current
      * SQLCipher passphrase. Originally this wiped the file on any
@@ -225,4 +270,9 @@ object DatabaseModule {
     fun providePendingPromocodeActivationDao(
         db: AppDatabase,
     ): PendingPromocodeActivationDao = db.pendingPromocodeActivationDao()
+
+    @Provides
+    fun provideBaseStationBypassServerDao(
+        db: AppDatabase,
+    ): BaseStationBypassServerDao = db.baseStationBypassServerDao()
 }

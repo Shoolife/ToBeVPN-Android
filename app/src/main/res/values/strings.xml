@@ -44,6 +44,7 @@
     <string name="update_required_quit">Quit</string>
     <string name="error_vpn_interface">Failed to create VPN interface</string>
     <string name="error_tunnel_unhealthy">The selected VPN server is not passing traffic. Try another server.</string>
+    <string name="error_underlying_network_unavailable">No working internet connection. VPN was stopped so it cannot block the network.</string>
     <string name="error_unknown">Unknown error</string>
     <string name="error_network">Network error</string>
     <string name="error_auth_required">Sign-in required</string>
@@ -54,6 +55,17 @@
 
     <!-- Servers -->
     <string name="server_select">Select a server</string>
+    <string name="server_tab_standard">Servers</string>
+    <string name="server_tab_base_station_bypass">BASE STATION BYPASS (beta)</string>
+    <string name="base_station_bypass_auth_title">Sign in to use base-station bypass</string>
+    <string name="base_station_bypass_auth_description">This feature is available to signed-in users: the first 3 days are free, then an active subscription is required.</string>
+    <string name="base_station_bypass_auth_action">Sign in</string>
+    <string name="base_station_bypass_expired_title">Base-station bypass access has ended</string>
+    <string name="base_station_bypass_expired_description">Your free period or subscription has ended. Renew from the home screen to reopen these servers.</string>
+    <string name="base_station_bypass_standard_action">Standard servers</string>
+    <string name="base_station_bypass_empty">Base-station bypass servers are currently unavailable</string>
+    <string name="base_station_bypass_load_error">Could not refresh base-station bypass servers. Check your connection and try again.</string>
+    <string name="error_base_station_bypass_access">Sign in to use base-station bypass. The first 3 days are free; an active subscription is required afterwards.</string>
     <string name="server_auto">Automatic</string>
     <string name="server_auto_description">Fastest available server</string>
     <string name="server_auto_selected">Selected automatically</string>
@@ -455,14 +467,14 @@
     <string name="whats_new_version">Version %1$s</string>
     <string name="whats_new_intro">Highlights in the installed version</string>
     <string name="whats_new_done">Got it</string>
-    <string name="whats_new_connection_title">More reliable connections</string>
-    <string name="whats_new_connection_desc">Removed repeated VPN restarts during recovery and Wi‑Fi/mobile handovers. Tunnel checks now run sequentially.</string>
-    <string name="whats_new_validation_title">Only confirmed connections</string>
-    <string name="whats_new_validation_desc">“Connected” now appears only after real traffic through the server is verified, so a broken server no longer looks operational.</string>
-    <string name="whats_new_xray_title">Updated Xray-core</string>
-    <string name="whats_new_xray_desc">The bundled VPN engine is now Xray-core 26.7.28. Update checks now verify the actual embedded version and source commit.</string>
-    <string name="whats_new_help_title">Support and diagnostics</string>
-    <string name="whats_new_help_desc">Added answers about connection checks, statistics, Quick Settings, and logs, and made the diagnostics dialog compact and scrollable.</string>
+    <string name="whats_new_bypass_title">Base-station bypass — beta</string>
+    <string name="whats_new_bypass_desc">Added a separate server tab for BS bypass mode. It is available after sign-in: the first 3 days are free, then an active subscription is required.</string>
+    <string name="whats_new_auto_selection_title">Ping and automatic selection</string>
+    <string name="whats_new_auto_selection_desc">Base-station bypass latency is measured manually with Refresh. Automatic selection picks the fastest reachable server, while unavailable servers move to the bottom.</string>
+    <string name="whats_new_traffic_sources_title">Separate traffic statistics</string>
+    <string name="whats_new_traffic_sources_desc">Statistics now has All, Servers, and BS bypass filters, so traffic from different connection types is kept separate.</string>
+    <string name="whats_new_network_safety_title">Safer network handovers</string>
+    <string name="whats_new_network_safety_desc">Improved physical-network selection and VPN recovery when switching between Wi-Fi and mobile data. If internet access disappears, the VPN no longer leaves device traffic blocked.</string>
     <string name="version">Version</string>
     <string name="xray">XRay</string>
     <string name="language">Language</string>
@@ -485,6 +497,9 @@
     <!-- Stats -->
     <string name="stats_title">Statistics</string>
     <string name="stats_total_used">Total used</string>
+    <string name="stats_source_all">All</string>
+    <string name="stats_source_standard">Servers</string>
+    <string name="stats_source_base_station_bypass">BS bypass</string>
     <string name="stats_period_day">Day</string>
     <string name="stats_period_week">Week</string>
     <string name="stats_period_month">Month</string>
@@ -565,6 +580,7 @@
     <string name="country_CA">Canada</string>
     <string name="country_AU">Australia</string>
     <string name="country_TR">Turkey</string>
+    <string name="country_UN">International server</string>
     <string name="country_to_NL">the Netherlands</string>
     <string name="country_to_DE">Germany</string>
     <string name="country_to_US">the USA</string>

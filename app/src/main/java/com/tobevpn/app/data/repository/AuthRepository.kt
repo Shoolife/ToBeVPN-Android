@@ -84,6 +84,7 @@ class AuthRepository @Inject constructor(
     private val subscriptionPinger: SubscriptionPinger,
     private val bootstrapManager: BootstrapManager,
     private val vpnRepository: VpnRepository,
+    private val baseStationBypassRepository: BaseStationBypassRepository,
 ) {
     companion object {
         private const val TAG = "AuthRepository"
@@ -548,6 +549,7 @@ class AuthRepository @Inject constructor(
         prefsDataStore.clearPendingPurchase()
         prefsDataStore.clearSubscriptionSyncTimestamp()
         vpnRepository.clearCachedServers()
+        baseStationBypassRepository.clearCachedServers()
         bootstrapManager.clear()
         runCatching { bootstrapManager.ensureBootstrapped() }
         runCatching { ensurePanelUser() }
@@ -1173,6 +1175,7 @@ class AuthRepository @Inject constructor(
         prefsDataStore.clearPendingPurchase()
         prefsDataStore.clearSubscriptionSyncTimestamp()
         vpnRepository.clearCachedServers()
+        baseStationBypassRepository.clearCachedServers()
         bootstrapManager.clear()
         // Restore an anonymous device-session immediately so the UI can fetch
         // anon traffic/limits and server list without requiring an app restart.

@@ -14,6 +14,7 @@ import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.remote.dto.PurchasePlansDto
 import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.data.repository.AuthRepository
+import com.tobevpn.app.data.repository.BaseStationBypassRepository
 import com.tobevpn.app.data.repository.CurrencyRepository
 import com.tobevpn.app.data.repository.PurchaseRepository
 import com.tobevpn.app.data.repository.ServerQualityRepository
@@ -22,8 +23,10 @@ import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
+import com.tobevpn.app.domain.model.canUseBaseStationBypass
 import com.tobevpn.app.presentation.servers.resolveSelectedServer
 import com.tobevpn.app.util.DeepLinkBus
 import com.tobevpn.app.util.PaymentNotifications
@@ -71,6 +74,7 @@ class MainViewModel @Inject constructor(
     private val connectionManager: VpnConnectionManager,
     private val vpnToggleController: VpnToggleController,
     private val vpnRepository: VpnRepository,
+    private val baseStationBypassRepository: BaseStationBypassRepository,
     private val authRepository: AuthRepository,
     private val prefsDataStore: PrefsDataStore,
     private val currencyRepository: CurrencyRepository,
@@ -139,6 +143,21 @@ class MainViewModel @Inject constructor(
     // 0 = not measured yet, >0 = successful TCP connect latency, <0 = unreachable.
     private val _serverPing = MutableStateFlow<Long>(0)
 
+    val authState: StateFlow<AuthState> = authRepository.observeAuthState()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, AuthState.Anonymous)
+
+    private val selectableServers = combine(
+        vpnRepository.observeServers(),
+        baseStationBypassRepository.observeServers(),
+        authState,
+    ) { standardServers, bypassServers, state ->
+        if (state.canUseBaseStationBypass()) {
+            standardServers + bypassServers
+        } else {
+            standardServers
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     // Show the selected server (from prefs), not just the connected one.
     // Keep the raw selection fields too: a server can change because the
     // background subscription refresh rewrote the cache, and that must not be
@@ -147,7 +166,7 @@ class MainViewModel @Inject constructor(
         prefsDataStore.selectedServerId,
         prefsDataStore.selectedServerKey,
         prefsDataStore.automaticServerSelection,
-        vpnRepository.observeServers(),
+        selectableServers,
         _serverPing,
     ) { selectedId, selectedKey, automatic, servers, ping ->
         val server = resolveSelectedServer(
@@ -174,9 +193,6 @@ class MainViewModel @Inject constructor(
 
     val automaticServerSelection: StateFlow<Boolean> = prefsDataStore.automaticServerSelection
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
-
-    val authState: StateFlow<AuthState> = authRepository.observeAuthState()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AuthState.Anonymous)
 
     val subscriptionUsageBlocked: StateFlow<Boolean> = authRepository.observeSubscriptionUsageBlocked()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -399,7 +415,15 @@ class MainViewModel @Inject constructor(
                     return@launch
                 }
                 val server = vpnToggleController.prepareServerForConnect(selectedServer) ?: run {
-                    connectionManager.showError(context.getString(R.string.error_no_servers))
+                    val message = if (
+                        selectedServer.source == ServerSource.BASE_STATION_BYPASS &&
+                        !authRepository.getAuthStateSnapshot().canUseBaseStationBypass()
+                    ) {
+                        R.string.error_base_station_bypass_access
+                    } else {
+                        R.string.error_no_servers
+                    }
+                    connectionManager.showError(context.getString(message))
                     return@launch
                 }
                 if (request != connectionPreparationRequest || !_connectionPreparation.value) {

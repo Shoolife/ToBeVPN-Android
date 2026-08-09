@@ -101,6 +101,7 @@ fun AppNavHost(
         composable<ServerListRoute> {
             ServerListScreen(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
+                onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
             )
         }
         composable<AuthRoute> {

@@ -47,8 +47,8 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = versionCodeOverride ?: 64
-        versionName = "1.0.63"
+        versionCode = versionCodeOverride ?: 65
+        versionName = "1.0.64"
 
         // Direct APK releases can use the GitHub self-updater. Google Play
         // builds override this flag because Play policy requires updates to
@@ -98,6 +98,20 @@ android {
         buildConfigField("String", "FALLBACK_BOT_DOMAIN", "\"$fallbackBotDomain\"")
         buildConfigField("String", "FALLBACK_SUBS_DOMAIN", "\"$fallbackSubsDomain\"")
         buildConfigField("String", "SUBSCRIPTION_BASE_URL", "\"$subscriptionUrl\"")
+
+        // Public beta profile used by the mobile-only base-station bypass tab.
+        // It is intentionally configurable for CI/operators, but the current
+        // public endpoint is a usable default because client-side access gates
+        // cannot make a public URL secret in the application binary.
+        val baseStationBypassUrl = System.getenv("BASE_STATION_BYPASS_URL")
+            ?.takeIf { it.isNotBlank() }
+            ?: localProperties.getProperty("base.station.bypass.url")
+            ?: "https://functions.yandexcloud.net/d4evsj6lntd0e82tot67"
+        buildConfigField(
+            "String",
+            "BASE_STATION_BYPASS_URL",
+            "\"$baseStationBypassUrl\"",
+        )
     }
 
     // Release signing is opt-in — credentials live in local.properties (gitignored).
