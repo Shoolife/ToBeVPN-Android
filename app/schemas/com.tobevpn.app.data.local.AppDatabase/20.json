@@ -1,0 +1,608 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 20,
+    "identityHash": "7daf260124a2c58e0cb15a778ef8227c",
+    "entities": [
+      {
+        "tableName": "session",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`deviceId` TEXT NOT NULL, `authState` TEXT NOT NULL, `telegramId` INTEGER, `pendingAuthToken` TEXT, `userPlan` TEXT NOT NULL, `planDisplayName` TEXT, `planExpiresAt` INTEGER, `accessToken` TEXT, `refreshToken` TEXT, `accessExpiresAt` INTEGER, `refreshExpiresAt` INTEGER, `isLinked` INTEGER NOT NULL, `shortUuid` TEXT, `panelUserUuid` TEXT, `email` TEXT, `isAdminProfile` INTEGER NOT NULL, `telegramName` TEXT, `telegramUsername` TEXT, `photoUrl` TEXT, `subscriptionUrl` TEXT, PRIMARY KEY(`deviceId`))",
+        "fields": [
+          {
+            "fieldPath": "deviceId",
+            "columnName": "deviceId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "authState",
+            "columnName": "authState",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "telegramId",
+            "columnName": "telegramId",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "pendingAuthToken",
+            "columnName": "pendingAuthToken",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "userPlan",
+            "columnName": "userPlan",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "planDisplayName",
+            "columnName": "planDisplayName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "planExpiresAt",
+            "columnName": "planExpiresAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "accessToken",
+            "columnName": "accessToken",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "refreshToken",
+            "columnName": "refreshToken",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "accessExpiresAt",
+            "columnName": "accessExpiresAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "refreshExpiresAt",
+            "columnName": "refreshExpiresAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "isLinked",
+            "columnName": "isLinked",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shortUuid",
+            "columnName": "shortUuid",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "panelUserUuid",
+            "columnName": "panelUserUuid",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "email",
+            "columnName": "email",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "isAdminProfile",
+            "columnName": "isAdminProfile",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "telegramName",
+            "columnName": "telegramName",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "telegramUsername",
+            "columnName": "telegramUsername",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "photoUrl",
+            "columnName": "photoUrl",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "subscriptionUrl",
+            "columnName": "subscriptionUrl",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "deviceId"
+          ]
+        }
+      },
+      {
+        "tableName": "usage",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `bytesUsed` INTEGER NOT NULL, `bytesLimit` INTEGER NOT NULL, `timeUsedSeconds` INTEGER NOT NULL, `timeLimitSeconds` INTEGER NOT NULL, `lastConnectedAt` INTEGER, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bytesUsed",
+            "columnName": "bytesUsed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bytesLimit",
+            "columnName": "bytesLimit",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeUsedSeconds",
+            "columnName": "timeUsedSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeLimitSeconds",
+            "columnName": "timeLimitSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastConnectedAt",
+            "columnName": "lastConnectedAt",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "servers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `address` TEXT NOT NULL, `port` INTEGER NOT NULL, `uuid` TEXT NOT NULL, `flow` TEXT NOT NULL, `security` TEXT NOT NULL, `sni` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `publicKey` TEXT NOT NULL, `shortId` TEXT NOT NULL, `network` TEXT NOT NULL, `path` TEXT NOT NULL, `host` TEXT NOT NULL DEFAULT '', `alpn` TEXT NOT NULL DEFAULT '', `headerType` TEXT NOT NULL DEFAULT '', `serviceName` TEXT NOT NULL DEFAULT '', `extra` TEXT NOT NULL DEFAULT '', `mode` TEXT NOT NULL, `spx` TEXT NOT NULL, `country` TEXT NOT NULL, `isOnline` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "port",
+            "columnName": "port",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "flow",
+            "columnName": "flow",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "security",
+            "columnName": "security",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sni",
+            "columnName": "sni",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicKey",
+            "columnName": "publicKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shortId",
+            "columnName": "shortId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "network",
+            "columnName": "network",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "path",
+            "columnName": "path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "host",
+            "columnName": "host",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "alpn",
+            "columnName": "alpn",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "headerType",
+            "columnName": "headerType",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "serviceName",
+            "columnName": "serviceName",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "extra",
+            "columnName": "extra",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "mode",
+            "columnName": "mode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "spx",
+            "columnName": "spx",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "country",
+            "columnName": "country",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isOnline",
+            "columnName": "isOnline",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sortOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "traffic_log",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `bytesUsed` INTEGER NOT NULL, `timeUsedSeconds` INTEGER NOT NULL, `serverId` TEXT NOT NULL, `serverSource` TEXT NOT NULL DEFAULT 'STANDARD', `timestamp` INTEGER NOT NULL, `isAuthenticated` INTEGER NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "bytesUsed",
+            "columnName": "bytesUsed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timeUsedSeconds",
+            "columnName": "timeUsedSeconds",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverId",
+            "columnName": "serverId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "serverSource",
+            "columnName": "serverSource",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'STANDARD'"
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isAuthenticated",
+            "columnName": "isAuthenticated",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "app_filter",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, PRIMARY KEY(`packageName`))",
+        "fields": [
+          {
+            "fieldPath": "packageName",
+            "columnName": "packageName",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "packageName"
+          ]
+        }
+      },
+      {
+        "tableName": "pending_promocode_activations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`telegramId` INTEGER NOT NULL, `code` TEXT NOT NULL, `requestId` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`telegramId`, `code`))",
+        "fields": [
+          {
+            "fieldPath": "telegramId",
+            "columnName": "telegramId",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "code",
+            "columnName": "code",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestId",
+            "columnName": "requestId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAt",
+            "columnName": "createdAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "telegramId",
+            "code"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_pending_promocode_activations_requestId",
+            "unique": true,
+            "columnNames": [
+              "requestId"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_pending_promocode_activations_requestId` ON `${TABLE_NAME}` (`requestId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "base_station_bypass_servers",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `address` TEXT NOT NULL, `port` INTEGER NOT NULL, `uuid` TEXT NOT NULL, `flow` TEXT NOT NULL, `security` TEXT NOT NULL, `sni` TEXT NOT NULL, `fingerprint` TEXT NOT NULL, `publicKey` TEXT NOT NULL, `shortId` TEXT NOT NULL, `network` TEXT NOT NULL, `path` TEXT NOT NULL, `host` TEXT NOT NULL DEFAULT '', `alpn` TEXT NOT NULL DEFAULT '', `headerType` TEXT NOT NULL DEFAULT '', `serviceName` TEXT NOT NULL DEFAULT '', `extra` TEXT NOT NULL DEFAULT '', `mode` TEXT NOT NULL, `spx` TEXT NOT NULL, `country` TEXT NOT NULL, `isOnline` INTEGER NOT NULL, `sortOrder` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "name",
+            "columnName": "name",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "address",
+            "columnName": "address",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "port",
+            "columnName": "port",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "uuid",
+            "columnName": "uuid",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "flow",
+            "columnName": "flow",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "security",
+            "columnName": "security",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sni",
+            "columnName": "sni",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fingerprint",
+            "columnName": "fingerprint",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "publicKey",
+            "columnName": "publicKey",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "shortId",
+            "columnName": "shortId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "network",
+            "columnName": "network",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "path",
+            "columnName": "path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "host",
+            "columnName": "host",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "alpn",
+            "columnName": "alpn",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "headerType",
+            "columnName": "headerType",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "serviceName",
+            "columnName": "serviceName",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "extra",
+            "columnName": "extra",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "''"
+          },
+          {
+            "fieldPath": "mode",
+            "columnName": "mode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "spx",
+            "columnName": "spx",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "country",
+            "columnName": "country",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isOnline",
+            "columnName": "isOnline",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sortOrder",
+            "columnName": "sortOrder",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '7daf260124a2c58e0cb15a778ef8227c')"
+    ]
+  }
+}

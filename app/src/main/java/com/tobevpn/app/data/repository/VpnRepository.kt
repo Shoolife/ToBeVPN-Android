@@ -44,7 +44,7 @@ class VpnRepository @Inject constructor(
             // placeholder. refreshServers() already drops it before persisting,
             // but a stale Room row from the previous version of the app could
             // still surface it on first launch after upgrade.
-            entities.map { it.toDomain() }.filterNot { it.isSentinel }
+            entities.map { it.toDomain() }.filter { it.isAvailable }
         }
     }
 
@@ -124,11 +124,12 @@ class VpnRepository @Inject constructor(
         }
 
         val parsedServers = links.mapNotNull { link -> VlessUrlParser.parse(link) }
-        val servers = parsedServers.filterNot { it.isSentinel }
+        val servers = parsedServers.filter { it.isAvailable }
         SafeDiagnostics.trace(
             TAG,
             "Subscription server profile parsed: links=${links.size} " +
                 "parsed=${parsedServers.size} sentinel=${parsedServers.count(Server::isSentinel)} " +
+                "incompatible=${parsedServers.count { !it.isSentinel && !it.isXrayCompatible }} " +
                 "usable=${servers.size}",
         )
         // Drop the panel's "subscription expired" placeholder link so it
@@ -321,7 +322,7 @@ class VpnRepository @Inject constructor(
 
     private suspend fun getOwnedCachedServers(shortUuid: String): List<Server> {
         if (!prefsDataStore.isServerCacheOwner(shortUuid)) return emptyList()
-        return serverDao.getAll().map { it.toDomain() }.filterNot { it.isSentinel }
+        return serverDao.getAll().map { it.toDomain() }.filter { it.isAvailable }
     }
 
     private suspend fun keepOwnedCacheOnRefreshMiss(shortUuid: String): List<Server>? {
@@ -351,7 +352,7 @@ class VpnRepository @Inject constructor(
     )
 
     suspend fun getServers(): List<Server> {
-        return serverDao.getAll().map { it.toDomain() }
+        return serverDao.getAll().map { it.toDomain() }.filter { it.isAvailable }
     }
 
     private fun serverId(server: Server) = "${server.address}:${server.port}:${server.sni}"
@@ -379,6 +380,11 @@ class VpnRepository @Inject constructor(
         shortId = shortId,
         network = network,
         path = path,
+        host = host,
+        alpn = alpn,
+        headerType = headerType,
+        serviceName = serviceName,
+        extra = extra,
         mode = mode,
         spx = spx,
         country = country,
@@ -400,6 +406,11 @@ class VpnRepository @Inject constructor(
         shortId = shortId,
         network = network,
         path = path,
+        host = host,
+        alpn = alpn,
+        headerType = headerType,
+        serviceName = serviceName,
+        extra = extra,
         mode = mode,
         spx = spx,
         country = country,

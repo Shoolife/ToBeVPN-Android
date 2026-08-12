@@ -27,6 +27,7 @@ import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.domain.model.canUseBaseStationBypass
+import com.tobevpn.app.presentation.servers.automaticSelectionSource
 import com.tobevpn.app.presentation.servers.resolveSelectedServer
 import com.tobevpn.app.util.DeepLinkBus
 import com.tobevpn.app.util.PaymentNotifications
@@ -162,24 +163,25 @@ class MainViewModel @Inject constructor(
     // Keep the raw selection fields too: a server can change because the
     // background subscription refresh rewrote the cache, and that must not be
     // treated as a user-requested server switch while VPN is already running.
+    // Read id/key/mode from one DataStore emission. Combining three derived
+    // flows can briefly pair a new id with an old key during an atomic edit;
+    // that transient profile used to tear down the tunnel being started.
     private val selectedServerSnapshot: StateFlow<SelectedServerSnapshot> = combine(
-        prefsDataStore.selectedServerId,
-        prefsDataStore.selectedServerKey,
-        prefsDataStore.automaticServerSelection,
+        prefsDataStore.serverSelection,
         selectableServers,
         _serverPing,
-    ) { selectedId, selectedKey, automatic, servers, ping ->
+    ) { selection, servers, ping ->
         val server = resolveSelectedServer(
             servers = servers,
-            selectedId = selectedId,
-            selectedKey = selectedKey,
-            allowFallback = automatic,
+            selectedId = selection.selectedId,
+            selectedKey = selection.selectedKey,
+            allowFallback = selection.automatic,
         )
         SelectedServerSnapshot(
             server = server?.copy(ping = ping),
-            selectedId = selectedId,
-            selectedKey = selectedKey,
-            automatic = automatic,
+            selectedId = selection.selectedId,
+            selectedKey = selection.selectedKey,
+            automatic = selection.automatic,
         )
     }.stateIn(
         viewModelScope,
@@ -252,7 +254,11 @@ class MainViewModel @Inject constructor(
             // bot's full timeout budget before ever asking the subscription.
             val servers = coroutineScope {
                 val serversDeferred = async { vpnRepository.refreshServers() }
+                val bypassSelectionMigration = async {
+                    baseStationBypassRepository.migratePersistedSelectionOnStartup()
+                }
                 authRepository.syncSubscription(force = true)
+                bypassSelectionMigration.await()
                 serversDeferred.await().getOrNull().orEmpty()
             }
             vpnToggleController.ensureAutomaticServerSelected(servers, forceSelection = true)
@@ -411,21 +417,16 @@ class MainViewModel @Inject constructor(
                     return@launch
                 }
                 val selectedServer = currentServer.value ?: run {
-                    connectionManager.showError(context.getString(R.string.error_no_servers))
+                    connectionManager.showError(
+                        context.getString(missingSelectedServerMessage()),
+                    )
                     return@launch
                 }
                 val server = vpnToggleController.prepareServerForConnect(selectedServer) ?: run {
                     if (prefsDataStore.isUpdateRequired()) {
                         return@launch
                     }
-                    val message = if (
-                        selectedServer.source == ServerSource.BASE_STATION_BYPASS &&
-                        !authRepository.getAuthStateSnapshot().canUseBaseStationBypass()
-                    ) {
-                        R.string.error_base_station_bypass_access
-                    } else {
-                        R.string.error_no_servers
-                    }
+                    val message = missingSelectedServerMessage(selectedServer)
                     connectionManager.showError(context.getString(message))
                     return@launch
                 }
@@ -455,6 +456,21 @@ class MainViewModel @Inject constructor(
                     connectionPreparationJob = null
                 }
             }
+        }
+    }
+
+    private suspend fun missingSelectedServerMessage(server: Server? = null): Int {
+        val snapshot = selectedServerSnapshot.value
+        val bypassSelected = server?.source == ServerSource.BASE_STATION_BYPASS ||
+            automaticSelectionSource(snapshot.selectedKey) == ServerSource.BASE_STATION_BYPASS
+        if (!bypassSelected) return R.string.error_no_servers
+        if (!authRepository.getAuthStateSnapshot().canUseBaseStationBypass()) {
+            return R.string.error_base_station_bypass_access
+        }
+        return if (!snapshot.automatic) {
+            R.string.error_base_station_bypass_profile_changed
+        } else {
+            R.string.error_no_servers
         }
     }
 

@@ -23,11 +23,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -79,19 +79,19 @@ private data class WhatsNewHighlight(
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.SystemUpdate,
-        titleRes = R.string.whats_new_play_updates_title,
-        descriptionRes = R.string.whats_new_play_updates_desc,
+        icon = Icons.Filled.Sync,
+        titleRes = R.string.whats_new_vpn_stability_title,
+        descriptionRes = R.string.whats_new_vpn_stability_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.BugReport,
-        titleRes = R.string.whats_new_diagnostics_title,
-        descriptionRes = R.string.whats_new_diagnostics_desc,
+        icon = Icons.Filled.AutoAwesome,
+        titleRes = R.string.whats_new_bypass_reliability_title,
+        descriptionRes = R.string.whats_new_bypass_reliability_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.Info,
-        titleRes = R.string.whats_new_bypass_notice_title,
-        descriptionRes = R.string.whats_new_bypass_notice_desc,
+        icon = Icons.Filled.Tune,
+        titleRes = R.string.whats_new_profile_compatibility_title,
+        descriptionRes = R.string.whats_new_profile_compatibility_desc,
     ),
 )
 

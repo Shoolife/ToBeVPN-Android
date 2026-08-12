@@ -34,6 +34,16 @@ internal fun diagnosticServerDescriptor(server: Server): String {
         append(server.network.toDiagnosticToken())
         append(" security=")
         append(server.security.toDiagnosticToken())
+        // The uTLS camouflage is a public protocol parameter, not a
+        // credential, and it is the field needed to tell one failing REALITY
+        // configuration from another. Report the value actually handed to
+        // Xray, plus the declared one whenever it had to be overridden.
+        append(" fingerprint=")
+        append(server.effectiveFingerprint.toDiagnosticToken())
+        if (server.isFingerprintRepaired) {
+            append(" declared_fingerprint=")
+            append(server.fingerprint.toDiagnosticToken())
+        }
         append(" source=")
         append(server.source.name.toDiagnosticToken())
         append(" panel_online=")

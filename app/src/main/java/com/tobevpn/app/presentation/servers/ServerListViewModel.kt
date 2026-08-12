@@ -180,7 +180,6 @@ class ServerListViewModel @Inject constructor(
                         if (isAutomaticBaseStationBypassSelection()) {
                             persistBestBaseStationBypassServer(
                                 servers = serversToMeasure,
-                                pings = measuredPings,
                             )
                         }
                     }
@@ -230,16 +229,13 @@ class ServerListViewModel @Inject constructor(
             val servers = baseStationBypassRepository.getServers()
             if (servers.isEmpty()) return false
             val currentPings = _baseStationBypassPings.value
-            val pings = if (
-                currentPings.isNotEmpty() &&
+            val hasCurrentPings = currentPings.isNotEmpty() &&
                 servers.all { currentPings.containsKey(it.id) }
-            ) {
-                currentPings
-            } else {
+            if (!hasCurrentPings) {
                 serverQualityRepository.measurePings(servers = servers, force = true)
                     .also { _baseStationBypassPings.value = it }
             }
-            persistBestBaseStationBypassServer(servers = servers, pings = pings)
+            persistBestBaseStationBypassServer(servers = servers)
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
@@ -283,10 +279,12 @@ class ServerListViewModel @Inject constructor(
 
     private suspend fun persistBestBaseStationBypassServer(
         servers: List<Server>,
-        pings: Map<String, Long>,
     ): Boolean {
-        val best = bestBaseStationBypassServer(
-            servers.map { server -> server.copy(ping = pings[server.id] ?: 0L) },
+        // Reuse the just-populated 15-second TCP cache, but rank profiles with
+        // their independent tunnel success/failure history as well as latency.
+        val best = serverQualityRepository.selectBestServer(
+            servers = servers,
+            forceProbe = false,
         ) ?: return false
         prefsDataStore.setAutomaticSelectedServer(
             id = stableServerId(best),

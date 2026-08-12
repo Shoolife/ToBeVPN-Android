@@ -29,6 +29,37 @@ class DiagnosticServerDescriptorTest {
     }
 
     @Test
+    fun `descriptor reports the fingerprint handed to xray`() {
+        val descriptor = diagnosticServerDescriptor(
+            testServer().copy(security = "reality", fingerprint = "firefox"),
+        )
+
+        assertTrue(descriptor.contains("fingerprint=firefox"))
+        assertFalse(descriptor.contains("declared_fingerprint="))
+    }
+
+    @Test
+    fun `descriptor exposes both values when the fingerprint is repaired`() {
+        val descriptor = diagnosticServerDescriptor(
+            testServer().copy(security = "reality", fingerprint = "android"),
+        )
+
+        // The journal must show what Xray really used, and why it differs.
+        assertTrue(descriptor.contains("fingerprint=chrome"))
+        assertTrue(descriptor.contains("declared_fingerprint=android"))
+    }
+
+    @Test
+    fun `hostile fingerprint text cannot break the journal format`() {
+        val descriptor = diagnosticServerDescriptor(
+            testServer().copy(security = "tls", fingerprint = "ch rome\nsafari"),
+        )
+
+        assertTrue(descriptor.contains("fingerprint=ch_rome_safari"))
+        assertFalse(descriptor.contains("\n"))
+    }
+
+    @Test
     fun `different endpoints receive different references`() {
         val first = diagnosticServerDescriptor(testServer())
         val second = diagnosticServerDescriptor(

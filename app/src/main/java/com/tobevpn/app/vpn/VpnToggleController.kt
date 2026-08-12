@@ -23,7 +23,6 @@ import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.util.diagnosticServerDescriptor
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -54,8 +53,19 @@ class VpnToggleController @Inject constructor(
         connectionManager.stopVpn()
     }
 
-    fun showNoServersError() {
-        connectionManager.showError(context.getString(R.string.error_no_servers))
+    suspend fun showNoServersError() {
+        val selection = prefsDataStore.getServerSelection()
+        val bypassSelected = selection.selectedId?.startsWith("bs:") == true ||
+            selection.selectedKey?.startsWith("bs:") == true
+        val message = when {
+            !bypassSelected -> R.string.error_no_servers
+            !authRepository.getAuthStateSnapshot().canUseBaseStationBypass() ->
+                R.string.error_base_station_bypass_access
+            !selection.automatic ->
+                R.string.error_base_station_bypass_profile_changed
+            else -> R.string.error_no_servers
+        }
+        connectionManager.showError(context.getString(message))
     }
 
     fun showNetworkError() {
@@ -66,19 +76,41 @@ class VpnToggleController @Inject constructor(
         servers: List<Server>,
         forceSelection: Boolean = false,
     ) {
-        if (!prefsDataStore.isAutomaticServerSelection()) return
-        val selectedId = prefsDataStore.getSelectedServerId()
-        val selectedKey = prefsDataStore.selectedServerKey.first()
-        val sourceServers = servers.filter {
-            it.source == automaticSelectionSource(selectedKey)
+        val selection = prefsDataStore.getServerSelection()
+        if (!selection.automatic) return
+        val selectionSource = automaticSelectionSource(selection.selectedKey)
+        val sourceServers = when (selectionSource) {
+            ServerSource.STANDARD -> servers.filter {
+                it.source == ServerSource.STANDARD
+            }
+            ServerSource.BASE_STATION_BYPASS -> {
+                if (authRepository.getAuthStateSnapshot().canUseBaseStationBypass()) {
+                    baseStationBypassRepository.getServers()
+                } else {
+                    emptyList()
+                }
+            }
         }
         // MainViewModel refreshes the normal subscription on startup. Do not
         // let that unrelated refresh overwrite automatic selection enabled in
         // the bypass tab.
         if (sourceServers.isEmpty()) return
-        if (!forceSelection && sourceServers.any {
-                it.isAvailable && isSelectedServer(it, selectedId, selectedKey)
-            }
+        // A cold start must not probe the whole public bypass profile merely
+        // because MainViewModel refreshes the normal subscription. The final
+        // connect path refreshes and ranks bypass servers once; here we only
+        // replace a bypass selection when its exact profile disappeared.
+        val selectedStillAvailable = sourceServers.any {
+            it.isAvailable && isSelectedServer(
+                server = it,
+                selectedId = selection.selectedId,
+                selectedKey = selection.selectedKey,
+            )
+        }
+        if (shouldKeepAutomaticSelectionOnRefresh(
+                source = selectionSource,
+                forceSelection = forceSelection,
+                selectedStillAvailable = selectedStillAvailable,
+            )
         ) {
             SafeDiagnostics.trace(TAG, "Automatic server selection kept the cached choice")
             return
@@ -140,18 +172,30 @@ class VpnToggleController @Inject constructor(
             return null
         }
 
-        if (server?.source == ServerSource.BASE_STATION_BYPASS) {
+        val selectionSource = automaticSelectionSource(selection.selectedKey)
+        val preparingBypass = server?.source == ServerSource.BASE_STATION_BYPASS ||
+            selectionSource == ServerSource.BASE_STATION_BYPASS
+        if (preparingBypass) {
             if (!authRepository.getAuthStateSnapshot().canUseBaseStationBypass()) {
                 SafeDiagnostics.warn(TAG, "Base-station bypass selection rejected by access state")
                 return null
             }
             val cachedBypassServers = baseStationBypassRepository.getServers()
-            return resolveSelectedServer(
-                servers = cachedBypassServers,
+            val bypassServers = cachedBypassServers.ifEmpty {
+                baseStationBypassRepository.refreshServers().getOrNull().orEmpty()
+            }
+            // Do not run a full TCP sweep here. VpnConnectionManager refreshes
+            // the public profile after the access guard and performs the one
+            // authoritative quality-aware AUTO selection from that fresh list.
+            val resolved = resolveSelectedServer(
+                servers = bypassServers,
                 selectedId = selection.selectedId,
                 selectedKey = selection.selectedKey,
-                allowFallback = false,
-            ) ?: server.takeIf(Server::isAvailable)
+                allowFallback = selection.automatic,
+            )
+            return resolved ?: server?.takeIf {
+                it.source == ServerSource.BASE_STATION_BYPASS && it.isAvailable
+            }
         }
 
         val availableServers = vpnRepository.refreshServers()
@@ -212,10 +256,11 @@ class VpnToggleController @Inject constructor(
     }
 
     private suspend fun readSelection(): StoredServerSelection {
+        val selection = prefsDataStore.getServerSelection()
         return StoredServerSelection(
-            selectedId = prefsDataStore.getSelectedServerId(),
-            selectedKey = prefsDataStore.selectedServerKey.first(),
-            automatic = prefsDataStore.isAutomaticServerSelection(),
+            selectedId = selection.selectedId,
+            selectedKey = selection.selectedKey,
+            automatic = selection.automatic,
         )
     }
 
@@ -229,3 +274,10 @@ class VpnToggleController @Inject constructor(
         const val TAG = "VpnToggleController"
     }
 }
+
+internal fun shouldKeepAutomaticSelectionOnRefresh(
+    source: ServerSource,
+    forceSelection: Boolean,
+    selectedStillAvailable: Boolean,
+): Boolean = selectedStillAvailable &&
+    (source == ServerSource.BASE_STATION_BYPASS || !forceSelection)

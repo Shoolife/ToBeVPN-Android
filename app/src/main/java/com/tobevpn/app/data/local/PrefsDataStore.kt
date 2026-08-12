@@ -34,6 +34,17 @@ data class PendingPurchaseState(
     val baselineExpiresAt: Long?,
 )
 
+/**
+ * One atomic view of the three preferences that describe a server choice.
+ * Collecting the fields as separate flows can expose transient mixed values
+ * from one DataStore edit (new id with the old key, for example).
+ */
+data class ServerSelectionPreferences(
+    val selectedId: String?,
+    val selectedKey: String?,
+    val automatic: Boolean,
+)
+
 @Singleton
 class PrefsDataStore @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -95,11 +106,26 @@ class PrefsDataStore @Inject constructor(
 
     val deviceId: Flow<String?> = context.dataStore.data.map { it[Keys.DEVICE_ID] }
     val onboardingSeen: Flow<Boolean> = context.dataStore.data.map { it[Keys.ONBOARDING_SEEN] ?: false }
-    val selectedServerId: Flow<String?> = context.dataStore.data.map { it[Keys.SELECTED_SERVER_ID] }
-    val selectedServerKey: Flow<String?> = context.dataStore.data.map { it[Keys.SELECTED_SERVER_KEY] }
-    val automaticServerSelection: Flow<Boolean> = context.dataStore.data.map {
-        it[Keys.AUTOMATIC_SERVER_SELECTION] ?: (it[Keys.SELECTED_SERVER_ID] == null)
-    }
+    val serverSelection: Flow<ServerSelectionPreferences> = context.dataStore.data
+        .map { preferences ->
+            val selectedId = preferences[Keys.SELECTED_SERVER_ID]
+            ServerSelectionPreferences(
+                selectedId = selectedId,
+                selectedKey = preferences[Keys.SELECTED_SERVER_KEY],
+                automatic = preferences[Keys.AUTOMATIC_SERVER_SELECTION]
+                    ?: (selectedId == null),
+            )
+        }
+        .distinctUntilChanged()
+    val selectedServerId: Flow<String?> = serverSelection
+        .map { it.selectedId }
+        .distinctUntilChanged()
+    val selectedServerKey: Flow<String?> = serverSelection
+        .map { it.selectedKey }
+        .distinctUntilChanged()
+    val automaticServerSelection: Flow<Boolean> = serverSelection
+        .map { it.automatic }
+        .distinctUntilChanged()
     val emailPromptShown: Flow<Boolean> = context.dataStore.data.map { it[Keys.EMAIL_PROMPT_SHOWN] ?: false }
     val notificationPermissionPrompted: Flow<Boolean> = context.dataStore.data.map {
         it[Keys.NOTIFICATION_PERMISSION_PROMPTED] ?: false
@@ -259,13 +285,14 @@ class PrefsDataStore @Inject constructor(
     }
 
     suspend fun isAutomaticServerSelection(): Boolean {
-        val prefs = context.dataStore.data.first()
-        return prefs[Keys.AUTOMATIC_SERVER_SELECTION] ?: (prefs[Keys.SELECTED_SERVER_ID] == null)
+        return getServerSelection().automatic
     }
 
     suspend fun getSelectedServerId(): String? {
-        return context.dataStore.data.first()[Keys.SELECTED_SERVER_ID]
+        return getServerSelection().selectedId
     }
+
+    suspend fun getServerSelection(): ServerSelectionPreferences = serverSelection.first()
 
     suspend fun getServerQualityState(): String? {
         return context.dataStore.data.first()[Keys.SERVER_QUALITY_STATE]

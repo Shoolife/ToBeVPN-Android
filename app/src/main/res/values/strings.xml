@@ -46,6 +46,7 @@
     <string name="error_vpn_interface">Failed to create VPN interface</string>
     <string name="error_tunnel_unhealthy">The selected VPN server is not passing traffic. Try another server.</string>
     <string name="error_underlying_network_unavailable">No working internet connection. VPN was stopped so it cannot block the network.</string>
+    <string name="vpn_waiting_for_network_resume">Waiting for network — VPN will reconnect automatically</string>
     <string name="error_unknown">Unknown error</string>
     <string name="error_network">Network error</string>
     <string name="error_auth_required">Sign-in required</string>
@@ -57,9 +58,9 @@
     <!-- Servers -->
     <string name="server_select">Select a server</string>
     <string name="server_tab_standard">Servers</string>
-    <string name="server_tab_base_station_bypass">BASE STATION BYPASS (beta)</string>
+    <string name="server_tab_base_station_bypass">Base station bypass beta</string>
     <string name="base_station_bypass_auth_title">Sign in to use base-station bypass</string>
-    <string name="base_station_bypass_auth_description">This feature is available to signed-in users: the first 3 days are free, then an active subscription is required.</string>
+    <string name="base_station_bypass_auth_description">This feature is available to signed-in users with an active subscription.</string>
     <string name="base_station_bypass_auth_action">Sign in</string>
     <string name="base_station_bypass_expired_title">Base-station bypass access has ended</string>
     <string name="base_station_bypass_expired_description">Your free period or subscription has ended. Renew from the home screen to reopen these servers.</string>
@@ -68,8 +69,11 @@
     <string name="base_station_bypass_load_error">Could not refresh base-station bypass servers. Check your connection and try again.</string>
     <string name="base_station_bypass_experimental_notice">Experimental feature: it may be unstable. We recommend using it only on mobile data when internet access is restricted to allowlisted services.</string>
     <string name="error_base_station_bypass_access">Sign in to use base-station bypass. The first 3 days are free; an active subscription is required afterwards.</string>
+    <string name="error_base_station_bypass_profile_changed">The selected base-station bypass profile is no longer available. Open the server list and choose another profile.</string>
     <string name="server_auto">Automatic</string>
     <string name="server_auto_description">Fastest available server</string>
+    <string name="server_auto_active_standard">Active in the Servers tab</string>
+    <string name="server_auto_active_bypass">Active in the Base station bypass tab</string>
     <string name="server_auto_selected">Selected automatically</string>
     <string name="server_offline">Offline</string>
     <string name="server_unavailable">Unavailable</string>
@@ -469,12 +473,12 @@
     <string name="whats_new_version">Version %1$s</string>
     <string name="whats_new_intro">Highlights in the installed version</string>
     <string name="whats_new_done">Got it</string>
-    <string name="whats_new_play_updates_title">Updates through Google Play</string>
-    <string name="whats_new_play_updates_desc">If the installed version is no longer supported by the server, the app will require an update and open the official ToBeVPN page in Google Play.</string>
-    <string name="whats_new_diagnostics_title">Extended diagnostics</string>
-    <string name="whats_new_diagnostics_desc">The local journal now records connection stages, VPN and network state, and failure causes in greater detail. Sensitive data and traffic contents are never recorded.</string>
-    <string name="whats_new_bypass_notice_title">Base-station bypass — beta</string>
-    <string name="whats_new_bypass_notice_desc">Added a clear experimental-mode notice and guidance to use it on mobile data when internet access is restricted to allowlisted services.</string>
+    <string name="whats_new_vpn_stability_title">More stable VPN connections</string>
+    <string name="whats_new_vpn_stability_desc">Removed unnecessary reconnects during startup and made VPN recovery after a temporary network loss safer.</string>
+    <string name="whats_new_bypass_reliability_title">More reliable automatic selection</string>
+    <string name="whats_new_bypass_reliability_desc">Fixed base-station bypass server selection and reconnection: the app no longer switches servers mid-startup and chooses a working profile more reliably.</string>
+    <string name="whats_new_profile_compatibility_title">Broader server compatibility</string>
+    <string name="whats_new_profile_compatibility_desc">Improved server profile handling and compatibility with different transports and connection settings.</string>
     <string name="version">Version</string>
     <string name="xray">XRay</string>
     <string name="language">Language</string>

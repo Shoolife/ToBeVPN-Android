@@ -53,6 +53,7 @@ object DatabaseModule {
                 MIGRATION_16_17,
                 MIGRATION_17_18,
                 MIGRATION_18_19,
+                MIGRATION_19_20,
             )
             .fallbackToDestructiveMigration(dropAllTables = false)
             // TRUNCATE journal (no WAL) — committed writes land in the
@@ -202,6 +203,20 @@ object DatabaseModule {
                 "ALTER TABLE traffic_log ADD COLUMN " +
                     "serverSource TEXT NOT NULL DEFAULT 'STANDARD'",
             )
+        }
+    }
+
+    // v19 -> v20: retain transport parameters used by WS/TLS/XHTTP profiles.
+    // Both caches share the Server domain model, so migrate them together.
+    internal val MIGRATION_19_20 = object : Migration(19, 20) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            listOf("servers", "base_station_bypass_servers").forEach { table ->
+                db.execSQL("ALTER TABLE $table ADD COLUMN host TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE $table ADD COLUMN alpn TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE $table ADD COLUMN headerType TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE $table ADD COLUMN serviceName TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE $table ADD COLUMN extra TEXT NOT NULL DEFAULT ''")
+            }
         }
     }
 

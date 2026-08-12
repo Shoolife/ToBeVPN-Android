@@ -64,6 +64,8 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     @Volatile
     private var cleanedUp = false
     @Volatile
+    private var waitingForNetworkResume = false
+    @Volatile
     private var activeConnectionGeneration = -1
 
     override fun onCreate() {
@@ -112,6 +114,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                     .ifBlank { "server_ref=UNKNOWN" }
                 synchronized(coreLifecycleLock) {
                     cleanedUp = false
+                    waitingForNetworkResume = false
                     activeConnectionGeneration = generation
                 }
                 tunnelPipelineStartedAt = SystemClock.elapsedRealtime()
@@ -355,6 +358,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                 return
             }
             cleanedUp = true
+            waitingForNetworkResume = false
             cleanedGeneration = activeConnectionGeneration
             SafeDiagnostics.info(
                 TAG,
@@ -401,6 +405,47 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     }
 
     /**
+     * Remove the dead TUN and native loop while deliberately retaining this
+     * already-running foreground service. Android 12+ can reject a brand-new
+     * foreground-service start from a background network callback; retaining
+     * the service lets the manager deliver a normal start command when a
+     * validated physical network returns.
+     */
+    private fun pauseTunnelForNetworkResume(expectedGeneration: Int): Boolean {
+        val loopGenerationToStop: Int
+        val tunToClose: ParcelFileDescriptor?
+        synchronized(coreLifecycleLock) {
+            if (cleanedUp ||
+                waitingForNetworkResume ||
+                expectedGeneration != activeConnectionGeneration
+            ) {
+                return false
+            }
+            waitingForNetworkResume = true
+            loopGenerationToStop = XRayCore.currentLoopGeneration
+            tunToClose = vpnInterface
+            vpnInterface = null
+            activeConfigJson = null
+            activeServerName = ""
+            activeServerCountry = ""
+            activeServerDiagnostic = "server_ref=UNKNOWN"
+        }
+        unregisterNetworkCallback()
+        synchronized(coreLifecycleLock) {
+            runCatching { tunToClose?.close() }
+            XRayCore.stopLoop(loopGenerationToStop)
+            if (cleanedUp || !waitingForNetworkResume) return false
+            updateNotification(getString(R.string.vpn_waiting_for_network_resume))
+        }
+        SafeDiagnostics.warn(
+            TAG,
+            "VPN tunnel paused while foreground service waits for physical network: " +
+                "generation=$expectedGeneration loop_generation=$loopGenerationToStop",
+        )
+        return true
+    }
+
+    /**
      * Restarts only the native Xray loop while retaining the established TUN,
      * foreground service and Android VPN permission. This is used for a real
      * Wi-Fi/mobile handover and for a bounded watchdog retry; recreating the
@@ -415,7 +460,10 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         reason: String,
         showConnectedNotification: Boolean,
     ): Boolean = synchronized(coreLifecycleLock) {
-        if (cleanedUp || expectedGeneration != activeConnectionGeneration) {
+        if (cleanedUp ||
+            waitingForNetworkResume ||
+            expectedGeneration != activeConnectionGeneration
+        ) {
             SafeDiagnostics.trace(
                 TAG,
                 "XRay core reload rejected as stale: reason=$reason " +
@@ -707,31 +755,50 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     ) {
         if (cleanedUp || activeConnectionGeneration < 0) return
         val generation = activeConnectionGeneration
+        val startedAtMs = SystemClock.elapsedRealtime()
         synchronized(networkJobLock) {
             if (underlyingNetworkTimeoutJob?.isCompleted == false) return
+            val initialAvailability = underlyingNetworkAvailability(cm)
+            val initialTimeoutMs = UnderlyingNetworkPolicy.timeoutMs(initialAvailability)
             SafeDiagnostics.trace(
                 TAG,
                 "Underlying-network timeout scheduled: generation=$generation " +
-                    "source=$source delay_ms=$UNDERLYING_NETWORK_TIMEOUT_MS",
+                    "source=$source availability=${initialAvailability.name} " +
+                    "delay_ms=$initialTimeoutMs",
             )
             val job = serviceScope.launch(start = CoroutineStart.LAZY) {
-                delay(UNDERLYING_NETWORK_TIMEOUT_MS)
-                if (cleanedUp || generation != activeConnectionGeneration) return@launch
-                if (physicalNetworkSelector.hasUsableNetwork() ||
-                    hasValidatedPhysicalInternet(cm)
-                ) {
-                    SafeDiagnostics.trace(
-                        TAG,
-                        "Underlying-network timeout cancelled by final validation",
+                while (!cleanedUp && generation == activeConnectionGeneration) {
+                    val availability = underlyingNetworkAvailability(cm)
+                    if (availability == UnderlyingNetworkAvailability.VALIDATED) {
+                        SafeDiagnostics.trace(
+                            TAG,
+                            "Underlying-network timeout cancelled by final validation",
+                        )
+                        return@launch
+                    }
+                    val timeoutMs = UnderlyingNetworkPolicy.timeoutMs(availability)
+                    val nowMs = SystemClock.elapsedRealtime()
+                    val deadline = NetworkAvailabilityDeadline(
+                        startedAtMs = startedAtMs,
+                        timeoutMs = timeoutMs,
                     )
-                    return@launch
+                    if (deadline.isExpired(nowMs)) {
+                        SafeDiagnostics.warn(
+                            TAG,
+                            "Validated physical network unavailable: generation=$generation " +
+                                "source=$source availability=${availability.name} " +
+                                "timeout_ms=$timeoutMs",
+                        )
+                        connectionManager.handleUnderlyingNetworkUnavailable(generation)
+                        return@launch
+                    }
+                    delay(
+                        deadline.nextCheckDelayMs(
+                            nowMs = nowMs,
+                            maximumDelayMs = UNDERLYING_NETWORK_RECHECK_MS,
+                        ),
+                    )
                 }
-                SafeDiagnostics.warn(
-                    TAG,
-                    "Validated physical network unavailable: generation=$generation " +
-                        "source=$source timeout_ms=$UNDERLYING_NETWORK_TIMEOUT_MS",
-                )
-                connectionManager.handleUnderlyingNetworkUnavailable(generation)
             }
             underlyingNetworkTimeoutJob = job
             job.start()
@@ -744,10 +811,28 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
 
     @Suppress("DEPRECATION")
-    private fun hasValidatedPhysicalInternet(cm: ConnectivityManager): Boolean =
-        cm.allNetworks.any { network ->
-            cm.getNetworkCapabilities(network)?.let(::isValidatedPhysicalInternet) == true
+    private fun underlyingNetworkAvailability(
+        cm: ConnectivityManager,
+    ): UnderlyingNetworkAvailability {
+        var hasPhysicalInternet = false
+        cm.allNetworks.forEach { network ->
+            val capabilities = cm.getNetworkCapabilities(network) ?: return@forEach
+            if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) ||
+                !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            ) {
+                return@forEach
+            }
+            hasPhysicalInternet = true
+            if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+                return UnderlyingNetworkAvailability.VALIDATED
+            }
         }
+        return if (hasPhysicalInternet) {
+            UnderlyingNetworkAvailability.UNVALIDATED
+        } else {
+            UnderlyingNetworkAvailability.UNAVAILABLE
+        }
+    }
 
     private fun physicalNetworkPriority(capabilities: NetworkCapabilities): Int = when {
         capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> 300
@@ -883,15 +968,19 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     override fun onDestroy() {
         activeInstance.compareAndSet(this, null)
         val generationAtDestroy = activeConnectionGeneration
+        val wasWaitingForNetwork = waitingForNetworkResume
         val hadActiveSession = !cleanedUp && (vpnInterface != null || XRayCore.isRunning)
         SafeDiagnostics.info(
             TAG,
             "VPN service destroying: generation=$generationAtDestroy " +
-                "had_active_session=$hadActiveSession cleaned_up=$cleanedUp",
+                "had_active_session=$hadActiveSession cleaned_up=$cleanedUp " +
+                "waiting_for_network=$waitingForNetworkResume",
         )
         if (hadActiveSession) {
             cleanupVpn()
             connectionManager.handleServiceDestroyed(generationAtDestroy)
+        } else if (wasWaitingForNetwork) {
+            connectionManager.handleNetworkWaitServiceDestroyed()
         }
         unregisterNetworkCallback()
         serviceScope.cancel()
@@ -950,7 +1039,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         private const val NOTIFICATION_ID = 1
         private const val NETWORK_HANDOVER_DEBOUNCE_MS = 1_000L
         private const val NETWORK_CALLBACK_BASELINE_MS = 500L
-        private const val UNDERLYING_NETWORK_TIMEOUT_MS = 15_000L
+        private const val UNDERLYING_NETWORK_RECHECK_MS = 5_000L
         private val activeInstance = AtomicReference<ToBeVpnService?>()
 
         fun reloadActiveCore(
@@ -979,16 +1068,21 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             return service.markTunnelValidated(expectedGeneration)
         }
 
-        fun cleanupActiveInstance(): Boolean {
+        fun cleanupActiveInstance(expectedGeneration: Int? = null): Boolean {
             val service = activeInstance.get() ?: return false
             if (Looper.myLooper() == Looper.getMainLooper()) {
-                service.cleanupVpn()
+                service.cleanupVpn(expectedGeneration)
             } else {
                 Handler(Looper.getMainLooper()).postAtFrontOfQueue {
-                    service.cleanupVpn()
+                    service.cleanupVpn(expectedGeneration)
                 }
             }
             return true
+        }
+
+        fun pauseActiveTunnelForNetworkResume(expectedGeneration: Int): Boolean {
+            val service = activeInstance.get() ?: return false
+            return service.pauseTunnelForNetworkResume(expectedGeneration)
         }
     }
 }

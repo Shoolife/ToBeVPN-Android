@@ -47,8 +47,8 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = versionCodeOverride ?: 66
-        versionName = "1.0.65"
+        versionCode = versionCodeOverride ?: 67
+        versionName = "1.0.66"
 
         // Direct APK releases can use the GitHub self-updater. Google Play
         // builds override this flag because Play policy requires updates to
@@ -219,6 +219,14 @@ android {
         compose = true
         buildConfig = true
     }
+
+    sourceSets {
+        getByName("androidTest").assets.directories.add("$projectDir/schemas")
+    }
+}
+
+ksp {
+    arg("room.schemaLocation", file("$projectDir/schemas").path)
 }
 
 dependencies {
@@ -262,6 +270,7 @@ dependencies {
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
+    androidTestImplementation(libs.androidx.room.testing)
 
     // Network
     implementation(libs.retrofit)

@@ -37,7 +37,7 @@ class ServerQualityRepository @Inject constructor(
 
     suspend fun measurePing(server: Server, force: Boolean = false): Long {
         if (!server.isAvailable) return -1L
-        val key = qualityKey(server)
+        val key = serverPingEndpointKey(server)
         val now = System.currentTimeMillis()
         val cached = pingCache[key]
         if (!force && cached != null && now - cached.measuredAt <= PING_CACHE_TTL_MS) {
@@ -72,17 +72,17 @@ class ServerQualityRepository @Inject constructor(
         servers: List<Server>,
         force: Boolean = false,
     ): Map<String, Long> = coroutineScope {
-        val uniqueEndpoints = servers.distinctBy(::qualityKey)
+        val uniqueEndpoints = servers.distinctBy(::serverPingEndpointKey)
         val probeSlots = Semaphore(MAX_CONCURRENT_PINGS)
         val endpointPings = uniqueEndpoints.map { server ->
             async {
                 probeSlots.withPermit {
-                    qualityKey(server) to measurePing(server, force)
+                    serverPingEndpointKey(server) to measurePing(server, force)
                 }
             }
         }.awaitAll().toMap()
         val results = servers.associate { server ->
-            server.id to (endpointPings[qualityKey(server)] ?: -1L)
+            server.id to (endpointPings[serverPingEndpointKey(server)] ?: -1L)
         }
         val reachable = results.values.filter { it >= 0L }
         SafeDiagnostics.trace(
@@ -99,18 +99,40 @@ class ServerQualityRepository @Inject constructor(
         servers: List<Server>,
         excludeServerId: String? = null,
         excludeEndpoint: Server? = null,
+        excludedServers: Collection<Server> = emptyList(),
+        avoidEndpointServers: Collection<Server> = emptyList(),
+        recentlyFailedProfiles: Collection<Server> = emptyList(),
         forceProbe: Boolean = false,
     ): Server? {
         val available = servers.filter { it.isAvailable }
         if (available.isEmpty()) return null
 
-        val excludedEndpointKey = excludeEndpoint?.let(::qualityKey)
-        val preferredCandidates = available.filterNot {
-            it.id == excludeServerId ||
-                (excludedEndpointKey != null && qualityKey(it) == excludedEndpointKey)
+        val exclusionRequested = excludeServerId != null ||
+            excludeEndpoint != null ||
+            excludedServers.isNotEmpty()
+        val eligibleCandidates = ServerRecoveryCandidatePolicy.eligibleServers(
+            servers = available,
+            excludeServerId = excludeServerId,
+            excludeEndpoint = excludeEndpoint,
+            excludedServers = excludedServers,
+        )
+        if (exclusionRequested && eligibleCandidates.isEmpty()) {
+            SafeDiagnostics.warn(
+                TAG,
+                "Automatic server selection has no alternative after endpoint exclusion: " +
+                    "candidates=${available.size}",
+            )
+            return null
         }
-            .ifEmpty { available }
-        val pings = measurePings(available, force = forceProbe)
+        val endpointTiers = ServerRecoveryCandidatePolicy.endpointPreferenceTiers(
+            servers = eligibleCandidates,
+            failedServers = avoidEndpointServers,
+            penalisedProfiles = recentlyFailedProfiles,
+        )
+        val preferredCandidates = endpointTiers.preferred
+        val fallbackCandidates = endpointTiers.fallback
+        val pings = mutableMapOf<String, Long>()
+        pings += measurePings(preferredCandidates, force = forceProbe)
         val records = stateMutex.withLock { loadStateLocked().records }
         val now = System.currentTimeMillis()
 
@@ -126,7 +148,7 @@ class ServerQualityRepository @Inject constructor(
                         server = server.copy(ping = ping),
                         score = qualityScore(
                             ping = ping,
-                            record = records[qualityKey(server)],
+                            record = records[serverConnectionIdentityKey(server)],
                             now = now,
                         ),
                     )
@@ -140,25 +162,48 @@ class ServerQualityRepository @Inject constructor(
         }
 
         val preferredOnlineCandidates = preferPanelOnline(preferredCandidates)
-        val onlineCandidates = preferPanelOnline(available)
-        val selected = rank(preferredOnlineCandidates)
+        var selectedScope = "PREFERRED"
+        var selected = rank(preferredOnlineCandidates)
             ?: rank(preferredCandidates)
-            ?: rank(onlineCandidates)
-            ?: rank(available)
-            ?: preferredOnlineCandidates.firstOrNull()?.let { server ->
+        if (selected == null && fallbackCandidates.isNotEmpty()) {
+            pings += measurePings(fallbackCandidates, force = forceProbe)
+            val fallbackOnlineCandidates = preferPanelOnline(fallbackCandidates)
+            selected = rank(fallbackOnlineCandidates)
+                ?: rank(fallbackCandidates)
+            if (selected != null) selectedScope = "REACHABLE_FALLBACK"
+        }
+        if (selected == null) {
+            // TCP probes can be blocked independently of the actual VLESS
+            // transport. Preserve the old best-effort behavior, but only
+            // after both preference tiers proved TCP-unreachable.
+            val unverified = preferredOnlineCandidates.firstOrNull()
+                ?: preferPanelOnline(fallbackCandidates).firstOrNull()
+            selected = unverified?.let { server ->
                 server.copy(ping = pings[server.id] ?: server.ping)
             }
+            selectedScope = "UNVERIFIED"
+        }
         SafeDiagnostics.trace(
             TAG,
             buildString {
                 append("Automatic server selection completed: candidates=")
                 append(available.size)
+                append(" eligible=")
+                append(eligibleCandidates.size)
+                append(" endpoint_preferred=")
+                append(preferredCandidates.size)
+                append(" endpoint_fallback=")
+                append(fallbackCandidates.size)
+                append(" recently_failed=")
+                append(recentlyFailedProfiles.size)
                 append(" panel_online=")
-                append(available.count(Server::isOnline))
+                append(preferredCandidates.count(Server::isOnline))
                 append(" selected=")
                 append(selected?.let(::diagnosticServerDescriptor) ?: "NONE")
                 append(" selected_ping_ms=")
                 append(selected?.ping ?: -1L)
+                append(" selected_scope=")
+                append(selectedScope)
             },
         )
         return selected
@@ -221,7 +266,7 @@ class ServerQualityRepository @Inject constructor(
     ) {
         stateMutex.withLock {
             val state = loadStateLocked()
-            val key = qualityKey(server)
+            val key = serverConnectionIdentityKey(server)
             val current = state.records[key] ?: QualityRecord()
             val now = System.currentTimeMillis()
             if (minWriteIntervalMs > 0L &&
@@ -309,8 +354,6 @@ class ServerQualityRepository @Inject constructor(
         record.lastHealthyAt,
         record.lastTrafficAt,
     )
-
-    private fun qualityKey(server: Server): String = "${server.address}:${server.port}:${server.sni}"
 
     private fun logPingIfNeeded(
         server: Server,

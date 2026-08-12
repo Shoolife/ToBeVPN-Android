@@ -68,6 +68,7 @@ class DiagnosticLogManager @Inject constructor(
     private val collecting = AtomicBoolean(false)
     private val clock: Clock = Clock.systemDefaultZone()
     private var limitMarkerDate: LocalDate? = null
+    private var versionMarkerFileName: String? = null
 
     private val _state = MutableStateFlow(DiagnosticLogState())
     val state: StateFlow<DiagnosticLogState> = _state.asStateFlow()
@@ -236,6 +237,7 @@ class DiagnosticLogManager @Inject constructor(
         rotateToCurrentDayLocked()
         val file = currentLogFile()
         ensureHeaderLocked(file)
+        ensureVersionContinuityLocked(file)
 
         val line = buildString {
             append(LocalDateTime.now(clock).format(LINE_TIME_FORMAT))
@@ -395,7 +397,7 @@ class DiagnosticLogManager @Inject constructor(
         val header = buildString {
             appendLine("# ToBeVPN diagnostic journal")
             appendLine("# Date: ${LocalDate.now(clock)}")
-            appendLine("# App: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            appendLine("${DiagnosticLogPolicy.APP_HEADER_PREFIX}$CURRENT_APP_VERSION")
             appendLine(
                 "# Device: " +
                     DiagnosticLogPolicy.sanitizeMessage("${Build.MANUFACTURER} ${Build.MODEL}"),
@@ -406,6 +408,36 @@ class DiagnosticLogManager @Inject constructor(
             appendLine()
         }
         file.writeText(header, Charsets.UTF_8)
+    }
+
+    /**
+     * A journal file is named per day, and its header is written once. An app
+     * update on the same day would otherwise keep appending the new build's
+     * events under the previous build's header — exactly when the version
+     * matters most. Record the change inline instead, once per process.
+     */
+    private fun ensureVersionContinuityLocked(file: File) {
+        if (versionMarkerFileName == file.name) return
+        versionMarkerFileName = file.name
+        val recorded = lastRecordedAppVersion(file) ?: return
+        if (recorded == CURRENT_APP_VERSION) return
+        val marker =
+            "${DiagnosticLogPolicy.APP_UPDATE_PREFIX}$recorded -> $CURRENT_APP_VERSION\n"
+        val bytes = marker.toByteArray(Charsets.UTF_8)
+        if (file.length() + bytes.size <= MAX_LOG_BYTES) {
+            file.appendText(marker, Charsets.UTF_8)
+        }
+    }
+
+    /**
+     * Streams the file instead of loading it: a day's journal may reach
+     * MAX_LOG_BYTES.
+     */
+    private fun lastRecordedAppVersion(file: File): String? {
+        if (!file.isFile || file.length() <= 0L) return null
+        return runCatching {
+            file.useLines(Charsets.UTF_8, DiagnosticLogPolicy::lastRecordedAppVersion)
+        }.getOrNull()
     }
 
     private fun appendLimitMarkerLocked(file: File) {
@@ -496,6 +528,8 @@ class DiagnosticLogManager @Inject constructor(
         const val TAG = "DiagnosticLog"
         const val LOG_DIRECTORY = "diagnostic_logs"
         const val MAX_LOG_BYTES = 10L * 1024L * 1024L
+        val CURRENT_APP_VERSION =
+            "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
         const val MAX_HISTORY_FILES = 7
         const val CRITICAL_WRITE_TIMEOUT_MS = 1_200L
         const val MIB = 1024L * 1024L

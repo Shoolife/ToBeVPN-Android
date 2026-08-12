@@ -213,6 +213,19 @@ fun ServerListScreen(
         } else {
             ServerSource.STANDARD
         }
+    val automaticSelectionDescription = if (
+        automaticServerSelection && !automaticSelectionForCurrentTab
+    ) {
+        stringResource(
+            if (automaticSource == ServerSource.BASE_STATION_BYPASS) {
+                R.string.server_auto_active_bypass
+            } else {
+                R.string.server_auto_active_standard
+            },
+        )
+    } else {
+        stringResource(R.string.server_auto_description)
+    }
     val displayedError = if (showingBypass && baseStationBypassError) {
         stringResource(R.string.base_station_bypass_load_error)
     } else if (!showingBypass) {
@@ -495,7 +508,13 @@ fun ServerListScreen(
                                         },
                                     ) {
                                         AutomaticServerItem(
-                                            selected = automaticSelectionForCurrentTab,
+                                            // AUTO is a global mode, while its
+                                            // source belongs to one tab. Keep
+                                            // the mode visibly selected in the
+                                            // other tab and explain its source
+                                            // in the subtitle.
+                                            selected = automaticServerSelection,
+                                            description = automaticSelectionDescription,
                                             enabled = !displayedLoading &&
                                                 displayedServers.any { it.isSelectable },
                                             metrics = metrics,
@@ -801,6 +820,7 @@ private fun BaseStationBypassExperimentalNotice(metrics: ServerListMetrics) {
 @Composable
 private fun AutomaticServerItem(
     selected: Boolean,
+    description: String,
     enabled: Boolean,
     metrics: ServerListMetrics,
     isTv: Boolean,
@@ -865,7 +885,7 @@ private fun AutomaticServerItem(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = stringResource(R.string.server_auto_description),
+                    text = description,
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

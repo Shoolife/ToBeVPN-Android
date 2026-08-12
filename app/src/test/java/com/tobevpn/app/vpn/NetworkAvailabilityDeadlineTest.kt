@@ -17,6 +17,19 @@ class NetworkAvailabilityDeadlineTest {
     }
 
     @Test
+    fun `unvalidated physical network uses forty five second boundary`() {
+        val deadline = NetworkAvailabilityDeadline(
+            startedAtMs = 1_000L,
+            timeoutMs = UnderlyingNetworkPolicy.timeoutMs(
+                UnderlyingNetworkAvailability.UNVALIDATED,
+            ),
+        )
+
+        assertFalse(deadline.isExpired(45_999L))
+        assertTrue(deadline.isExpired(46_000L))
+    }
+
+    @Test
     fun `next check never sleeps past deadline`() {
         val deadline = NetworkAvailabilityDeadline(startedAtMs = 10_000L, timeoutMs = 15_000L)
 

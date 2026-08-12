@@ -1,8 +1,8 @@
 package com.tobevpn.app.vpn
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.core.app.ApplicationProvider
 import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.tobevpn.app.domain.model.Server
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -85,6 +85,86 @@ class VpnConfigInstrumentedTest {
         assertEquals(4, root.getJSONObject("dns").getJSONArray("servers").length())
         assertTrue(root.getJSONObject("routing").getJSONArray("rules").length() == 0)
     }
+
+    @Test
+    fun grpcGunProfileEmitsSingleStreamSettings() {
+        val stream = proxyStreamSettings(
+            Server(
+                id = "grpc-gun",
+                name = "gRPC gun",
+                address = "192.0.2.10",
+                port = 443,
+                uuid = "00000000-0000-4000-8000-000000000001",
+                security = "reality",
+                sni = "front.example",
+                fingerprint = "chrome",
+                publicKey = "public-key",
+                network = "grpc",
+                serviceName = "grpc-tunnel",
+                host = "authority.example",
+                mode = "gun",
+            ),
+        )
+
+        assertEquals("grpc", stream.getString("network"))
+        assertFalse(stream.has("tcpSettings"))
+        val grpc = stream.getJSONObject("grpcSettings")
+        assertEquals("grpc-tunnel", grpc.getString("serviceName"))
+        assertEquals("authority.example", grpc.getString("authority"))
+        assertFalse(grpc.getBoolean("multiMode"))
+    }
+
+    @Test
+    fun grpcMultiProfileEmitsMultiStreamSettings() {
+        val stream = proxyStreamSettings(
+            Server(
+                id = "grpc-multi",
+                name = "gRPC multi",
+                address = "192.0.2.11",
+                port = 443,
+                uuid = "00000000-0000-4000-8000-000000000002",
+                security = "reality",
+                sni = "front.example",
+                fingerprint = "firefox",
+                publicKey = "public-key",
+                network = "grpc",
+                serviceName = "grpc-tunnel",
+                mode = "multi",
+            ),
+        )
+
+        val grpc = stream.getJSONObject("grpcSettings")
+        assertTrue(grpc.getBoolean("multiMode"))
+        assertFalse(grpc.has("authority"))
+    }
+
+    @Test
+    fun standardLegacyRealityFingerprintFallsBackToChrome() {
+        val stream = proxyStreamSettings(
+            Server(
+                id = "legacy-standard",
+                name = "Legacy standard",
+                address = "192.0.2.12",
+                port = 443,
+                uuid = "00000000-0000-4000-8000-000000000003",
+                security = "reality",
+                sni = "front.example",
+                fingerprint = "android",
+                publicKey = "public-key",
+            ),
+        )
+
+        assertEquals(
+            "chrome",
+            stream.getJSONObject("realitySettings").getString("fingerprint"),
+        )
+    }
+
+    private fun proxyStreamSettings(server: Server): JSONObject =
+        JSONObject(VpnConfig.buildConfigJson(server))
+            .getJSONArray("outbounds")
+            .getJSONObject(0)
+            .getJSONObject("streamSettings")
 
     private fun config(server: Server): JSONObject = JSONObject(VpnConfig.buildConfigJson(server))
 

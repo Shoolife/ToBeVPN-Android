@@ -3,8 +3,10 @@ package com.tobevpn.app.presentation.servers
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.ServerSource
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ServerSelectionTest {
@@ -36,6 +38,47 @@ class ServerSelectionTest {
         val bypass = server(id = "bs:opaque", source = ServerSource.BASE_STATION_BYPASS)
 
         assertEquals("bs:opaque", stableServerId(bypass))
+    }
+
+    @Test
+    fun `duplicate bypass names resolve only the exact persisted profile id`() {
+        val first = server(
+            id = "bs:first-config-hash",
+            source = ServerSource.BASE_STATION_BYPASS,
+        )
+        val second = first.copy(
+            id = "bs:second-config-hash",
+            uuid = "uuid-second",
+        )
+
+        assertEquals(second.id, serverSelectionKey(second))
+        assertFalse(
+            isSelectedServer(
+                server = first,
+                selectedId = second.id,
+                selectedKey = serverSelectionKey(second),
+            ),
+        )
+        assertTrue(
+            isSelectedServer(
+                server = second,
+                selectedId = second.id,
+                selectedKey = serverSelectionKey(second),
+            ),
+        )
+        assertEquals(
+            second,
+            resolveSelectedServer(
+                servers = listOf(first, second),
+                selectedId = second.id,
+                selectedKey = serverSelectionKey(second),
+                allowFallback = false,
+            ),
+        )
+        assertEquals(
+            ServerSource.BASE_STATION_BYPASS,
+            automaticSelectionSource(serverSelectionKey(second)),
+        )
     }
 
     @Test
@@ -92,14 +135,6 @@ class ServerSelectionTest {
         )
 
         assertEquals(listOf("first", "second"), sorted.map(Server::id))
-    }
-
-    @Test
-    fun `automatic bypass choice uses lowest measured ping`() {
-        val slow = server("slow", ServerSource.BASE_STATION_BYPASS).copy(ping = 70)
-        val fast = server("fast", ServerSource.BASE_STATION_BYPASS).copy(ping = 18)
-
-        assertEquals(fast, bestBaseStationBypassServer(listOf(slow, fast)))
     }
 
     private fun server(id: String, source: ServerSource) = Server(

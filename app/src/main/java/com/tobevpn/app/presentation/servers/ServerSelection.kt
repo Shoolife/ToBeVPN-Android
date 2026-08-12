@@ -10,14 +10,15 @@ fun stableServerId(server: Server): String = when (server.source) {
     ServerSource.BASE_STATION_BYPASS -> server.id
 }
 
-fun serverSelectionKey(server: Server): String = buildString {
-    if (server.source == ServerSource.BASE_STATION_BYPASS) append("bs:")
-    append(
-        serverDisplayName(server.name, server.country)
+fun serverSelectionKey(server: Server): String = when (server.source) {
+    // Bypass display names are controlled by the public profile and are not
+    // unique. The id is a privacy-safe hash of the complete VPN config and is
+    // therefore the only stable key for choosing an exact profile.
+    ServerSource.BASE_STATION_BYPASS -> server.id
+    ServerSource.STANDARD -> serverDisplayName(server.name, server.country)
         .trim()
         .replace(Regex("\\s+"), " ")
-        .lowercase(Locale.ROOT),
-    )
+        .lowercase(Locale.ROOT)
 }
 
 /**
@@ -37,6 +38,16 @@ fun isSelectedServer(
     selectedId: String?,
     selectedKey: String?,
 ): Boolean {
+    if (server.source == ServerSource.BASE_STATION_BYPASS) {
+        // When an id exists it must win over every legacy name-based key.
+        // Otherwise two profiles with the same visible name can both appear
+        // selected and firstOrNull() can connect the wrong credentials.
+        return if (selectedId != null) {
+            server.id == selectedId
+        } else {
+            selectedKey != null && serverSelectionKey(server) == selectedKey
+        }
+    }
     val idMatches = selectedId != null && (
         server.id == selectedId ||
             stableServerId(server) == selectedId ||
@@ -87,16 +98,6 @@ fun sortBaseStationBypassServersForDisplay(
         )
         .map(IndexedValue<Server>::value)
 }
-
-/** Pick the lowest measured latency, retaining a usable profile fallback. */
-fun bestBaseStationBypassServer(servers: List<Server>): Server? =
-    servers.asSequence()
-        .filter { it.source == ServerSource.BASE_STATION_BYPASS && it.isAvailable }
-        .filter { it.ping > 0L }
-        .minByOrNull(Server::ping)
-        ?: servers.firstOrNull {
-            it.source == ServerSource.BASE_STATION_BYPASS && it.isAvailable
-        }
 
 /**
  * Compose requires every simultaneously visible LazyColumn item to have a

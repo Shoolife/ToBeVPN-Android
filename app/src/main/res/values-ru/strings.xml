@@ -48,6 +48,7 @@
     <string name="error_vpn_interface">Не удалось создать VPN-интерфейс</string>
     <string name="error_tunnel_unhealthy">Не удалось передать трафик через выбранный VPN-сервер. Попробуйте другой сервер.</string>
     <string name="error_underlying_network_unavailable">Нет рабочего подключения к интернету. VPN остановлен, чтобы не блокировать сеть.</string>
+    <string name="vpn_waiting_for_network_resume">Ожидание сети — VPN восстановится автоматически</string>
     <string name="error_unknown">Неизвестная ошибка</string>
     <string name="error_network">Ошибка сети</string>
     <string name="error_auth_required">Требуется авторизация</string>
@@ -59,9 +60,9 @@
     <!-- Servers -->
     <string name="server_select">Выберите сервер</string>
     <string name="server_tab_standard">Серверы</string>
-    <string name="server_tab_base_station_bypass">ОБХОД БС (beta)</string>
+    <string name="server_tab_base_station_bypass">Обход БС beta</string>
     <string name="base_station_bypass_auth_title">Войдите для доступа к обходу БС</string>
-    <string name="base_station_bypass_auth_description">Функция доступна авторизованным пользователям: первые 3 дня бесплатно, затем — с активной подпиской.</string>
+    <string name="base_station_bypass_auth_description">Функция доступна авторизованным пользователям с активной подпиской.</string>
     <string name="base_station_bypass_auth_action">Авторизоваться</string>
     <string name="base_station_bypass_expired_title">Доступ к обходу БС закончился</string>
     <string name="base_station_bypass_expired_description">Бесплатный период или подписка закончились. Продлите подписку на главном экране, чтобы снова открыть серверы.</string>
@@ -70,8 +71,11 @@
     <string name="base_station_bypass_load_error">Не удалось обновить серверы обхода БС. Проверьте интернет и повторите попытку.</string>
     <string name="base_station_bypass_experimental_notice">Экспериментальная функция: возможна нестабильная работа. Рекомендуем использовать только через мобильную сеть, когда доступ в интернет ограничен белыми списками.</string>
     <string name="error_base_station_bypass_access">Для обхода БС войдите в аккаунт. После входа первые 3 дня доступны бесплатно, далее нужна активная подписка.</string>
+    <string name="error_base_station_bypass_profile_changed">Выбранный профиль обхода БС больше недоступен. Откройте список серверов и выберите другой профиль.</string>
     <string name="server_auto">Автоматически</string>
     <string name="server_auto_description">Самый быстрый доступный сервер</string>
+    <string name="server_auto_active_standard">Активно во вкладке «Серверы»</string>
+    <string name="server_auto_active_bypass">Активно во вкладке «Обход БС»</string>
     <string name="server_auto_selected">Выбран автоматически</string>
     <string name="server_offline">offline</string>
     <string name="server_unavailable">Недоступен</string>
@@ -483,12 +487,12 @@
     <string name="whats_new_version">Версия %1$s</string>
     <string name="whats_new_intro">Главные изменения установленной версии</string>
     <string name="whats_new_done">Понятно</string>
-    <string name="whats_new_play_updates_title">Обновление через Google Play</string>
-    <string name="whats_new_play_updates_desc">Если установленная версия больше не поддерживается сервером, приложение предложит обязательное обновление и откроет официальную страницу ToBeVPN в Google Play.</string>
-    <string name="whats_new_diagnostics_title">Расширенная диагностика</string>
-    <string name="whats_new_diagnostics_desc">Локальный журнал теперь подробнее фиксирует этапы подключения, состояние VPN, сети и причины сбоев. Конфиденциальные данные и содержимое трафика не записываются.</string>
-    <string name="whats_new_bypass_notice_title">Обход БС — beta</string>
-    <string name="whats_new_bypass_notice_desc">Добавили заметное предупреждение об экспериментальном режиме и рекомендации по его использованию через мобильную сеть при ограничении интернета белыми списками.</string>
+    <string name="whats_new_vpn_stability_title">Стабильнее подключение VPN</string>
+    <string name="whats_new_vpn_stability_desc">Устранили лишние переподключения при запуске и сделали восстановление VPN после временной потери сети безопаснее.</string>
+    <string name="whats_new_bypass_reliability_title">Надёжнее автоматический выбор</string>
+    <string name="whats_new_bypass_reliability_desc">Исправили выбор и повторное подключение серверов «Обход БС»: приложение больше не переключает сервер посреди запуска и лучше выбирает рабочий профиль.</string>
+    <string name="whats_new_profile_compatibility_title">Больше совместимых серверов</string>
+    <string name="whats_new_profile_compatibility_desc">Улучшили обработку серверных профилей и совместимость с разными транспортами и настройками соединения.</string>
     <string name="version">Версия</string>
     <string name="xray">XRay</string>
     <string name="language">Язык</string>

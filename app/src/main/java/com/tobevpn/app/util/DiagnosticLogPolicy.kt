@@ -38,6 +38,15 @@ internal object DiagnosticLogPolicy {
     private val ipv6Addresses = Regex(
         """(?i)(?<![0-9a-f:])(?:[0-9a-f]{0,4}:){2,}[0-9a-f]{0,4}(?![0-9a-f:])""",
     )
+    private val operationalNumericMetrics = Regex(
+        """\b(?:session_s|session_kib|total_kib|traffic_kib|uplink_kib|downlink_kib|""" +
+            """interval_ms|interval_up_kbps|interval_down_kbps|""" +
+            """link_up_kbps|link_down_kbps|duration_s|""" +
+            """last_any_traffic_age_ms|last_uplink_age_ms|last_downlink_age_ms|""" +
+            """last_probe_age_ms|last_probe_duration_ms|pre_probe_downlink_age_ms|""" +
+            """pre_probe_downlink_bytes|connect_duration_ms|duration_ms|delay_ms|timeout_ms)""" +
+            """=-?\d+\b""",
+    )
     private val longNumericIds = Regex("""\b\d{7,}\b""")
     private val opaqueSecrets = Regex("""\b[A-Za-z0-9_-]{32,}\b""")
     private val invalidTagCharacters = Regex("""[^A-Za-z0-9_.-]""")
@@ -79,6 +88,28 @@ internal object DiagnosticLogPolicy {
             .mapTo(linkedSetOf()) { it.first }
     }
 
+    const val APP_HEADER_PREFIX = "# App: "
+    const val APP_UPDATE_PREFIX = "# App updated: "
+
+    /**
+     * Newest app version recorded in an existing journal: the header written
+     * when the file was created, or the newest inline update marker. Used to
+     * detect that a same-day app update is now appending to a file whose
+     * header still names the previous build.
+     */
+    fun lastRecordedAppVersion(lines: Sequence<String>): String? {
+        var latest: String? = null
+        lines.forEach { line ->
+            when {
+                line.startsWith(APP_HEADER_PREFIX) ->
+                    latest = line.removePrefix(APP_HEADER_PREFIX).trim()
+                line.startsWith(APP_UPDATE_PREFIX) ->
+                    latest = line.substringAfterLast("->").trim()
+            }
+        }
+        return latest?.takeIf { it.isNotBlank() }
+    }
+
     fun sanitizeTag(tag: String): String =
         tag.trim()
             .replace(invalidTagCharacters, "_")
@@ -86,17 +117,40 @@ internal object DiagnosticLogPolicy {
             .ifBlank { "App" }
 
     fun sanitizeMessage(message: String): String {
-        return message
+        var sanitized = message
             .replace(lineBreaks, " ")
             .replace(urls, "<redacted-url>")
             .replace(authorizationValues, "<redacted-credential>")
             .replace(emails, "<redacted-email>")
             .replace(uuids, "<redacted-uuid>")
             .replace(ipv4Addresses, "<redacted-ip>")
-            .replace(ipv6Addresses, "<redacted-ip>")
+            .replace(ipv6Addresses) { match ->
+                val candidate = match.value
+                if (candidate.contains("::") || candidate.count { it == ':' } >= 3) {
+                    "<redacted-ip>"
+                } else {
+                    candidate
+                }
+            }
+
+        // Preserve only an explicit allow-list of operational counters. A
+        // blanket exception for key=value numbers would also preserve account
+        // or Telegram identifiers accidentally added by a future call site.
+        val preservedMetrics = mutableListOf<String>()
+        sanitized = sanitized.replace(operationalNumericMetrics) { match ->
+            val index = preservedMetrics.size
+            preservedMetrics += match.value
+            "<metric-$index>"
+        }
+        sanitized = sanitized
             .replace(longNumericIds, "<redacted-id>")
             .replace(opaqueSecrets, "<redacted-secret>")
             .trim()
+
+        preservedMetrics.forEachIndexed { index, metric ->
+            sanitized = sanitized.replace("<metric-$index>", metric)
+        }
+        return sanitized
             .take(MAX_MESSAGE_LENGTH)
             .ifBlank { "<empty>" }
     }

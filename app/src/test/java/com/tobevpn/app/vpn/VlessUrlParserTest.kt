@@ -46,6 +46,34 @@ class VlessUrlParserTest {
     }
 
     @Test
+    fun `parses supported transport extension parameters`() {
+        val server = VlessUrlParser.parse(
+            "vless://user@node.example:443?type=WS&security=TLS" +
+                "&host=cdn.example&alpn=h2%2Chttp%2F1.1&headerType=http" +
+                "&serviceName=edge&extra=%7B%22noGRPCHeader%22%3Atrue%7D#Node",
+        )
+
+        requireNotNull(server)
+        assertEquals("ws", server.network)
+        assertEquals("tls", server.security)
+        assertEquals("cdn.example", server.host)
+        assertEquals("h2,http/1.1", server.alpn)
+        assertEquals("http", server.headerType)
+        assertEquals("edge", server.serviceName)
+        assertEquals("{\"noGRPCHeader\":true}", server.extra)
+    }
+
+    @Test
+    fun `normalizes fingerprint for xray lookup`() {
+        val server = VlessUrlParser.parse(
+            "vless://user@node.example:443?security=reality&fp=%20Android%20#Node",
+        )
+
+        requireNotNull(server)
+        assertEquals("android", server.fingerprint)
+    }
+
+    @Test
     fun `keeps literal plus and accepts unencoded unicode remark`() {
         val server = VlessUrlParser.parse(
             "vless://user+id@node.example?type=tcp#Россия + тест",

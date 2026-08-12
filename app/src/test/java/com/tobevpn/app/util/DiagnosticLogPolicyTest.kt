@@ -1,6 +1,7 @@
 package com.tobevpn.app.util
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -119,6 +120,79 @@ class DiagnosticLogPolicyTest {
         assertFalse(sanitized.contains("192.168.1.10"))
         assertFalse(sanitized.contains("550e8400"))
         assertFalse(sanitized.contains("secret_token_value"))
+    }
+
+    @Test
+    fun `large traffic counters and idle ages remain useful`() {
+        val sanitized = DiagnosticLogPolicy.sanitizeMessage(
+            "session_kib=1234567 uplink_kib=7654321 downlink_kib=9876543 " +
+                "last_downlink_age_ms=12345678 duration_s=1234567 " +
+                "link_up_kbps=1000000 link_down_kbps=2500000 " +
+                "telegram_id=8907735498",
+        )
+
+        assertTrue(sanitized.contains("session_kib=1234567"))
+        assertTrue(sanitized.contains("uplink_kib=7654321"))
+        assertTrue(sanitized.contains("downlink_kib=9876543"))
+        assertTrue(sanitized.contains("last_downlink_age_ms=12345678"))
+        assertTrue(sanitized.contains("duration_s=1234567"))
+        assertTrue(sanitized.contains("link_up_kbps=1000000"))
+        assertTrue(sanitized.contains("link_down_kbps=2500000"))
+        assertFalse(sanitized.contains("8907735498"))
+        assertTrue(sanitized.contains("telegram_id=<redacted-id>"))
+    }
+
+    @Test
+    fun `time in diagnostic message is not mistaken for ipv6`() {
+        assertEquals(
+            "handover_at=00:14:56 ipv6=<redacted-ip>",
+            DiagnosticLogPolicy.sanitizeMessage(
+                "handover_at=00:14:56 ipv6=2001:db8::1",
+            ),
+        )
+    }
+
+    @Test
+    fun `header version is used when the journal has no update marker`() {
+        val journal = sequenceOf(
+            "# ToBeVPN diagnostic journal",
+            "# App: 1.0.65 (66)",
+            "# Locale: ru-RU",
+            "2026-08-12 10:00:00.000 I/Vpn: connected",
+        )
+
+        assertEquals("1.0.65 (66)", DiagnosticLogPolicy.lastRecordedAppVersion(journal))
+    }
+
+    @Test
+    fun `newest update marker wins over the header and earlier markers`() {
+        val journal = sequenceOf(
+            "# App: 1.0.64 (65)",
+            "2026-08-12 10:00:00.000 I/Vpn: connected",
+            "# App updated: 1.0.64 (65) -> 1.0.65 (66)",
+            "2026-08-12 11:00:00.000 I/Vpn: connected",
+            "# App updated: 1.0.65 (66) -> 1.0.66 (67)",
+        )
+
+        assertEquals("1.0.66 (67)", DiagnosticLogPolicy.lastRecordedAppVersion(journal))
+    }
+
+    @Test
+    fun `journal without a version record yields null`() {
+        val journal = sequenceOf(
+            "# ToBeVPN diagnostic journal",
+            "2026-08-12 10:00:00.000 I/Vpn: connected",
+        )
+
+        assertNull(DiagnosticLogPolicy.lastRecordedAppVersion(journal))
+        assertNull(DiagnosticLogPolicy.lastRecordedAppVersion(emptySequence()))
+    }
+
+    @Test
+    fun `a blank version record is ignored`() {
+        assertNull(
+            DiagnosticLogPolicy.lastRecordedAppVersion(sequenceOf("# App:   ")),
+        )
     }
 
     @Test

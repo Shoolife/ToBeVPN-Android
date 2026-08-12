@@ -1,5 +1,6 @@
 package com.tobevpn.app.data.repository
 
+import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.ServerSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -108,5 +109,131 @@ class BaseStationBypassProfileParserTest {
         ).single()
 
         assertEquals("UN", server.country)
+    }
+
+    @Test
+    fun `filters transports that the generated xray config cannot support`() {
+        val servers = BaseStationBypassProfileParser.parse(
+            listOf(
+                "vless://tcp@one.example:443?type=tcp#TCP",
+                "vless://grpc@two.example:443?type=grpc&serviceName=vpn#GRPC",
+                "vless://grpc-invalid@invalid.example:443?type=grpc&mode=invalid#GRPC invalid",
+                "vless://quic@three.example:443?type=quic#QUIC",
+                "vless://ws@four.example:443?type=WS&host=cdn.example#WS",
+                "vless://ws-reality@five.example:443?type=ws&security=reality#WS Reality",
+                "vless://tcp-header@six.example:443?type=tcp&headerType=srtp#TCP SRTP",
+                "vless://xhttp-mode@seven.example:443?type=xhttp&mode=invalid#XHTTP mode",
+                "vless://xhttp-extra@eight.example:443?type=xhttp&extra=not-json#XHTTP extra",
+                "vless://reality-http@nine.example:443?type=tcp&security=reality" +
+                    "&headerType=http#Reality HTTP",
+            ).joinToString("\n"),
+        )
+
+        assertEquals(listOf("TCP", "GRPC", "WS"), servers.map { it.name })
+        assertEquals(listOf("tcp", "grpc", "ws"), servers.map { it.network })
+    }
+
+    @Test
+    fun `tls12-only android fingerprint is kept and repaired instead of dropped`() {
+        val servers = BaseStationBypassProfileParser.parse(
+            listOf(
+                "vless://bad@one.example:443?type=tcp&security=reality&fp=android#Bad Reality",
+                "vless://explicit@two.example:443?type=xhttp&security=reality" +
+                    "&fp=HelloAndroid_11_OkHttp#Explicit Android",
+                "vless://good@three.example:443?type=tcp&security=reality&fp=chrome#Good Reality",
+                "vless://tls@four.example:443?type=ws&security=tls&fp=android#Android TLS",
+            ).joinToString("\n"),
+        )
+
+        // All four survive: an unusable camouflage is repaired in VpnConfig,
+        // dropping the entry would only remove a working server from the list.
+        assertEquals(
+            listOf("Bad Reality", "Explicit Android", "Good Reality", "Android TLS"),
+            servers.map(Server::name),
+        )
+    }
+
+    @Test
+    fun `unused grpc service name does not change a supported profile id`() {
+        val first = BaseStationBypassProfileParser.parse(
+            "vless://same@node.example:443?type=tcp&serviceName=one#Node",
+        ).single()
+        val second = BaseStationBypassProfileParser.parse(
+            "vless://same@node.example:443?type=tcp&serviceName=two#Node",
+        ).single()
+
+        assertEquals(first.id, second.id)
+    }
+
+    @Test
+    fun `grpc service name and mode participate in exact profile id`() {
+        val first = BaseStationBypassProfileParser.parse(
+            "vless://same@node.example:443?type=grpc&serviceName=one&mode=gun#Node",
+        ).single()
+        val second = BaseStationBypassProfileParser.parse(
+            "vless://same@node.example:443?type=grpc&serviceName=two&mode=multi#Node",
+        ).single()
+
+        assertNotEquals(first.id, second.id)
+    }
+
+    @Test
+    fun `normalizes raw transport alias to tcp`() {
+        val server = BaseStationBypassProfileParser.parse(
+            "vless://same@node.example:443?type=RAW&security=reality&fp=chrome#Node",
+        ).single()
+
+        assertEquals("tcp", server.network)
+    }
+
+    @Test
+    fun `extended transport settings participate in the exact profile id`() {
+        val first = BaseStationBypassProfileParser.parse(
+            "vless://same@node.example:443?type=ws&host=one.example&alpn=h2#Node",
+        ).single()
+        val second = BaseStationBypassProfileParser.parse(
+            "vless://same@node.example:443?type=ws&host=two.example&alpn=h2#Node",
+        ).single()
+
+        assertNotEquals(first.id, second.id)
+        assertEquals(
+            BaseStationBypassProfileParser.legacyStableId(first),
+            BaseStationBypassProfileParser.legacyStableId(second),
+        )
+    }
+
+    @Test
+    fun `legacy persisted bypass id migrates to full transport profile id`() {
+        val server = BaseStationBypassProfileParser.parse(
+            "vless://same@node.example:443?type=xhttp&host=cdn.example" +
+                "&extra=%7B%22noGRPCHeader%22%3Atrue%7D#Node",
+        ).single()
+        val legacyId = BaseStationBypassProfileParser.legacyStableId(server)
+
+        val migrated = resolveBaseStationBypassSelectionMigration(
+            servers = listOf(server),
+            selectedId = legacyId,
+            selectedKey = "bs:node",
+        )
+
+        assertEquals(server, migrated)
+        assertNotEquals(legacyId, server.id)
+    }
+
+    @Test
+    fun `fresh profile matches cached v19 id during in-flight connection`() {
+        val refreshed = BaseStationBypassProfileParser.parse(
+            "vless://user@example.com:443?security=tls&type=ws" +
+                "&path=%2Fvpn&host=cdn.example&alpn=http%2F1.1#Node",
+        ).single()
+        val cachedId = BaseStationBypassProfileParser.legacyStableId(refreshed)
+
+        assertTrue(matchesBaseStationBypassSelectionId(refreshed, cachedId))
+        assertTrue(matchesBaseStationBypassSelectionId(refreshed, refreshed.id))
+        assertTrue(BaseStationBypassProfileParser.hasCurrentStableId(refreshed))
+        assertFalse(
+            BaseStationBypassProfileParser.hasCurrentStableId(refreshed.copy(id = cachedId)),
+        )
+        assertFalse(matchesBaseStationBypassSelectionId(refreshed, "bs:other"))
     }
 }
