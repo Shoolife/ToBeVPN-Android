@@ -35,4 +35,12 @@ internal object TunnelRecoveryPolicy {
         duringStartup: Boolean,
         source: ServerSource = ServerSource.STANDARD,
     ): Boolean = currentAttempts < maxAttempts(automaticSelection, duringStartup, source)
+
+    /**
+     * AUTO receives one separately bounded fingerprint fallback without
+     * sacrificing its existing alternative-server attempts. In MANUAL the
+     * fingerprint change replaces the existing one same-server startup retry.
+     */
+    fun fingerprintRetryConsumesAttempt(automaticSelection: Boolean): Boolean =
+        !automaticSelection
 }

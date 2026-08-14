@@ -1,5 +1,6 @@
 package com.tobevpn.app.util
 
+import com.tobevpn.app.domain.model.RealityFingerprintPolicy
 import com.tobevpn.app.domain.model.Server
 import java.security.MessageDigest
 
@@ -7,7 +8,13 @@ import java.security.MessageDigest
  * Correlates server events within an exported journal without exposing the
  * endpoint, port, SNI, UUID, public key, or other connection credentials.
  */
-internal fun diagnosticServerDescriptor(server: Server): String {
+internal fun diagnosticServerDescriptor(server: Server): String =
+    diagnosticServerDescriptor(server, realityFingerprintOverride = null)
+
+internal fun diagnosticServerDescriptor(
+    server: Server,
+    realityFingerprintOverride: String?,
+): String {
     val fingerprintSource = buildString {
         append(server.address)
         append(':')
@@ -39,8 +46,14 @@ internal fun diagnosticServerDescriptor(server: Server): String {
         // configuration from another. Report the value actually handed to
         // Xray, plus the declared one whenever it had to be overridden.
         append(" fingerprint=")
-        append(server.effectiveFingerprint.toDiagnosticToken())
-        if (server.isFingerprintRepaired) {
+        val configuredFingerprint = RealityFingerprintPolicy.fingerprintForConfig(
+            server,
+            realityFingerprintOverride,
+        )
+        append(configuredFingerprint.toDiagnosticToken())
+        if (server.isFingerprintRepaired ||
+            !configuredFingerprint.equals(server.effectiveFingerprint, ignoreCase = true)
+        ) {
             append(" declared_fingerprint=")
             append(server.fingerprint.toDiagnosticToken())
         }

@@ -9,14 +9,14 @@ import org.junit.Test
 class PhysicalNetworkSelectorTest {
 
     @Test
-    fun `unvalidated candidate is not selected`() {
+    fun `unvalidated carrier network is retained as a usable candidate`() {
         val selector = PhysicalNetworkSelector<String>()
 
         val change = selector.update("wifi", validated = false, priority = 200)
 
-        assertEquals(PhysicalNetworkSelector.ChangeType.UNCHANGED, change.type)
-        assertNull(selector.selectedOrNull())
-        assertFalse(selector.hasUsableNetwork())
+        assertEquals(PhysicalNetworkSelector.ChangeType.INITIAL, change.type)
+        assertEquals("wifi", selector.selectedOrNull())
+        assertTrue(selector.hasUsableNetwork())
     }
 
     @Test
@@ -77,6 +77,29 @@ class PhysicalNetworkSelectorTest {
     }
 
     @Test
+    fun `validated cellular is preferred over higher priority unvalidated wifi`() {
+        val selector = PhysicalNetworkSelector<String>()
+        selector.update("wifi", validated = false, priority = 200)
+
+        val change = selector.update("cellular", validated = true, priority = 100)
+
+        assertEquals(PhysicalNetworkSelector.ChangeType.HANDOVER, change.type)
+        assertEquals("cellular", selector.selectedOrNull())
+    }
+
+    @Test
+    fun `loss of validated network hands over to retained unvalidated carrier`() {
+        val selector = PhysicalNetworkSelector<String>()
+        selector.update("cellular", validated = false, priority = 100)
+        selector.update("wifi", validated = true, priority = 200)
+
+        val change = selector.onLost("wifi")
+
+        assertEquals(PhysicalNetworkSelector.ChangeType.HANDOVER, change.type)
+        assertEquals("cellular", selector.selectedOrNull())
+    }
+
+    @Test
     fun `loss of only validated network becomes unavailable`() {
         val selector = PhysicalNetworkSelector<String>()
         selector.update("wifi", validated = true, priority = 200)
@@ -112,14 +135,15 @@ class PhysicalNetworkSelectorTest {
     }
 
     @Test
-    fun `network regaining validation becomes initial selection again`() {
+    fun `validation changes on selected network do not create false handover`() {
         val selector = PhysicalNetworkSelector<String>()
         selector.update("wifi", validated = true, priority = 200)
-        selector.update("wifi", validated = false, priority = 200)
+        val lostValidation = selector.update("wifi", validated = false, priority = 200)
 
-        val change = selector.update("wifi", validated = true, priority = 200)
+        val regainedValidation = selector.update("wifi", validated = true, priority = 200)
 
-        assertEquals(PhysicalNetworkSelector.ChangeType.INITIAL, change.type)
+        assertEquals(PhysicalNetworkSelector.ChangeType.UNCHANGED, lostValidation.type)
+        assertEquals(PhysicalNetworkSelector.ChangeType.UNCHANGED, regainedValidation.type)
         assertEquals("wifi", selector.selectedOrNull())
     }
 

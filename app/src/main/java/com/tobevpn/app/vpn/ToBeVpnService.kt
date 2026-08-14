@@ -409,7 +409,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
      * already-running foreground service. Android 12+ can reject a brand-new
      * foreground-service start from a background network callback; retaining
      * the service lets the manager deliver a normal start command when a
-     * validated physical network returns.
+     * physical network returns.
      */
     private fun pauseTunnelForNetworkResume(expectedGeneration: Int): Boolean {
         val loopGenerationToStop: Int
@@ -549,8 +549,11 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     private fun registerNetworkCallback() {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return
         val request = NetworkRequest.Builder()
+            // NetworkRequest.Builder includes NOT_RESTRICTED by default. It
+            // must be removed explicitly or operator allowlist networks never
+            // reach this callback.
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             .build()
 
@@ -617,11 +620,17 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         capabilities: NetworkCapabilities?,
         source: String,
     ) {
-        val validated = capabilities != null && isValidatedPhysicalInternet(capabilities)
+        // onAvailable can precede the matching capabilities callback. Do not
+        // insert an unknown network with an artificial priority; API 29+
+        // delivers its capabilities through onCapabilitiesChanged next.
+        if (capabilities == null || !isPhysicalInternet(capabilities)) return
+        val validated = capabilities.hasCapability(
+            NetworkCapabilities.NET_CAPABILITY_VALIDATED,
+        )
         val change = physicalNetworkSelector.update(
             network = network,
             validated = validated,
-            priority = capabilities?.let(::physicalNetworkPriority) ?: 0,
+            priority = physicalNetworkPriority(capabilities),
         )
 
         if (physicalNetworkSelector.hasUsableNetwork()) {
@@ -630,7 +639,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             scheduleUnderlyingNetworkTimeout(cm, source)
         }
 
-        if (physicalNetworkSelector.isSelected(network) && capabilities != null) {
+        if (physicalNetworkSelector.isSelected(network)) {
             val summary = networkSummary(capabilities)
             if (summary != lastUnderlyingNetworkSummary) {
                 lastUnderlyingNetworkSummary = summary
@@ -650,7 +659,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             PhysicalNetworkSelector.ChangeType.UNAVAILABLE -> {
                 SafeDiagnostics.warn(
                     TAG,
-                    "Validated physical network unavailable: " +
+                    "Physical network unavailable: " +
                         "previous=${lastUnderlyingNetworkSummary ?: "UNKNOWN"}",
                 )
                 cancelNetworkHandover()
@@ -692,7 +701,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                 networkBaselineReady = true
                 val selected = physicalNetworkSelector.selectedOrNull()
                 if (selected == null) {
-                    SafeDiagnostics.warn(TAG, "Physical-network baseline has no validated network")
+                    SafeDiagnostics.warn(TAG, "Physical-network baseline has no network")
                     scheduleUnderlyingNetworkTimeout(cm, "BASELINE_EMPTY")
                 } else {
                     val summary = cm.getNetworkCapabilities(selected)?.let(::networkSummary)
@@ -756,10 +765,15 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         if (cleanedUp || activeConnectionGeneration < 0) return
         val generation = activeConnectionGeneration
         val startedAtMs = SystemClock.elapsedRealtime()
+        val initialAvailability = underlyingNetworkAvailability(cm)
+        val initialTimeoutMs =
+            UnderlyingNetworkPolicy.teardownTimeoutMs(initialAvailability)
+        if (initialTimeoutMs == null) {
+            cancelUnderlyingNetworkTimeout()
+            return
+        }
         synchronized(networkJobLock) {
             if (underlyingNetworkTimeoutJob?.isCompleted == false) return
-            val initialAvailability = underlyingNetworkAvailability(cm)
-            val initialTimeoutMs = UnderlyingNetworkPolicy.timeoutMs(initialAvailability)
             SafeDiagnostics.trace(
                 TAG,
                 "Underlying-network timeout scheduled: generation=$generation " +
@@ -769,14 +783,15 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             val job = serviceScope.launch(start = CoroutineStart.LAZY) {
                 while (!cleanedUp && generation == activeConnectionGeneration) {
                     val availability = underlyingNetworkAvailability(cm)
-                    if (availability == UnderlyingNetworkAvailability.VALIDATED) {
+                    val timeoutMs = UnderlyingNetworkPolicy.teardownTimeoutMs(availability)
+                    if (timeoutMs == null) {
                         SafeDiagnostics.trace(
                             TAG,
-                            "Underlying-network timeout cancelled by final validation",
+                            "Underlying-network timeout cancelled after physical network returned: " +
+                                "availability=${availability.name}",
                         )
                         return@launch
                     }
-                    val timeoutMs = UnderlyingNetworkPolicy.timeoutMs(availability)
                     val nowMs = SystemClock.elapsedRealtime()
                     val deadline = NetworkAvailabilityDeadline(
                         startedAtMs = startedAtMs,
@@ -785,7 +800,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                     if (deadline.isExpired(nowMs)) {
                         SafeDiagnostics.warn(
                             TAG,
-                            "Validated physical network unavailable: generation=$generation " +
+                            "Physical network unavailable: generation=$generation " +
                                 "source=$source availability=${availability.name} " +
                                 "timeout_ms=$timeoutMs",
                         )
@@ -805,9 +820,8 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         }
     }
 
-    private fun isValidatedPhysicalInternet(capabilities: NetworkCapabilities): Boolean =
+    private fun isPhysicalInternet(capabilities: NetworkCapabilities): Boolean =
         capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
             !capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
 
     @Suppress("DEPRECATION")

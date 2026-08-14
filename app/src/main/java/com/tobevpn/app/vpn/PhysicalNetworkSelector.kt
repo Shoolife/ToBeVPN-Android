@@ -4,11 +4,13 @@ package com.tobevpn.app.vpn
  * Selects one stable upstream from the physical networks reported by a
  * passive ConnectivityManager callback.
  *
- * Android can keep validated Wi-Fi and cellular networks alive at the same
- * time. A plain registerNetworkCallback therefore reports both. Preserve the
- * current selection while it remains at least as suitable as every other
- * candidate, and only report a handover when a better candidate appears or
- * the selected one is no longer usable.
+ * Android can keep Wi-Fi and cellular networks alive at the same time. A plain
+ * registerNetworkCallback therefore reports both. Prefer a validated network,
+ * but retain unvalidated physical networks as usable candidates: carrier
+ * allowlists can intentionally prevent Android's general-internet validation
+ * while still allowing the VPN endpoint. Preserve the current selection while
+ * it remains at least as suitable as every other candidate, and only report a
+ * handover when a better candidate appears or the selected one disappears.
  */
 internal class PhysicalNetworkSelector<T> {
     private val candidates = LinkedHashMap<T, Candidate>()
@@ -50,12 +52,11 @@ internal class PhysicalNetworkSelector<T> {
         val previousCandidate = previous?.let(candidates::get)
         val best = candidates.entries
             .asSequence()
-            .filter { it.value.validated }
-            .maxByOrNull { it.value.priority }
+            .maxByOrNull { it.value.selectionScore }
 
         val next = if (previous != null &&
-            previousCandidate?.validated == true &&
-            (best == null || previousCandidate.priority >= best.value.priority)
+            previousCandidate != null &&
+            (best == null || previousCandidate.selectionScore >= best.value.selectionScore)
         ) {
             previous
         } else {
@@ -75,7 +76,10 @@ internal class PhysicalNetworkSelector<T> {
     private data class Candidate(
         val validated: Boolean,
         val priority: Int,
-    )
+    ) {
+        val selectionScore: Int
+            get() = priority + if (validated) VALIDATED_PRIORITY_BONUS else 0
+    }
 
     data class SelectionChange<T>(
         val type: ChangeType,
@@ -88,5 +92,11 @@ internal class PhysicalNetworkSelector<T> {
         INITIAL,
         HANDOVER,
         UNAVAILABLE,
+    }
+
+    private companion object {
+        // Transport priorities currently top out at 300. Keep validation as
+        // the dominant preference without discarding restricted networks.
+        const val VALIDATED_PRIORITY_BONUS = 10_000
     }
 }

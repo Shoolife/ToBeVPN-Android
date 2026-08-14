@@ -50,18 +50,20 @@ data class Server(
      * profiles only describe TLS 1.2 and are rejected by the bundled Xray
      * before the REALITY handshake can start.
      *
-     * VpnConfig repairs such a fingerprint to Chrome for every source. Hiding
-     * the server instead would be strictly worse: the declared camouflage
-     * cannot be honoured either way, and the entry would simply disappear.
+     * The initial Xray config repairs such a fingerprint to Chrome for every
+     * source; bounded startup recovery can then retry Firefox. Hiding the
+     * server instead would be strictly worse: the declared camouflage cannot
+     * be honoured either way, and the entry would simply disappear.
      */
     val isXrayCompatible: Boolean
         get() = !security.trim().equals("reality", ignoreCase = true) ||
             fingerprint.trim().lowercase(Locale.ROOT) !in TLS12_ONLY_REALITY_FINGERPRINTS
 
     /**
-     * The uTLS fingerprint actually handed to Xray — the single source of
-     * truth for both config generation and diagnostics, so a journal can never
-     * disagree with what the tunnel really negotiated.
+     * The initial uTLS fingerprint handed to Xray after repairing an unusable
+     * profile value. Startup recovery may temporarily override it with the
+     * alternate browser fingerprint; that override is tracked separately and
+     * included in diagnostics.
      */
     val effectiveFingerprint: String
         get() {

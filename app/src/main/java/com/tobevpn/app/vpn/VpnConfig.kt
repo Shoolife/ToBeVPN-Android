@@ -1,7 +1,7 @@
 package com.tobevpn.app.vpn
 
+import com.tobevpn.app.domain.model.RealityFingerprintPolicy
 import com.tobevpn.app.domain.model.Server
-import com.tobevpn.app.domain.model.ServerSource
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.Locale
@@ -10,13 +10,16 @@ object VpnConfig {
 
     const val LOCAL_SOCKS_PORT = 28080
 
-    fun buildConfigJson(server: Server): String {
+    fun buildConfigJson(
+        server: Server,
+        realityFingerprintOverride: String? = null,
+    ): String {
         return JSONObject().apply {
             put("stats", JSONObject())
             put("log", JSONObject().put("loglevel", "info"))
             put("policy", buildPolicy())
             put("inbounds", buildInbounds())
-            put("outbounds", buildOutbounds(server))
+            put("outbounds", buildOutbounds(server, realityFingerprintOverride))
             put("dns", buildDns())
             put("routing", buildRouting())
             put("xudp", JSONObject().apply {
@@ -84,7 +87,10 @@ object VpnConfig {
         }
     }
 
-    private fun buildOutbounds(server: Server): JSONArray {
+    private fun buildOutbounds(
+        server: Server,
+        realityFingerprintOverride: String?,
+    ): JSONArray {
         return JSONArray().apply {
             put(JSONObject().apply {
                 put("tag", "proxy")
@@ -107,7 +113,10 @@ object VpnConfig {
                         })
                     })
                 })
-                put("streamSettings", buildStreamSettings(server))
+                put(
+                    "streamSettings",
+                    buildStreamSettings(server, realityFingerprintOverride),
+                )
                 if (server.network != "xhttp") {
                     put("mux", JSONObject().apply {
                         put("enabled", false)
@@ -132,7 +141,10 @@ object VpnConfig {
         }
     }
 
-    private fun buildStreamSettings(server: Server): JSONObject {
+    private fun buildStreamSettings(
+        server: Server,
+        realityFingerprintOverride: String?,
+    ): JSONObject {
         return JSONObject().apply {
             put("network", server.network)
             put("security", server.security)
@@ -201,7 +213,13 @@ object VpnConfig {
                 put("realitySettings", JSONObject().apply {
                     put("allowInsecure", false)
                     put("serverName", server.sni)
-                    put("fingerprint", server.effectiveFingerprint)
+                    put(
+                        "fingerprint",
+                        RealityFingerprintPolicy.fingerprintForConfig(
+                            server,
+                            realityFingerprintOverride,
+                        ),
+                    )
                     put("publicKey", server.publicKey)
                     put("shortId", server.shortId)
                     put("spiderX", server.spx.ifEmpty { "/" })
@@ -227,12 +245,6 @@ object VpnConfig {
         return JSONArray().apply { protocols.forEach { put(it) } }
     }
 
-    /**
-     * The subscription panel is trusted to describe the same endpoint, so a
-     * TLS-1.2-only legacy fingerprint can safely fall back to Chrome instead
-     * of making every standard server disappear. Public bypass profiles are
-     * filtered before config generation and are never silently rewritten.
-     */
     private fun buildDns(): JSONObject {
         return JSONObject().apply {
             put("servers", JSONArray().apply {

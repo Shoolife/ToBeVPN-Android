@@ -2,8 +2,9 @@ package com.tobevpn.app.vpn
 
 /**
  * Distinguishes a complete loss of physical connectivity from Android's
- * temporary internet-validation state. A TUN must not be kept indefinitely,
- * but captive-portal checks and Wi-Fi revalidation need more than 15 seconds.
+ * general-internet validation state. An unvalidated carrier network can still
+ * carry a working VPN tunnel (for example on an operator allowlist), so only
+ * complete physical-network loss receives a teardown deadline.
  */
 internal enum class UnderlyingNetworkAvailability {
     VALIDATED,
@@ -13,11 +14,12 @@ internal enum class UnderlyingNetworkAvailability {
 
 internal object UnderlyingNetworkPolicy {
     const val NO_NETWORK_TIMEOUT_MS = 15_000L
-    const val UNVALIDATED_NETWORK_TIMEOUT_MS = 45_000L
 
-    fun timeoutMs(availability: UnderlyingNetworkAvailability): Long = when (availability) {
-        UnderlyingNetworkAvailability.VALIDATED -> 0L
-        UnderlyingNetworkAvailability.UNVALIDATED -> UNVALIDATED_NETWORK_TIMEOUT_MS
-        UnderlyingNetworkAvailability.UNAVAILABLE -> NO_NETWORK_TIMEOUT_MS
-    }
+    fun canAttemptTunnelProbe(availability: UnderlyingNetworkAvailability): Boolean =
+        availability != UnderlyingNetworkAvailability.UNAVAILABLE
+
+    fun teardownTimeoutMs(availability: UnderlyingNetworkAvailability): Long? =
+        NO_NETWORK_TIMEOUT_MS.takeIf {
+            availability == UnderlyingNetworkAvailability.UNAVAILABLE
+        }
 }

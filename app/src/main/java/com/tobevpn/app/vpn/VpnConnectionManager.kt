@@ -22,6 +22,7 @@ import com.tobevpn.app.data.repository.UsageRepository
 import com.tobevpn.app.data.repository.VpnRepository
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.ConnectionState
+import com.tobevpn.app.domain.model.RealityFingerprintPolicy
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.presentation.servers.serverSelectionKey
@@ -151,6 +152,14 @@ class VpnConnectionManager @Inject constructor(
     private var lastTunnelProbeDurationMs = -1L
     private var watchdogRecoveryAttempts = 0
     private val watchdogRecoveryExcludedServers = linkedMapOf<String, Server>()
+    // Fingerprint fallback is scoped to the current server attempt and guarded
+    // by [mutex]. The active value is volatile only so diagnostic snapshots
+    // emitted from callbacks can report the exact Xray configuration.
+    private val attemptedRealityFingerprints = linkedSetOf<String>()
+    @Volatile
+    private var fingerprintAttemptServerKey: String? = null
+    @Volatile
+    private var activeRealityFingerprint: String? = null
     // Survives a single recovery episode: a profile that just refused traffic
     // must not be the first pick again when the user taps connect a minute
     // later. Self-expiring, and cleared for a server that proves healthy.
@@ -226,6 +235,8 @@ class VpnConnectionManager @Inject constructor(
             append(XRayCore.currentLoopGeneration)
             append(" own_vpn_network=")
             append(isOwnVpnNetworkActive())
+            append(" own_vpn_system_check=")
+            append(ownVpnNetworkValidation())
             append(" health_monitor_active=")
             append(healthMonitorActive)
             append(" recovery_active=")
@@ -257,7 +268,7 @@ class VpnConnectionManager @Inject constructor(
             append(' ')
             append(underlyingNetworkSummary())
             append(' ')
-            append(server?.let(::diagnosticServerDescriptor) ?: "server_ref=NONE")
+            append(server?.let(::activeServerDiagnosticDescriptor) ?: "server_ref=NONE")
         }
     }
 
@@ -445,6 +456,7 @@ class VpnConnectionManager @Inject constructor(
                     watchdogRecoveryExcludedServers.clear()
                     confirmedConnectionSuccessKey = null
                 }
+                resetRealityFingerprintAttempts(server)
                 _currentServer.value = server
                 _connectionState.value = ConnectionState.Connecting
                 connectionAttemptStartedAt = SystemClock.elapsedRealtime()
@@ -473,12 +485,15 @@ class VpnConnectionManager @Inject constructor(
                 return@launch
             }
             if (!mayStartTunnel(request, gen)) return@launch
-            mutex.withLock {
+            val realityFingerprintToStart = mutex.withLock {
                 if (request == requestedOperation.get() &&
                     gen == connectionGeneration &&
                     _connectionState.value is ConnectionState.Connecting
                 ) {
                     _currentServer.value = serverToStart
+                    resetRealityFingerprintAttempts(serverToStart)
+                } else {
+                    null
                 }
             }
             if (!preserveServerSelection) persistAutomaticSelectionIfNeeded(serverToStart)
@@ -487,12 +502,18 @@ class VpnConnectionManager @Inject constructor(
 
             val intent = Intent(context, ToBeVpnService::class.java).apply {
                 action = ToBeVpnService.ACTION_START
-                putExtra(ToBeVpnService.EXTRA_SERVER_CONFIG, VpnConfig.buildConfigJson(serverToStart))
+                putExtra(
+                    ToBeVpnService.EXTRA_SERVER_CONFIG,
+                    VpnConfig.buildConfigJson(
+                        server = serverToStart,
+                        realityFingerprintOverride = realityFingerprintToStart,
+                    ),
+                )
                 putExtra(ToBeVpnService.EXTRA_SERVER_NAME, serverToStart.name)
                 putExtra(ToBeVpnService.EXTRA_SERVER_COUNTRY, serverToStart.country)
                 putExtra(
                     ToBeVpnService.EXTRA_SERVER_DIAGNOSTIC,
-                    diagnosticServerDescriptor(serverToStart),
+                    diagnosticServerDescriptor(serverToStart, realityFingerprintToStart),
                 )
                 putExtra(ToBeVpnService.EXTRA_GENERATION, gen)
             }
@@ -605,6 +626,7 @@ class VpnConnectionManager @Inject constructor(
                 watchdogRecoveryAttempts = 0
                 watchdogRecoveryExcludedServers.clear()
                 confirmedConnectionSuccessKey = null
+                resetRealityFingerprintAttempts(server)
                 _currentServer.value = server
                 _connectionState.value = ConnectionState.Connecting
                 connectionAttemptStartedAt = SystemClock.elapsedRealtime()
@@ -652,12 +674,15 @@ class VpnConnectionManager @Inject constructor(
                 return@launch
             }
             if (!mayStartTunnel(request, restartGeneration)) return@launch
-            mutex.withLock {
+            val realityFingerprintToStart = mutex.withLock {
                 if (request == requestedOperation.get() &&
                     restartGeneration == connectionGeneration &&
                     _connectionState.value is ConnectionState.Connecting
                 ) {
                     _currentServer.value = serverToStart
+                    resetRealityFingerprintAttempts(serverToStart)
+                } else {
+                    null
                 }
             }
             persistAutomaticSelectionIfNeeded(serverToStart)
@@ -666,12 +691,18 @@ class VpnConnectionManager @Inject constructor(
 
             val startIntent = Intent(context, ToBeVpnService::class.java).apply {
                 action = ToBeVpnService.ACTION_START
-                putExtra(ToBeVpnService.EXTRA_SERVER_CONFIG, VpnConfig.buildConfigJson(serverToStart))
+                putExtra(
+                    ToBeVpnService.EXTRA_SERVER_CONFIG,
+                    VpnConfig.buildConfigJson(
+                        server = serverToStart,
+                        realityFingerprintOverride = realityFingerprintToStart,
+                    ),
+                )
                 putExtra(ToBeVpnService.EXTRA_SERVER_NAME, serverToStart.name)
                 putExtra(ToBeVpnService.EXTRA_SERVER_COUNTRY, serverToStart.country)
                 putExtra(
                     ToBeVpnService.EXTRA_SERVER_DIAGNOSTIC,
-                    diagnosticServerDescriptor(serverToStart),
+                    diagnosticServerDescriptor(serverToStart, realityFingerprintToStart),
                 )
                 putExtra(ToBeVpnService.EXTRA_GENERATION, restartGeneration)
             }
@@ -710,6 +741,35 @@ class VpnConnectionManager @Inject constructor(
             } else {
                 true
             }
+        }
+    }
+
+    /**
+     * Whether Android itself considers our tunnel usable. The system runs its
+     * own connectivity check through the VPN, independent of our probe, so a
+     * journal that records both can distinguish "the tunnel is dead" from "our
+     * probe is wrong" — a distinction that previously required attaching a
+     * laptop and reading dumpsys.
+     */
+    @Suppress("DEPRECATION")
+    private fun ownVpnNetworkValidation(): String {
+        val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
+            ?: return "UNKNOWN"
+        val capabilities = connectivityManager.allNetworks
+            .asSequence()
+            .mapNotNull(connectivityManager::getNetworkCapabilities)
+            .firstOrNull { capability ->
+                capability.hasTransport(NetworkCapabilities.TRANSPORT_VPN) &&
+                    (
+                        Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+                            capability.ownerUid == context.applicationInfo.uid
+                        )
+            }
+            ?: return "NO_VPN_NETWORK"
+        return if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) {
+            "VALIDATED"
+        } else {
+            "NOT_VALIDATED"
         }
     }
 
@@ -1064,9 +1124,10 @@ class VpnConnectionManager @Inject constructor(
     }
 
     /**
-     * A physical network did not become validated within the service grace
-     * period. Tear down the TUN instead of leaving Android routing traffic into
-     * a dead VPN until the process or phone is restarted.
+     * The physical network disappeared for the full service grace period.
+     * Tear down the TUN instead of leaving Android routing traffic into a dead
+     * VPN until the process or phone is restarted. Merely missing Android's
+     * general-internet validation is not treated as physical-network loss.
      */
     fun handleUnderlyingNetworkUnavailable(generation: Int) {
         cancelPendingRecovery("UNDERLYING_NETWORK_UNAVAILABLE")
@@ -1085,7 +1146,7 @@ class VpnConnectionManager @Inject constructor(
             val resumeRequest = requestedOperation.get()
             SafeDiagnostics.warn(
                 TAG,
-                "VPN stopped after validated physical network timeout: generation=$generation",
+                "VPN stopped after physical network loss timeout: generation=$generation",
             )
             val waitingServiceKept = stopForUnderlyingNetworkTimeout(generation)
                 ?: return@launch
@@ -1181,14 +1242,17 @@ class VpnConnectionManager @Inject constructor(
         cancelPendingNetworkResume("REPLACED")
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
         val networkRequest = NetworkRequest.Builder()
+            // NetworkRequest.Builder includes NOT_RESTRICTED by default. It
+            // must be removed explicitly so an operator allowlist network can
+            // wake the retained foreground service.
+            .removeCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             .build()
         lateinit var callback: ConnectivityManager.NetworkCallback
         callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                resumeAfterValidatedNetwork(
+                resumeAfterAvailableNetwork(
                     callback = callback,
                     cm = cm,
                     server = server,
@@ -1201,18 +1265,13 @@ class VpnConnectionManager @Inject constructor(
                 network: Network,
                 networkCapabilities: NetworkCapabilities,
             ) {
-                if (networkCapabilities.hasCapability(
-                        NetworkCapabilities.NET_CAPABILITY_VALIDATED,
-                    )
-                ) {
-                    resumeAfterValidatedNetwork(
-                        callback = callback,
-                        cm = cm,
-                        server = server,
-                        request = request,
-                        waitingServiceGeneration = waitingServiceGeneration,
-                    )
-                }
+                resumeAfterAvailableNetwork(
+                    callback = callback,
+                    cm = cm,
+                    server = server,
+                    request = request,
+                    waitingServiceGeneration = waitingServiceGeneration,
+                )
             }
         }
         val timeoutJob = scope.launch(start = CoroutineStart.LAZY) {
@@ -1233,10 +1292,10 @@ class VpnConnectionManager @Inject constructor(
             timeoutJob.start()
             SafeDiagnostics.info(
                 TAG,
-                "VPN waiting for validated physical network before same-server resume: " +
+                "VPN waiting for physical network before same-server resume: " +
                     "timeout_ms=$NETWORK_RESUME_WAIT_TIMEOUT_MS",
             )
-            resumeAfterValidatedNetwork(
+            resumeAfterAvailableNetwork(
                 callback = callback,
                 cm = cm,
                 server = server,
@@ -1264,7 +1323,7 @@ class VpnConnectionManager @Inject constructor(
         }
     }
 
-    private fun resumeAfterValidatedNetwork(
+    private fun resumeAfterAvailableNetwork(
         callback: ConnectivityManager.NetworkCallback,
         cm: ConnectivityManager,
         server: Server,
@@ -1272,7 +1331,7 @@ class VpnConnectionManager @Inject constructor(
         waitingServiceGeneration: Int,
     ) {
         val availability = underlyingNetworkAvailability()
-        if (availability != UnderlyingNetworkAvailability.VALIDATED) return
+        if (!UnderlyingNetworkPolicy.canAttemptTunnelProbe(availability)) return
         val (accepted, timeoutJob) = synchronized(networkResumeLock) {
             if (networkResumeCallback !== callback) {
                 false to null
@@ -1319,7 +1378,8 @@ class VpnConnectionManager @Inject constructor(
             }
             SafeDiagnostics.info(
                 TAG,
-                "Validated physical network returned; resuming the same VPN server: " +
+                "Physical network returned; resuming the same VPN server: " +
+                    "availability=${availability.name} " +
                     diagnosticServerDescriptor(server),
             )
             startVpnInternal(
@@ -1370,7 +1430,7 @@ class VpnConnectionManager @Inject constructor(
         runCatching { cm.unregisterNetworkCallback(callback) }
         SafeDiagnostics.warn(
             TAG,
-            "Validated physical network wait expired: " +
+            "Physical network wait expired: " +
                 "timeout_ms=$NETWORK_RESUME_WAIT_TIMEOUT_MS",
         )
         finishNetworkResumeWait(
@@ -1657,6 +1717,55 @@ class VpnConnectionManager @Inject constructor(
         latestConnectionGeneration.set(connectionGeneration)
         return connectionGeneration
     }
+
+    /** Must be called while [mutex] is held. */
+    private fun resetRealityFingerprintAttempts(server: Server): String? {
+        fingerprintAttemptServerKey = realityFingerprintAttemptKey(server)
+        attemptedRealityFingerprints.clear()
+        val primary = RealityFingerprintPolicy.primaryCandidate(server)
+        primary?.let {
+            attemptedRealityFingerprints += RealityFingerprintPolicy.normalize(it)
+        }
+        activeRealityFingerprint = primary
+        return primary
+    }
+
+    /** Must be called while [mutex] is held. */
+    private fun nextRealityFingerprint(server: Server): String? {
+        if (fingerprintAttemptServerKey != realityFingerprintAttemptKey(server)) {
+            fingerprintAttemptServerKey = realityFingerprintAttemptKey(server)
+            activeRealityFingerprint = RealityFingerprintPolicy.primaryCandidate(server)
+            activeRealityFingerprint?.let {
+                attemptedRealityFingerprints += RealityFingerprintPolicy.normalize(it)
+            }
+        }
+        return RealityFingerprintPolicy.nextCandidate(
+            server = server,
+            attempted = attemptedRealityFingerprints,
+        )
+    }
+
+    /** Must be called while [mutex] is held, after Xray accepted the reload. */
+    private fun commitRealityFingerprint(server: Server, fingerprint: String?) {
+        fingerprintAttemptServerKey = realityFingerprintAttemptKey(server)
+        if (fingerprint == null) {
+            activeRealityFingerprint = null
+            return
+        }
+        attemptedRealityFingerprints += RealityFingerprintPolicy.normalize(fingerprint)
+        activeRealityFingerprint = fingerprint
+    }
+
+    private fun activeRealityFingerprintFor(server: Server): String? =
+        activeRealityFingerprint.takeIf {
+            fingerprintAttemptServerKey == realityFingerprintAttemptKey(server)
+        }
+
+    private fun activeServerDiagnosticDescriptor(server: Server): String =
+        diagnosticServerDescriptor(server, activeRealityFingerprintFor(server))
+
+    private fun realityFingerprintAttemptKey(server: Server): String =
+        "${server.source}:${server.id}:${stableServerId(server)}"
 
     /**
      * The native loop is running, but that alone does not prove the selected
@@ -1967,22 +2076,24 @@ class VpnConnectionManager @Inject constructor(
                 _connectionState.value is ConnectionState.Connecting
             ) {
                 val availability = underlyingNetworkAvailability()
-                if (availability != UnderlyingNetworkAvailability.VALIDATED) {
+                val networkLossTimeoutMs =
+                    UnderlyingNetworkPolicy.teardownTimeoutMs(availability)
+                if (networkLossTimeoutMs != null) {
                     val now = SystemClock.elapsedRealtime()
                     val unavailableSince = networkUnavailableStartedAtMs ?: now.also {
                         networkUnavailableStartedAtMs = it
                     }
-                    val timeoutMs = UnderlyingNetworkPolicy.timeoutMs(availability)
                     val networkDeadline = NetworkAvailabilityDeadline(
                         startedAtMs = unavailableSince,
-                        timeoutMs = timeoutMs,
+                        timeoutMs = networkLossTimeoutMs,
                     )
                     if (networkDeadline.isExpired(now)) {
                         SafeDiagnostics.warn(
                             TAG,
-                            "Startup tunnel validation aborted: no validated physical network " +
+                            "Startup tunnel validation aborted: no physical network " +
                                 "generation=$generation " +
-                                "availability=${availability.name} timeout_ms=$timeoutMs",
+                                "availability=${availability.name} " +
+                                "timeout_ms=$networkLossTimeoutMs",
                         )
                         // This coroutine is the active healthCheckJob and
                         // performStop() cancels that job. Delegate the stop to
@@ -1993,8 +2104,9 @@ class VpnConnectionManager @Inject constructor(
                     }
                     SafeDiagnostics.trace(
                         TAG,
-                        "Startup tunnel validation waiting for validated underlying internet: " +
-                            "availability=${availability.name} timeout_ms=$timeoutMs",
+                        "Startup tunnel validation waiting for physical network: " +
+                            "availability=${availability.name} " +
+                            "timeout_ms=$networkLossTimeoutMs",
                     )
                     delay(
                         networkDeadline.nextCheckDelayMs(
@@ -2005,6 +2117,12 @@ class VpnConnectionManager @Inject constructor(
                     continue
                 }
                 networkUnavailableStartedAtMs = null
+                if (availability == UnderlyingNetworkAvailability.UNVALIDATED) {
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "Startup tunnel validation probing through unvalidated physical network",
+                    )
+                }
 
                 val probeStartedAt = SystemClock.elapsedRealtime()
                 val probe = withTimeoutOrNull(TUNNEL_STARTUP_VALIDATION_TIMEOUT_MS) {
@@ -2121,9 +2239,14 @@ class VpnConnectionManager @Inject constructor(
             delay(initialDelayMs)
             var source = initialSource
             var networkUnavailableStartedAtMs: Long? = null
+            // Scoped to this watchdog job on purpose: a reload, handover or
+            // reconnect starts a new job and therefore a clean episode.
+            val episode = TunnelHealthEpisode()
             while (gen == latestConnectionGeneration.get() && _connectionState.value is ConnectionState.Connected) {
                 val availability = underlyingNetworkAvailability()
-                if (availability != UnderlyingNetworkAvailability.VALIDATED) {
+                val networkLossTimeoutMs =
+                    UnderlyingNetworkPolicy.teardownTimeoutMs(availability)
+                if (networkLossTimeoutMs != null) {
                     val now = SystemClock.elapsedRealtime()
                     val unavailableSince = networkUnavailableStartedAtMs ?: now.also {
                         networkUnavailableStartedAtMs = it
@@ -2133,17 +2256,16 @@ class VpnConnectionManager @Inject constructor(
                                 "generation=$gen availability=${availability.name}",
                         )
                     }
-                    val timeoutMs = UnderlyingNetworkPolicy.timeoutMs(availability)
                     val deadline = NetworkAvailabilityDeadline(
                         startedAtMs = unavailableSince,
-                        timeoutMs = timeoutMs,
+                        timeoutMs = networkLossTimeoutMs,
                     )
                     if (deadline.isExpired(now)) {
                         SafeDiagnostics.warn(
                             TAG,
-                            "Tunnel watchdog stopped VPN without validated physical network: " +
+                            "Tunnel watchdog stopped VPN without a physical network: " +
                                 "generation=$gen availability=${availability.name} " +
-                                "timeout_ms=$timeoutMs",
+                                "timeout_ms=$networkLossTimeoutMs",
                         )
                         // The service callback normally reaches the same
                         // deadline first. This independent guard covers a rare
@@ -2154,8 +2276,9 @@ class VpnConnectionManager @Inject constructor(
                     }
                     SafeDiagnostics.trace(
                         TAG,
-                        "Tunnel health cycle skipped: availability=${availability.name} " +
-                            "timeout_ms=$timeoutMs",
+                        "Tunnel health cycle skipped without physical network: " +
+                            "availability=${availability.name} " +
+                            "timeout_ms=$networkLossTimeoutMs",
                     )
                     delay(
                         deadline.nextCheckDelayMs(
@@ -2166,6 +2289,12 @@ class VpnConnectionManager @Inject constructor(
                     continue
                 }
                 networkUnavailableStartedAtMs = null
+                if (availability == UnderlyingNetworkAvailability.UNVALIDATED) {
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "Tunnel health probe proceeding through unvalidated physical network",
+                    )
+                }
 
                 // Freeze liveness evidence before the watchdog sends anything.
                 // Otherwise the failed probe's own uplink (or handshake bytes)
@@ -2175,52 +2304,76 @@ class VpnConnectionManager @Inject constructor(
                 val downlinkBeforeProbe = downlinkEvidenceAccumulator.consume()
                 val probe = probeTunnelWithRetries(TUNNEL_HEALTH_ATTEMPTS)
                 logTunnelProbe(source, probe)
-                if (probe.healthy) {
-                    confirmTunnelHealthy(
+                val decision = episode.onProbeResult(
+                    probeHealthy = probe.healthy,
+                    probeStartedAtMs = probeStartedAtMs,
+                    probeLoopGeneration = probeLoopGeneration,
+                    evidence = downlinkBeforeProbe,
+                )
+                // Every branch reports the evidence the decision was made on,
+                // so a production journal can be replayed against
+                // TunnelHealthEpisode without guessing the inputs.
+                val evidenceSummary = "probe_loop_generation=$probeLoopGeneration " +
+                    "pre_probe_downlink_bytes=${downlinkBeforeProbe.bytes} " +
+                    "pre_probe_downlink_age_ms=${decisionDownlinkAgeMs(decision)} " +
+                    "pre_probe_downlink_loop_generation=${downlinkBeforeProbe.loopGeneration} " +
+                    "liveness_min_bytes=${TunnelLivenessPolicy.MIN_DOWNLINK_BYTES} " +
+                    "liveness_grace_ms=${TunnelLivenessPolicy.RECENT_DOWNLINK_GRACE_MS} " +
+                    trafficRecencySummary(SystemClock.elapsedRealtime()) +
+                    " uplink_kib=${sessionUplinkBytesAccumulated / 1024L}" +
+                    " downlink_kib=${sessionDownlinkBytesAccumulated / 1024L}"
+
+                when (decision) {
+                    is TunnelHealthDecision.Healthy -> confirmTunnelHealthy(
                         generation = gen,
                         source = source,
                         expectedLoopGeneration = probeLoopGeneration,
                     )
-                } else if (TunnelLivenessPolicy.hasSufficientRecentDownlinkBeforeProbe(
-                        probeStartedAtMs = probeStartedAtMs,
-                        probeLoopGeneration = probeLoopGeneration,
-                        lastDownlinkAtMs = downlinkBeforeProbe.observedAtMs,
-                        lastDownlinkLoopGeneration = downlinkBeforeProbe.loopGeneration,
-                        downlinkBytes = downlinkBeforeProbe.bytes,
-                    )
-                ) {
-                    SafeDiagnostics.warn(
-                        TAG,
-                        "Tunnel probe failed but pre-probe downlink confirmed liveness: " +
-                            "probe_loop_generation=$probeLoopGeneration " +
-                            "pre_probe_downlink_bytes=${downlinkBeforeProbe.bytes} " +
-                            "pre_probe_downlink_age_ms=" +
-                            elapsedAgeMs(downlinkBeforeProbe.observedAtMs, probeStartedAtMs) + " " +
-                            trafficRecencySummary(SystemClock.elapsedRealtime()) +
-                            " uplink_kib=${sessionUplinkBytesAccumulated / 1024L}" +
-                            " downlink_kib=${sessionDownlinkBytesAccumulated / 1024L}",
-                    )
-                    confirmTunnelHealthy(
-                        generation = gen,
-                        source = "${source}_TRAFFIC",
-                        expectedLoopGeneration = probeLoopGeneration,
-                    )
-                } else {
-                    SafeDiagnostics.warn(
-                        TAG,
-                        "Tunnel health failure confirmed: source=$source generation=$gen " +
-                            trafficRecencySummary(SystemClock.elapsedRealtime()),
-                    )
-                    SafeDiagnostics.warn(
-                        TAG,
-                        "Tunnel failure state snapshot: ${diagnosticStateSnapshot()}",
-                    )
-                    _currentServer.value?.let { failed ->
-                        serverQualityRepository.recordTunnelFailure(failed)
-                        recentTunnelFailures.record(failed, SystemClock.elapsedRealtime())
+
+                    is TunnelHealthDecision.LivenessOverride -> {
+                        SafeDiagnostics.warn(
+                            TAG,
+                            "Tunnel probe failed but pre-probe downlink confirmed liveness: " +
+                                evidenceSummary,
+                        )
+                        confirmTunnelHealthy(
+                            generation = gen,
+                            source = "${source}_TRAFFIC",
+                            expectedLoopGeneration = probeLoopGeneration,
+                        )
                     }
-                    scheduleTunnelRecovery(gen, source)
-                    return@launch
+
+                    is TunnelHealthDecision.AwaitingConfirmation -> {
+                        // One failed cycle is not a verdict. Re-check after a
+                        // full interval so a brief disturbance cannot drop a
+                        // session that is still carrying traffic.
+                        SafeDiagnostics.warn(
+                            TAG,
+                            "Tunnel probe failed; awaiting confirmation: source=$source " +
+                                "generation=$gen failures=${decision.failures} " +
+                                "required=${decision.required} " +
+                                evidenceSummary,
+                        )
+                    }
+
+                    is TunnelHealthDecision.ConfirmedFailure -> {
+                        SafeDiagnostics.warn(
+                            TAG,
+                            "Tunnel health failure confirmed: source=$source generation=$gen " +
+                                "failures=${decision.failures} " +
+                                evidenceSummary,
+                        )
+                        SafeDiagnostics.warn(
+                            TAG,
+                            "Tunnel failure state snapshot: ${diagnosticStateSnapshot()}",
+                        )
+                        _currentServer.value?.let { failed ->
+                            serverQualityRepository.recordTunnelFailure(failed)
+                            recentTunnelFailures.record(failed, SystemClock.elapsedRealtime())
+                        }
+                        scheduleTunnelRecovery(gen, source)
+                        return@launch
+                    }
                 }
 
                 if (gen != latestConnectionGeneration.get() || _connectionState.value !is ConnectionState.Connected) {
@@ -2293,7 +2446,7 @@ class VpnConnectionManager @Inject constructor(
             SafeDiagnostics.info(
                 TAG,
                 "VPN tunnel liveness confirmed: source=$source " +
-                    diagnosticServerDescriptor(server),
+                    activeServerDiagnosticDescriptor(server),
             )
         }
     }
@@ -2322,6 +2475,7 @@ class VpnConnectionManager @Inject constructor(
         var shouldAbort = false
         var recoveryRequest = -1
         var excludedServers = emptyList<Server>()
+        var fingerprintRetry: String? = null
 
         mutex.withLock {
             if (!isExpectedTunnelState(gen, duringStartup)) {
@@ -2335,21 +2489,39 @@ class VpnConnectionManager @Inject constructor(
                 return@withLock
             }
 
-            if (!TunnelRecoveryPolicy.canAttempt(
-                    currentAttempts = watchdogRecoveryAttempts,
-                    automaticSelection = automaticSelection,
-                    duringStartup = duringStartup,
-                    source = currentServer.source,
-                )
-            ) {
-                errorMessage = context.getString(R.string.error_tunnel_unhealthy)
-                return@withLock
-            }
-
-            watchdogRecoveryAttempts++
             serverToRestart = currentServer
-            val exclusionKey = "${currentServer.source}:${stableServerId(currentServer)}"
-            watchdogRecoveryExcludedServers[exclusionKey] = currentServer
+            fingerprintRetry = if (duringStartup) {
+                nextRealityFingerprint(currentServer)
+            } else {
+                null
+            }
+            // In AUTO this single browser fallback is additive: keep the
+            // existing alternative-server budget intact. In MANUAL it
+            // replaces the one existing same-server startup retry, so manual
+            // selection remains exactly as bounded as before.
+            val consumesRecoveryBudget = fingerprintRetry == null ||
+                TunnelRecoveryPolicy.fingerprintRetryConsumesAttempt(automaticSelection)
+            if (consumesRecoveryBudget) {
+                if (!TunnelRecoveryPolicy.canAttempt(
+                        currentAttempts = watchdogRecoveryAttempts,
+                        automaticSelection = automaticSelection,
+                        duringStartup = duringStartup,
+                        source = currentServer.source,
+                    )
+                ) {
+                    errorMessage = context.getString(R.string.error_tunnel_unhealthy)
+                    return@withLock
+                }
+                watchdogRecoveryAttempts++
+            }
+            // A different ClientHello is still the same server attempt. Only
+            // exclude the profile after its bounded browser variants have
+            // been exhausted; otherwise AUTO would jump away before trying
+            // Firefox.
+            if (fingerprintRetry == null) {
+                val exclusionKey = "${currentServer.source}:${stableServerId(currentServer)}"
+                watchdogRecoveryExcludedServers[exclusionKey] = currentServer
+            }
             excludedServers = watchdogRecoveryExcludedServers.values.toList()
             recoveryRequest = requestedOperation.get()
         }
@@ -2379,20 +2551,27 @@ class VpnConnectionManager @Inject constructor(
             TAG,
             "VPN tunnel recovery attempt: attempt=$watchdogRecoveryAttempts " +
                 "max_attempts=$maxAttempts automatic=$automaticSelection " +
+                "fingerprint_retry=${fingerprintRetry != null} " +
                 "excluded_profiles=${excludedServers.size} " +
-                diagnosticServerDescriptor(staleServer),
+                activeServerDiagnosticDescriptor(staleServer),
         )
-        val server = refreshServerAfterAccessCheck(
-            server = staleServer,
-            excludedAutoServers = excludedServers,
-        ) ?: run {
-            performStop(
-                errorMessage = context.getString(R.string.error_tunnel_unhealthy),
-                request = recoveryRequest,
-                expectedGeneration = gen,
-            )
-            return
+        val server = if (fingerprintRetry != null) {
+            staleServer
+        } else {
+            refreshServerAfterAccessCheck(
+                server = staleServer,
+                excludedAutoServers = excludedServers,
+            ) ?: run {
+                performStop(
+                    errorMessage = context.getString(R.string.error_tunnel_unhealthy),
+                    request = recoveryRequest,
+                    expectedGeneration = gen,
+                )
+                return
+            }
         }
+        val fingerprintForReload = fingerprintRetry
+            ?: RealityFingerprintPolicy.primaryCandidate(server)
         if (gen != latestConnectionGeneration.get() ||
             recoveryRequest != requestedOperation.get() ||
             !isExpectedTunnelState(gen, duringStartup)
@@ -2418,15 +2597,19 @@ class VpnConnectionManager @Inject constructor(
         SafeDiagnostics.info(
             TAG,
             "VPN tunnel recovery selected reload target: " +
-                diagnosticServerDescriptor(server),
+                "fingerprint_retry=${fingerprintRetry != null} " +
+                diagnosticServerDescriptor(server, fingerprintForReload),
         )
         val reloaded = runCatching {
             ToBeVpnService.reloadActiveCore(
                 expectedGeneration = gen,
-                configJson = VpnConfig.buildConfigJson(server),
+                configJson = VpnConfig.buildConfigJson(
+                    server = server,
+                    realityFingerprintOverride = fingerprintForReload,
+                ),
                 serverName = server.name,
                 serverCountry = server.country,
-                serverDiagnostic = diagnosticServerDescriptor(server),
+                serverDiagnostic = diagnosticServerDescriptor(server, fingerprintForReload),
                 reason = "HEALTH_RECOVERY",
                 showConnectedNotification = !duringStartup,
             )
@@ -2457,6 +2640,7 @@ class VpnConnectionManager @Inject constructor(
                 isExpectedTunnelState(gen, duringStartup)
             ) {
                 _currentServer.value = server
+                commitRealityFingerprint(server, fingerprintForReload)
                 true
             } else {
                 false
@@ -2469,7 +2653,7 @@ class VpnConnectionManager @Inject constructor(
         SafeDiagnostics.info(
             TAG,
             "VPN tunnel recovery reload completed: attempt=$watchdogRecoveryAttempts " +
-                diagnosticServerDescriptor(server),
+                activeServerDiagnosticDescriptor(server),
         )
         if (duringStartup) {
             startStartupTunnelValidation(gen, "RECOVERY")
@@ -2783,6 +2967,13 @@ class VpnConnectionManager @Inject constructor(
             elapsedAgeMs(lastTunnelUplinkElapsedMs, nowElapsedMs) +
             " last_downlink_age_ms=" +
             elapsedAgeMs(lastTunnelDownlinkElapsedMs, nowElapsedMs)
+    }
+
+    private fun decisionDownlinkAgeMs(decision: TunnelHealthDecision): Long = when (decision) {
+        is TunnelHealthDecision.Healthy -> -1L
+        is TunnelHealthDecision.LivenessOverride -> decision.downlinkAgeMs
+        is TunnelHealthDecision.AwaitingConfirmation -> decision.downlinkAgeMs
+        is TunnelHealthDecision.ConfirmedFailure -> decision.downlinkAgeMs
     }
 
     private fun elapsedAgeMs(timestampMs: Long, nowMs: Long): Long =

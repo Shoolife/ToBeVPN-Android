@@ -50,6 +50,20 @@ class DiagnosticServerDescriptorTest {
     }
 
     @Test
+    fun `descriptor reports firefox fallback instead of stale chrome value`() {
+        val descriptor = diagnosticServerDescriptor(
+            server = testServer().copy(security = "reality", fingerprint = "chrome"),
+            realityFingerprintOverride = "firefox",
+        )
+
+        assertTrue(
+            descriptor.contains(
+                "security=reality fingerprint=firefox declared_fingerprint=chrome",
+            ),
+        )
+    }
+
+    @Test
     fun `hostile fingerprint text cannot break the journal format`() {
         val descriptor = diagnosticServerDescriptor(
             testServer().copy(security = "tls", fingerprint = "ch rome\nsafari"),

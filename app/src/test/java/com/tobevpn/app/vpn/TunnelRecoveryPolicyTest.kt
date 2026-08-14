@@ -9,6 +9,24 @@ import org.junit.Test
 class TunnelRecoveryPolicyTest {
 
     @Test
+    fun `automatic fingerprint fallback preserves alternative server budget`() {
+        assertFalse(
+            TunnelRecoveryPolicy.fingerprintRetryConsumesAttempt(
+                automaticSelection = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `manual fingerprint fallback replaces bounded same server retry`() {
+        assertTrue(
+            TunnelRecoveryPolicy.fingerprintRetryConsumesAttempt(
+                automaticSelection = false,
+            ),
+        )
+    }
+
+    @Test
     fun `manual selection permits one startup retry of the same server`() {
         assertEquals(
             1,
