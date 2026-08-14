@@ -43,14 +43,27 @@ class NetworkResumePolicyTest {
     }
 
     @Test
-    fun `unvalidated network cannot restart vpn`() {
-        assertFalse(
+    fun `unvalidated carrier network can restart vpn for tunnel validation`() {
+        assertTrue(
             NetworkResumePolicy.shouldResume(
                 expectedRequest = 7,
                 currentRequest = 7,
                 hasNetworkTimeoutError = true,
                 sameServer = true,
                 availability = UnderlyingNetworkAvailability.UNVALIDATED,
+            ),
+        )
+    }
+
+    @Test
+    fun `missing physical network cannot restart vpn`() {
+        assertFalse(
+            NetworkResumePolicy.shouldResume(
+                expectedRequest = 7,
+                currentRequest = 7,
+                hasNetworkTimeoutError = true,
+                sameServer = true,
+                availability = UnderlyingNetworkAvailability.UNAVAILABLE,
             ),
         )
     }

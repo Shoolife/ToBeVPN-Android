@@ -550,7 +550,6 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         val cm = getSystemService(ConnectivityManager::class.java) ?: return
         val request = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             .build()
 
@@ -650,7 +649,8 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             PhysicalNetworkSelector.ChangeType.UNAVAILABLE -> {
                 SafeDiagnostics.warn(
                     TAG,
-                    "Validated physical network unavailable: " +
+                    "No validated physical network selected; " +
+                        "tunnel liveness checks remain enabled: " +
                         "previous=${lastUnderlyingNetworkSummary ?: "UNKNOWN"}",
                 )
                 cancelNetworkHandover()
@@ -692,7 +692,11 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                 networkBaselineReady = true
                 val selected = physicalNetworkSelector.selectedOrNull()
                 if (selected == null) {
-                    SafeDiagnostics.warn(TAG, "Physical-network baseline has no validated network")
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "Physical-network baseline has no validated network; " +
+                            "tunnel liveness checks remain enabled",
+                    )
                     scheduleUnderlyingNetworkTimeout(cm, "BASELINE_EMPTY")
                 } else {
                     val summary = cm.getNetworkCapabilities(selected)?.let(::networkSummary)
@@ -756,10 +760,15 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         if (cleanedUp || activeConnectionGeneration < 0) return
         val generation = activeConnectionGeneration
         val startedAtMs = SystemClock.elapsedRealtime()
+        val initialAvailability = underlyingNetworkAvailability(cm)
+        val initialTimeoutMs =
+            UnderlyingNetworkPolicy.teardownTimeoutMs(initialAvailability)
+        if (initialTimeoutMs == null) {
+            cancelUnderlyingNetworkTimeout()
+            return
+        }
         synchronized(networkJobLock) {
             if (underlyingNetworkTimeoutJob?.isCompleted == false) return
-            val initialAvailability = underlyingNetworkAvailability(cm)
-            val initialTimeoutMs = UnderlyingNetworkPolicy.timeoutMs(initialAvailability)
             SafeDiagnostics.trace(
                 TAG,
                 "Underlying-network timeout scheduled: generation=$generation " +
@@ -769,14 +778,15 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             val job = serviceScope.launch(start = CoroutineStart.LAZY) {
                 while (!cleanedUp && generation == activeConnectionGeneration) {
                     val availability = underlyingNetworkAvailability(cm)
-                    if (availability == UnderlyingNetworkAvailability.VALIDATED) {
+                    val timeoutMs = UnderlyingNetworkPolicy.teardownTimeoutMs(availability)
+                    if (timeoutMs == null) {
                         SafeDiagnostics.trace(
                             TAG,
-                            "Underlying-network timeout cancelled by final validation",
+                            "Underlying-network timeout cancelled after physical network returned: " +
+                                "availability=${availability.name}",
                         )
                         return@launch
                     }
-                    val timeoutMs = UnderlyingNetworkPolicy.timeoutMs(availability)
                     val nowMs = SystemClock.elapsedRealtime()
                     val deadline = NetworkAvailabilityDeadline(
                         startedAtMs = startedAtMs,
@@ -785,7 +795,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                     if (deadline.isExpired(nowMs)) {
                         SafeDiagnostics.warn(
                             TAG,
-                            "Validated physical network unavailable: generation=$generation " +
+                            "Physical network unavailable: generation=$generation " +
                                 "source=$source availability=${availability.name} " +
                                 "timeout_ms=$timeoutMs",
                         )

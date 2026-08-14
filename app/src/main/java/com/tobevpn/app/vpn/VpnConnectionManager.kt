@@ -1064,9 +1064,10 @@ class VpnConnectionManager @Inject constructor(
     }
 
     /**
-     * A physical network did not become validated within the service grace
-     * period. Tear down the TUN instead of leaving Android routing traffic into
-     * a dead VPN until the process or phone is restarted.
+     * The physical network disappeared for the full service grace period.
+     * Tear down the TUN instead of leaving Android routing traffic into a dead
+     * VPN until the process or phone is restarted. Merely missing Android's
+     * general-internet validation is not treated as physical-network loss.
      */
     fun handleUnderlyingNetworkUnavailable(generation: Int) {
         cancelPendingRecovery("UNDERLYING_NETWORK_UNAVAILABLE")
@@ -1085,7 +1086,7 @@ class VpnConnectionManager @Inject constructor(
             val resumeRequest = requestedOperation.get()
             SafeDiagnostics.warn(
                 TAG,
-                "VPN stopped after validated physical network timeout: generation=$generation",
+                "VPN stopped after physical network loss timeout: generation=$generation",
             )
             val waitingServiceKept = stopForUnderlyingNetworkTimeout(generation)
                 ?: return@launch
@@ -1182,13 +1183,12 @@ class VpnConnectionManager @Inject constructor(
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
         val networkRequest = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_RESTRICTED)
             .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
             .build()
         lateinit var callback: ConnectivityManager.NetworkCallback
         callback = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                resumeAfterValidatedNetwork(
+                resumeAfterAvailableNetwork(
                     callback = callback,
                     cm = cm,
                     server = server,
@@ -1201,18 +1201,13 @@ class VpnConnectionManager @Inject constructor(
                 network: Network,
                 networkCapabilities: NetworkCapabilities,
             ) {
-                if (networkCapabilities.hasCapability(
-                        NetworkCapabilities.NET_CAPABILITY_VALIDATED,
-                    )
-                ) {
-                    resumeAfterValidatedNetwork(
-                        callback = callback,
-                        cm = cm,
-                        server = server,
-                        request = request,
-                        waitingServiceGeneration = waitingServiceGeneration,
-                    )
-                }
+                resumeAfterAvailableNetwork(
+                    callback = callback,
+                    cm = cm,
+                    server = server,
+                    request = request,
+                    waitingServiceGeneration = waitingServiceGeneration,
+                )
             }
         }
         val timeoutJob = scope.launch(start = CoroutineStart.LAZY) {
@@ -1233,10 +1228,10 @@ class VpnConnectionManager @Inject constructor(
             timeoutJob.start()
             SafeDiagnostics.info(
                 TAG,
-                "VPN waiting for validated physical network before same-server resume: " +
+                "VPN waiting for physical network before same-server resume: " +
                     "timeout_ms=$NETWORK_RESUME_WAIT_TIMEOUT_MS",
             )
-            resumeAfterValidatedNetwork(
+            resumeAfterAvailableNetwork(
                 callback = callback,
                 cm = cm,
                 server = server,
@@ -1264,7 +1259,7 @@ class VpnConnectionManager @Inject constructor(
         }
     }
 
-    private fun resumeAfterValidatedNetwork(
+    private fun resumeAfterAvailableNetwork(
         callback: ConnectivityManager.NetworkCallback,
         cm: ConnectivityManager,
         server: Server,
@@ -1272,7 +1267,7 @@ class VpnConnectionManager @Inject constructor(
         waitingServiceGeneration: Int,
     ) {
         val availability = underlyingNetworkAvailability()
-        if (availability != UnderlyingNetworkAvailability.VALIDATED) return
+        if (!UnderlyingNetworkPolicy.canAttemptTunnelProbe(availability)) return
         val (accepted, timeoutJob) = synchronized(networkResumeLock) {
             if (networkResumeCallback !== callback) {
                 false to null
@@ -1319,7 +1314,8 @@ class VpnConnectionManager @Inject constructor(
             }
             SafeDiagnostics.info(
                 TAG,
-                "Validated physical network returned; resuming the same VPN server: " +
+                "Physical network returned; resuming the same VPN server: " +
+                    "availability=${availability.name} " +
                     diagnosticServerDescriptor(server),
             )
             startVpnInternal(
@@ -1370,7 +1366,7 @@ class VpnConnectionManager @Inject constructor(
         runCatching { cm.unregisterNetworkCallback(callback) }
         SafeDiagnostics.warn(
             TAG,
-            "Validated physical network wait expired: " +
+            "Physical network wait expired: " +
                 "timeout_ms=$NETWORK_RESUME_WAIT_TIMEOUT_MS",
         )
         finishNetworkResumeWait(
@@ -1967,22 +1963,24 @@ class VpnConnectionManager @Inject constructor(
                 _connectionState.value is ConnectionState.Connecting
             ) {
                 val availability = underlyingNetworkAvailability()
-                if (availability != UnderlyingNetworkAvailability.VALIDATED) {
+                val networkLossTimeoutMs =
+                    UnderlyingNetworkPolicy.teardownTimeoutMs(availability)
+                if (networkLossTimeoutMs != null) {
                     val now = SystemClock.elapsedRealtime()
                     val unavailableSince = networkUnavailableStartedAtMs ?: now.also {
                         networkUnavailableStartedAtMs = it
                     }
-                    val timeoutMs = UnderlyingNetworkPolicy.timeoutMs(availability)
                     val networkDeadline = NetworkAvailabilityDeadline(
                         startedAtMs = unavailableSince,
-                        timeoutMs = timeoutMs,
+                        timeoutMs = networkLossTimeoutMs,
                     )
                     if (networkDeadline.isExpired(now)) {
                         SafeDiagnostics.warn(
                             TAG,
-                            "Startup tunnel validation aborted: no validated physical network " +
+                            "Startup tunnel validation aborted: no physical network " +
                                 "generation=$generation " +
-                                "availability=${availability.name} timeout_ms=$timeoutMs",
+                                "availability=${availability.name} " +
+                                "timeout_ms=$networkLossTimeoutMs",
                         )
                         // This coroutine is the active healthCheckJob and
                         // performStop() cancels that job. Delegate the stop to
@@ -1993,8 +1991,9 @@ class VpnConnectionManager @Inject constructor(
                     }
                     SafeDiagnostics.trace(
                         TAG,
-                        "Startup tunnel validation waiting for validated underlying internet: " +
-                            "availability=${availability.name} timeout_ms=$timeoutMs",
+                        "Startup tunnel validation waiting for physical network: " +
+                            "availability=${availability.name} " +
+                            "timeout_ms=$networkLossTimeoutMs",
                     )
                     delay(
                         networkDeadline.nextCheckDelayMs(
@@ -2005,6 +2004,12 @@ class VpnConnectionManager @Inject constructor(
                     continue
                 }
                 networkUnavailableStartedAtMs = null
+                if (availability == UnderlyingNetworkAvailability.UNVALIDATED) {
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "Startup tunnel validation probing through unvalidated physical network",
+                    )
+                }
 
                 val probeStartedAt = SystemClock.elapsedRealtime()
                 val probe = withTimeoutOrNull(TUNNEL_STARTUP_VALIDATION_TIMEOUT_MS) {
@@ -2123,7 +2128,9 @@ class VpnConnectionManager @Inject constructor(
             var networkUnavailableStartedAtMs: Long? = null
             while (gen == latestConnectionGeneration.get() && _connectionState.value is ConnectionState.Connected) {
                 val availability = underlyingNetworkAvailability()
-                if (availability != UnderlyingNetworkAvailability.VALIDATED) {
+                val networkLossTimeoutMs =
+                    UnderlyingNetworkPolicy.teardownTimeoutMs(availability)
+                if (networkLossTimeoutMs != null) {
                     val now = SystemClock.elapsedRealtime()
                     val unavailableSince = networkUnavailableStartedAtMs ?: now.also {
                         networkUnavailableStartedAtMs = it
@@ -2133,17 +2140,16 @@ class VpnConnectionManager @Inject constructor(
                                 "generation=$gen availability=${availability.name}",
                         )
                     }
-                    val timeoutMs = UnderlyingNetworkPolicy.timeoutMs(availability)
                     val deadline = NetworkAvailabilityDeadline(
                         startedAtMs = unavailableSince,
-                        timeoutMs = timeoutMs,
+                        timeoutMs = networkLossTimeoutMs,
                     )
                     if (deadline.isExpired(now)) {
                         SafeDiagnostics.warn(
                             TAG,
-                            "Tunnel watchdog stopped VPN without validated physical network: " +
+                            "Tunnel watchdog stopped VPN without a physical network: " +
                                 "generation=$gen availability=${availability.name} " +
-                                "timeout_ms=$timeoutMs",
+                                "timeout_ms=$networkLossTimeoutMs",
                         )
                         // The service callback normally reaches the same
                         // deadline first. This independent guard covers a rare
@@ -2154,8 +2160,9 @@ class VpnConnectionManager @Inject constructor(
                     }
                     SafeDiagnostics.trace(
                         TAG,
-                        "Tunnel health cycle skipped: availability=${availability.name} " +
-                            "timeout_ms=$timeoutMs",
+                        "Tunnel health cycle skipped without physical network: " +
+                            "availability=${availability.name} " +
+                            "timeout_ms=$networkLossTimeoutMs",
                     )
                     delay(
                         deadline.nextCheckDelayMs(
@@ -2166,6 +2173,12 @@ class VpnConnectionManager @Inject constructor(
                     continue
                 }
                 networkUnavailableStartedAtMs = null
+                if (availability == UnderlyingNetworkAvailability.UNVALIDATED) {
+                    SafeDiagnostics.trace(
+                        TAG,
+                        "Tunnel health probe proceeding through unvalidated physical network",
+                    )
+                }
 
                 // Freeze liveness evidence before the watchdog sends anything.
                 // Otherwise the failed probe's own uplink (or handshake bytes)

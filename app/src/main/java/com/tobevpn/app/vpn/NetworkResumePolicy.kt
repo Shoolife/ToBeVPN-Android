@@ -12,5 +12,5 @@ internal object NetworkResumePolicy {
         expectedRequest == currentRequest &&
             hasNetworkTimeoutError &&
             sameServer &&
-            availability == UnderlyingNetworkAvailability.VALIDATED
+            UnderlyingNetworkPolicy.canAttemptTunnelProbe(availability)
 }
