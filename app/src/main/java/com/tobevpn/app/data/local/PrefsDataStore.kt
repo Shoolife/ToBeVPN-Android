@@ -34,6 +34,11 @@ data class PendingPurchaseState(
     val baselineExpiresAt: Long?,
 )
 
+data class SubscriptionReminderSnooze(
+    val untilMillis: Long = 0L,
+    val expiresAtMillis: Long? = null,
+)
+
 /**
  * One atomic view of the three preferences that describe a server choice.
  * Collecting the fields as separate flows can expose transient mixed values
@@ -87,6 +92,10 @@ class PrefsDataStore @Inject constructor(
         val PENDING_PURCHASE_STARTED_AT = longPreferencesKey("pending_purchase_started_at")
         val PENDING_PURCHASE_BASELINE_PLAN = stringPreferencesKey("pending_purchase_baseline_plan")
         val PENDING_PURCHASE_BASELINE_EXPIRES_AT = longPreferencesKey("pending_purchase_baseline_expires_at")
+        val SUBSCRIPTION_REMINDER_SNOOZED_UNTIL =
+            longPreferencesKey("subscription_reminder_snoozed_until")
+        val SUBSCRIPTION_REMINDER_EXPIRES_AT =
+            longPreferencesKey("subscription_reminder_expires_at")
         val SERVER_CACHE_OWNER = stringPreferencesKey("server_cache_owner")
         val PURCHASE_PLANS_CACHE_OWNER = stringPreferencesKey("purchase_plans_cache_owner")
         val PURCHASE_PLANS_CACHE_JSON = stringPreferencesKey("purchase_plans_cache_json")
@@ -133,6 +142,15 @@ class PrefsDataStore @Inject constructor(
     val language: Flow<String?> = context.dataStore.data.map { it[Keys.LANGUAGE] }
     val profileNameDisplay: Flow<String?> =
         context.dataStore.data.map { it[Keys.PROFILE_NAME_DISPLAY] }
+    val subscriptionReminderSnooze: Flow<SubscriptionReminderSnooze> =
+        context.dataStore.data
+            .map { preferences ->
+                SubscriptionReminderSnooze(
+                    untilMillis = preferences[Keys.SUBSCRIPTION_REMINDER_SNOOZED_UNTIL] ?: 0L,
+                    expiresAtMillis = preferences[Keys.SUBSCRIPTION_REMINDER_EXPIRES_AT],
+                )
+            }
+            .distinctUntilChanged()
 
     suspend fun setProfileNameDisplay(value: String) {
         context.dataStore.edit { it[Keys.PROFILE_NAME_DISPLAY] = value }
@@ -381,6 +399,20 @@ class PrefsDataStore @Inject constructor(
 
     suspend fun clearSubscriptionSyncTimestamp() {
         context.dataStore.edit { it.remove(Keys.LAST_SUB_SYNC_AT) }
+    }
+
+    suspend fun setSubscriptionReminderSnooze(
+        untilMillis: Long,
+        expiresAtMillis: Long?,
+    ) {
+        context.dataStore.edit {
+            it[Keys.SUBSCRIPTION_REMINDER_SNOOZED_UNTIL] = untilMillis
+            if (expiresAtMillis != null) {
+                it[Keys.SUBSCRIPTION_REMINDER_EXPIRES_AT] = expiresAtMillis
+            } else {
+                it.remove(Keys.SUBSCRIPTION_REMINDER_EXPIRES_AT)
+            }
+        }
     }
 
     suspend fun markPendingPurchaseStarted(

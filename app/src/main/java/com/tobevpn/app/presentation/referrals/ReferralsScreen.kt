@@ -1595,7 +1595,7 @@ private fun ReferralAuthRequired(
             colors = referralPrimaryButtonColors(),
         ) {
             Text(
-                text = stringResource(R.string.login_via_telegram),
+                text = stringResource(R.string.login_action),
                 style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
                 maxLines = 1,
                 softWrap = false,

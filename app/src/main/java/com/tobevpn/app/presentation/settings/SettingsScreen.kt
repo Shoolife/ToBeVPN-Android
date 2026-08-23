@@ -77,7 +77,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -98,6 +100,8 @@ import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ProfileNameDisplay
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.SubscriptionExpiryUrgency
+import com.tobevpn.app.presentation.components.subscriptionExpiryUrgency
 import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
@@ -109,7 +113,6 @@ import com.tobevpn.app.presentation.theme.VpnRed
 fun SettingsScreen(
     onBack: () -> Unit,
     onNavigateToAuth: () -> Unit,
-    onNavigateToDevicePairingAuth: () -> Unit,
     onNavigateToPersonalization: () -> Unit,
     onNavigateToAdvanced: () -> Unit,
     onNavigateToSupport: () -> Unit,
@@ -173,7 +176,6 @@ fun SettingsScreen(
                 nameDisplay = nameDisplay,
                 avatarLoading = avatarLoading,
                 onNavigateToAuth = onNavigateToAuth,
-                onNavigateToDevicePairingAuth = onNavigateToDevicePairingAuth,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -439,9 +441,9 @@ internal fun AccountCard(
     nameDisplay: ProfileNameDisplay,
     avatarLoading: Boolean,
     onNavigateToAuth: () -> Unit,
-    onNavigateToDevicePairingAuth: () -> Unit,
 ) {
     val context = LocalContext.current
+    val now = System.currentTimeMillis()
     // Accent colour drives the top glow, keyed to how much of the subscription
     // is left: green with plenty of time, orange when it's running low, red
     // when it's almost gone or expired. Plans without an expiry (e.g. admin)
@@ -450,11 +452,10 @@ internal fun AccountCard(
         is AuthState.Authenticated -> when {
             authState.plan == UserPlan.EXPIRED -> VpnRed
             authState.planExpiresAt != null -> {
-                val daysLeft = (authState.planExpiresAt - System.currentTimeMillis()) / 86_400_000L
-                when {
-                    daysLeft <= 3 -> VpnRed
-                    daysLeft <= 7 -> VpnOrange
-                    else -> VpnGreen
+                when (subscriptionExpiryUrgency(authState.planExpiresAt, now)) {
+                    SubscriptionExpiryUrgency.CRITICAL -> VpnRed
+                    SubscriptionExpiryUrgency.WARNING -> VpnOrange
+                    SubscriptionExpiryUrgency.NORMAL -> VpnGreen
                 }
             }
             else -> VpnGreen
@@ -525,34 +526,7 @@ internal fun AccountCard(
                             },
                         ) {
                             SettingsSingleLineText(
-                                text = stringResource(R.string.login_via_telegram),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Medium,
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedButton(
-                            onClick = onNavigateToDevicePairingAuth,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(52.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = if (isDark) {
-                                ButtonDefaults.outlinedButtonColors()
-                            } else {
-                                ButtonDefaults.outlinedButtonColors(
-                                    contentColor = Color.Black,
-                                    disabledContentColor = Color.Black.copy(alpha = 0.38f),
-                                )
-                            },
-                            border = if (isDark) {
-                                ButtonDefaults.outlinedButtonBorder
-                            } else {
-                                BorderStroke(1.dp, Color(0xFFD6D6D6))
-                            },
-                        ) {
-                            SettingsSingleLineText(
-                                text = stringResource(R.string.auth_open_device_pairing),
+                                text = stringResource(R.string.login_action),
                                 style = MaterialTheme.typography.labelLarge,
                                 fontWeight = FontWeight.Medium,
                             )
@@ -564,13 +538,19 @@ internal fun AccountCard(
                     val serverPlanName = authState.planDisplayName?.takeIf {
                         it.isNotBlank() && authState.plan != UserPlan.EXPIRED
                     }
-                    // The pill shares the time-based accent colour with the glow
-                    // (green plenty of time / orange low / red almost gone).
+                    // The plan pill describes the plan itself and therefore does
+                    // not change colour as the expiry date approaches. The date
+                    // and the card glow carry the remaining-time indication.
                     val planLabel = when (authState.plan) {
                         UserPlan.ADMIN, UserPlan.PAID ->
                             serverPlanName ?: stringResource(R.string.plan_unknown_name)
                         UserPlan.EXPIRED -> stringResource(R.string.plan_expired)
                         UserPlan.FREE_TRIAL -> serverPlanName ?: stringResource(R.string.plan_free)
+                    }
+                    val planPillColor = when (authState.plan) {
+                        UserPlan.ADMIN, UserPlan.PAID -> VpnGreen
+                        UserPlan.FREE_TRIAL -> VpnOrange
+                        UserPlan.EXPIRED -> VpnRed
                     }
                     // Full name + @username parsed from the panel; rendered
                     // according to the user's Personalization choice.
@@ -613,7 +593,7 @@ internal fun AccountCard(
                             contentAlignment = Alignment.Center,
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                PlanPill(text = planLabel, color = accentColor)
+                                PlanPill(text = planLabel, color = planPillColor)
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
                                     text = "ID ${authState.telegramId}",
@@ -658,8 +638,25 @@ internal fun AccountCard(
                                     authState.planExpiresAt != null
                                 ) {
                                     Spacer(modifier = Modifier.height(6.dp))
+                                    val expiresLabel = stringResource(R.string.expires)
+                                    val expiresDate = formatDate(authState.planExpiresAt)
+                                    val expiresDateColor = when (
+                                        subscriptionExpiryUrgency(authState.planExpiresAt, now)
+                                    ) {
+                                        SubscriptionExpiryUrgency.CRITICAL -> VpnRed
+                                        SubscriptionExpiryUrgency.WARNING -> VpnOrange
+                                        SubscriptionExpiryUrgency.NORMAL ->
+                                            MaterialTheme.colorScheme.onSurfaceVariant
+                                    }
+                                    val expiresText = buildAnnotatedString {
+                                        append(expiresLabel)
+                                        append(" ")
+                                        pushStyle(SpanStyle(color = expiresDateColor))
+                                        append(expiresDate)
+                                        pop()
+                                    }
                                     Text(
-                                        text = "${stringResource(R.string.expires)} ${formatDate(authState.planExpiresAt)}",
+                                        text = expiresText,
                                         style = fixedLayoutTextStyle(
                                             MaterialTheme.typography.bodySmall,
                                         ),
@@ -772,14 +769,14 @@ private fun CyclingProfileName(labels: List<String>, color: Color) {
     }
 }
 
-// Plan shown as a rounded coloured pill (tinted background + matching text) —
-// the lively focal point of the otherwise-quiet account card.
+// Plan shown as a rounded neutral pill. Only the text carries the plan-state
+// accent, so the pill is not confused with the remaining-time indication.
 @Composable
 private fun PlanPill(text: String, color: Color) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(percent = 50))
-            .background(color.copy(alpha = 0.15f))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f))
             .padding(horizontal = 16.dp, vertical = 7.dp),
     ) {
         Text(

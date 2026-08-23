@@ -23,11 +23,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -79,19 +80,29 @@ private data class WhatsNewHighlight(
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
+        icon = Icons.Filled.Devices,
+        titleRes = R.string.whats_new_auth_methods_title,
+        descriptionRes = R.string.whats_new_auth_methods_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Outlined.QrCode2,
+        titleRes = R.string.whats_new_auth_qr_title,
+        descriptionRes = R.string.whats_new_auth_qr_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.Share,
+        titleRes = R.string.whats_new_auth_share_title,
+        descriptionRes = R.string.whats_new_auth_share_desc,
+    ),
+    WhatsNewHighlight(
         icon = Icons.Filled.Sync,
-        titleRes = R.string.whats_new_vpn_stability_title,
-        descriptionRes = R.string.whats_new_vpn_stability_desc,
+        titleRes = R.string.whats_new_auth_background_title,
+        descriptionRes = R.string.whats_new_auth_background_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.AutoAwesome,
-        titleRes = R.string.whats_new_bypass_reliability_title,
-        descriptionRes = R.string.whats_new_bypass_reliability_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Filled.Tune,
-        titleRes = R.string.whats_new_profile_compatibility_title,
-        descriptionRes = R.string.whats_new_profile_compatibility_desc,
+        icon = Icons.Filled.NotificationsActive,
+        titleRes = R.string.whats_new_subscription_reminder_title,
+        descriptionRes = R.string.whats_new_subscription_reminder_desc,
     ),
 )
 
@@ -180,7 +191,7 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.Language,
+                            imageVector = Icons.Outlined.QrCode2,
                             contentDescription = null,
                             tint = onAccent,
                             modifier = Modifier.size(30.dp),

@@ -24,8 +24,10 @@ import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.util.SafeDiagnostics
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -54,6 +56,13 @@ sealed interface DevicePairingPollResult {
     data object Pending : DevicePairingPollResult
     data object Expired : DevicePairingPollResult
     data object Completed : DevicePairingPollResult
+}
+
+enum class TelegramAuthPollResult {
+    PENDING,
+    COMPLETED,
+    INVALID,
+    RETRYABLE_ERROR,
 }
 
 data class CurrentSubscriptionPlanInfo(
@@ -92,6 +101,11 @@ class AuthRepository @Inject constructor(
 
     private val _subscriptionResetEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val subscriptionResetEvents: SharedFlow<Unit> = _subscriptionResetEvents.asSharedFlow()
+
+    // The auth screen and the application-wide session coordinator may observe
+    // the same confirmation. Complete it once so profile refresh and VPN
+    // recovery cannot run twice in parallel.
+    private val authCompletionMutex = Mutex()
 
     // Avatar (GET /api/user/avatar) is rate-limited, so we fetch it at most once
     // per app process unless a re-auth forces a refresh.
@@ -268,8 +282,20 @@ class AuthRepository @Inject constructor(
         return sessionDao.getSession()?.pendingAuthToken?.takeIf { it.isNotBlank() }
     }
 
-    suspend fun clearPendingAuthToken() {
-        sessionStore.update { it.copy(pendingAuthToken = null) }
+    fun observePendingAuthToken(): Flow<String?> {
+        return sessionDao.observeSession()
+            .map { session -> session?.pendingAuthToken?.takeIf { it.isNotBlank() } }
+            .distinctUntilChanged()
+    }
+
+    suspend fun clearPendingAuthToken(expectedToken: String) {
+        sessionStore.update { current ->
+            if (current.pendingAuthToken == expectedToken) {
+                current.copy(pendingAuthToken = null)
+            } else {
+                current
+            }
+        }
     }
 
     suspend fun getAuthStateSnapshot(): AuthState {
@@ -625,6 +651,17 @@ class AuthRepository @Inject constructor(
      * Returns Result with server-generated auth token on success.
      */
     suspend fun requestTelegramAuth(): Result<String> {
+        val pendingToken = getPendingAuthToken()
+        if (pendingToken != null) {
+            when (pollTelegramAuthStatus(pendingToken)) {
+                TelegramAuthPollResult.COMPLETED,
+                TelegramAuthPollResult.PENDING,
+                TelegramAuthPollResult.RETRYABLE_ERROR,
+                -> return Result.success(pendingToken)
+                TelegramAuthPollResult.INVALID -> clearPendingAuthToken(pendingToken)
+            }
+        }
+
         val session = sessionDao.getSession()
         val deviceId = getOrCreateDeviceId()
         val request = AuthRequestDto(
@@ -784,23 +821,115 @@ class AuthRepository @Inject constructor(
      * Returns true when Telegram auth is confirmed.
      */
     suspend fun checkAuthStatus(authToken: String): Boolean {
-        return try {
-            val response = botApi.checkAuthStatus(authToken)
-            val status = response.data ?: return false
+        return pollTelegramAuthStatus(authToken) == TelegramAuthPollResult.COMPLETED
+    }
 
-            if (status.status == "completed" && status.telegramId != null) {
-                applyAuthenticatedDevice(
-                    telegramId = status.telegramId,
-                    shortUuid = status.shortUuid,
-                    panelUserUuid = status.panelUserUuid,
-                    clearPendingAuthToken = true,
+    suspend fun pollTelegramAuthStatus(authToken: String): TelegramAuthPollResult {
+        if (authToken.isBlank()) return TelegramAuthPollResult.INVALID
+        return authCompletionMutex.withLock {
+            val localSession = sessionDao.getSession()
+            if (localSession?.pendingAuthToken != authToken &&
+                localSession?.authState == "AUTHENTICATED" &&
+                localSession.telegramId != null
+            ) {
+                return@withLock TelegramAuthPollResult.COMPLETED
+            }
+
+            try {
+                val response = botApi.checkAuthStatus(authToken)
+                if (!response.success) {
+                    val invalid = response.message
+                        ?.lowercase(Locale.ROOT)
+                        ?.let { message ->
+                            "not found" in message ||
+                                "expired" in message ||
+                                "rejected" in message
+                        }
+                        ?: false
+                    return@withLock if (invalid) {
+                        TelegramAuthPollResult.INVALID
+                    } else {
+                        TelegramAuthPollResult.RETRYABLE_ERROR
+                    }
+                }
+
+                val status = response.data
+                    ?: return@withLock TelegramAuthPollResult.RETRYABLE_ERROR
+                when (status.status.lowercase(Locale.ROOT)) {
+                    "completed" -> {
+                        val telegramId = status.telegramId
+                            ?: return@withLock TelegramAuthPollResult.RETRYABLE_ERROR
+                        // The backend has already linked the device and may
+                        // have deleted its anonymous panel user. Navigation
+                        // away from the screen must not cancel the local half
+                        // of that irreversible transition.
+                        withContext(NonCancellable) {
+                            applyAuthenticatedDevice(
+                                telegramId = telegramId,
+                                shortUuid = status.shortUuid,
+                                panelUserUuid = status.panelUserUuid,
+                                clearPendingAuthToken = true,
+                            )
+                        }
+                        SafeDiagnostics.info(TAG, "Pending Telegram authentication completed")
+                        TelegramAuthPollResult.COMPLETED
+                    }
+                    "expired", "rejected" -> TelegramAuthPollResult.INVALID
+                    else -> TelegramAuthPollResult.PENDING
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                SafeDiagnostics.trace(
+                    TAG,
+                    "Pending Telegram authentication check deferred: " +
+                        SafeDiagnostics.failureCategory(error),
                 )
+                TelegramAuthPollResult.RETRYABLE_ERROR
+            }
+        }
+    }
+
+    /**
+     * Repairs the split state produced by older clients when the backend had
+     * already linked a QR login but the local screen stopped polling first.
+     */
+    suspend fun reconcileLinkedIdentity(): Boolean {
+        return authCompletionMutex.withLock {
+            val before = sessionDao.getSession() ?: run {
+                getOrCreateDeviceId()
+                sessionDao.getSession()
+            } ?: return@withLock false
+            if (before.authState == "AUTHENTICATED" &&
+                before.telegramId != null &&
+                !before.shortUuid.isNullOrBlank() &&
+                prefsDataStore.isServerCacheOwner(before.shortUuid)
+            ) {
+                return@withLock false
+            }
+
+            try {
+                val tokens = bootstrapManager.bootstrap()
+                if (!tokens.isLinked || tokens.telegramId == null) {
+                    return@withLock false
+                }
+                refreshAuthenticatedClientState(
+                    previousShortUuid = before.shortUuid,
+                    forceProfileReset = true,
+                    reason = "SERVER_IDENTITY_RECONCILIATION",
+                )
+                SafeDiagnostics.info(TAG, "Linked device identity reconciled from server")
                 true
-            } else {
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                SafeDiagnostics.trace(
+                    TAG,
+                    "Linked device identity reconciliation deferred: " +
+                        SafeDiagnostics.failureCategory(error),
+                )
                 false
             }
-        } catch (_: Exception) {
-            false
         }
     }
 
@@ -818,12 +947,14 @@ class AuthRepository @Inject constructor(
                     val telegramId = status.telegramId ?: return Result.failure(
                         IllegalStateException("Pairing completed without telegram_id")
                     )
-                    applyAuthenticatedDevice(
-                        telegramId = telegramId,
-                        shortUuid = status.shortUuid,
-                        panelUserUuid = status.panelUserUuid,
-                        clearPendingAuthToken = false,
-                    )
+                    withContext(NonCancellable) {
+                        applyAuthenticatedDevice(
+                            telegramId = telegramId,
+                            shortUuid = status.shortUuid,
+                            panelUserUuid = status.panelUserUuid,
+                            clearPendingAuthToken = false,
+                        )
+                    }
                     Result.success(DevicePairingPollResult.Completed)
                 }
                 "expired" -> Result.success(DevicePairingPollResult.Expired)
@@ -832,6 +963,8 @@ class AuthRepository @Inject constructor(
                 )
                 else -> Result.success(DevicePairingPollResult.Pending)
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -843,6 +976,8 @@ class AuthRepository @Inject constructor(
         panelUserUuid: String?,
         clearPendingAuthToken: Boolean,
     ) {
+        val previousSession = sessionDao.getSession()
+        val previousShortUuid = previousSession?.shortUuid
         val deviceId = getOrCreateDeviceId()
         sessionStore.updateOrCreate(deviceId) { current ->
             current.copy(
@@ -898,6 +1033,40 @@ class AuthRepository @Inject constructor(
         }
 
         registerCurrentDevice()
+        refreshAuthenticatedClientState(
+            previousShortUuid = previousShortUuid,
+            forceProfileReset = previousSession?.authState != "AUTHENTICATED" ||
+                previousSession.telegramId == null,
+            reason = "AUTH_COMPLETED",
+        )
+    }
+
+    private suspend fun refreshAuthenticatedClientState(
+        previousShortUuid: String?,
+        forceProfileReset: Boolean,
+        reason: String,
+    ) {
+        val currentShortUuid = sessionDao.getSession()?.shortUuid
+        val identityChanged = forceProfileReset || previousShortUuid != currentShortUuid
+
+        // The server transfers and deletes the anonymous panel user during QR
+        // login. Keeping its cached profile would create a tunnel that looks
+        // connected but cannot pass traffic.
+        if (identityChanged) {
+            vpnRepository.clearCachedServers()
+        }
+        prefsDataStore.clearSubscriptionSyncTimestamp()
+        syncSubscription(force = true)
+        if (vpnRepository.getServers().isEmpty()) {
+            vpnRepository.refreshServers(forceRefresh = true)
+        }
+        val serverCount = vpnRepository.getServers().size
+        SafeDiagnostics.info(
+            TAG,
+            "Authenticated client state refreshed: reason=$reason " +
+                "identity_changed=$identityChanged servers=$serverCount",
+        )
+        _subscriptionResetEvents.tryEmit(Unit)
     }
 
     /**

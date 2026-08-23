@@ -11,6 +11,7 @@ import com.google.gson.Gson
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.PendingPurchaseState
 import com.tobevpn.app.data.local.PrefsDataStore
+import com.tobevpn.app.data.local.SubscriptionReminderSnooze
 import com.tobevpn.app.data.remote.dto.PurchasePlansDto
 import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.data.repository.AuthRepository
@@ -198,6 +199,15 @@ class MainViewModel @Inject constructor(
 
     val subscriptionUsageBlocked: StateFlow<Boolean> = authRepository.observeSubscriptionUsageBlocked()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    val subscriptionReminderSnooze: StateFlow<SubscriptionReminderSnooze?> =
+        prefsDataStore.subscriptionReminderSnooze
+            .map<SubscriptionReminderSnooze, SubscriptionReminderSnooze?> { it }
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                null,
+            )
 
     // Home screen visibility — gates the periodic ping loop so it doesn't
     // keep opening TCP probes while the app is backgrounded.
@@ -546,6 +556,16 @@ class MainViewModel @Inject constructor(
             if (!authRepository.pingHwidOnly()) {
                 onAllowed()
             }
+        }
+    }
+
+    fun snoozeSubscriptionReminder(expiresAtMillis: Long?) {
+        launchGuarded("Subscription reminder snooze") {
+            val nowMillis = System.currentTimeMillis()
+            prefsDataStore.setSubscriptionReminderSnooze(
+                untilMillis = subscriptionReminderSnoozeUntil(nowMillis, expiresAtMillis),
+                expiresAtMillis = expiresAtMillis,
+            )
         }
     }
 

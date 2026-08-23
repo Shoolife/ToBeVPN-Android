@@ -109,12 +109,6 @@ fun AppNavHost(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
             )
         }
-        composable<DevicePairingAuthRoute> {
-            AuthScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-                startWithDevicePairing = true,
-            )
-        }
         composable<StatsRoute> {
             StatsScreen(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
@@ -129,7 +123,6 @@ fun AppNavHost(
             SettingsScreen(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
                 onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
-                onNavigateToDevicePairingAuth = { navController.navigateSingleTop(DevicePairingAuthRoute) },
                 onNavigateToPersonalization = { navController.navigateSingleTop(PersonalizationRoute) },
                 onNavigateToAdvanced = { navController.navigateSingleTop(AdvancedRoute) },
                 onNavigateToSupport = { navController.navigateSingleTop(SupportRoute) },

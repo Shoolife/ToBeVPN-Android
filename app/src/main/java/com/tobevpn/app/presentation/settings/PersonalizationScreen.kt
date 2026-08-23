@@ -619,7 +619,6 @@ private fun DisplayPreviewProfilePage(
             nameDisplay = profileNameDisplay,
             avatarLoading = avatarLoading,
             onNavigateToAuth = {},
-            onNavigateToDevicePairingAuth = {},
         )
     }
 }

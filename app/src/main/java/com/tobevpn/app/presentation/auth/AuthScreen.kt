@@ -1,11 +1,16 @@
 package com.tobevpn.app.presentation.auth
 
+import android.content.ClipData
+import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,12 +19,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.QrCode2
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -37,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,12 +65,16 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.FileProvider
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
@@ -66,16 +84,18 @@ import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.util.DeepLinkBus
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AuthScreen(
     onBack: () -> Unit,
-    startWithDevicePairing: Boolean = false,
     viewModel: AuthViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val authMethod by viewModel.authMethod.collectAsStateWithLifecycle()
     val showEmailPrompt by viewModel.showEmailPrompt.collectAsStateWithLifecycle()
     val emailSaving by viewModel.emailSaving.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -83,12 +103,6 @@ fun AuthScreen(
     LifecycleResumeEffect(Unit) {
         viewModel.onReturnedFromTelegram()
         onPauseOrDispose {}
-    }
-
-    LaunchedEffect(startWithDevicePairing) {
-        if (startWithDevicePairing && uiState is AuthUiState.Idle) {
-            viewModel.startDevicePairing()
-        }
     }
 
     if (showEmailPrompt) {
@@ -104,10 +118,7 @@ fun AuthScreen(
             TopAppBar(
                 title = { Text(stringResource(R.string.auth_title)) },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        viewModel.resetState()
-                        onBack()
-                    }) {
+                    IconButton(onClick = onBack) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.back),
@@ -120,39 +131,118 @@ fun AuthScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+                .padding(paddingValues),
         ) {
-            when (uiState) {
-                is AuthUiState.Idle -> IdleContent(
-                    onTelegramLogin = { viewModel.startTelegramAuth(context) },
+            if (uiState !is AuthUiState.Success) {
+                AuthMethodTabs(
+                    selectedMethod = authMethod,
+                    onMethodSelected = viewModel::selectAuthMethod,
                 )
-                is AuthUiState.OpeningTelegram -> OpeningContent(
-                    text = stringResource(R.string.auth_opening_telegram),
-                )
-                is AuthUiState.LoadingDevicePairing -> OpeningContent(
-                    text = stringResource(R.string.auth_pairing_loading),
-                )
-                is AuthUiState.Polling -> PollingContent(
-                    onOpenTelegram = { viewModel.reopenTelegram(context) },
-                    onRestart = { viewModel.startTelegramAuth(context) },
-                )
-                is AuthUiState.WaitingDevicePairing -> {
-                    val state = uiState as AuthUiState.WaitingDevicePairing
-                    DevicePairingContent(code = state.code)
+            }
+
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 32.dp, vertical = 16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                when (uiState) {
+                    is AuthUiState.Idle -> IdleContent(
+                        onTelegramLogin = { viewModel.startTelegramAuth(context) },
+                        onTelegramQrAccess = viewModel::startTelegramQrPairing,
+                    )
+                    is AuthUiState.OpeningTelegram -> OpeningContent(
+                        text = stringResource(R.string.auth_opening_telegram),
+                    )
+                    is AuthUiState.LoadingDevicePairing -> OpeningContent(
+                        text = stringResource(R.string.auth_pairing_loading),
+                    )
+                    is AuthUiState.LoadingTelegramPairing -> OpeningContent(
+                        text = stringResource(R.string.auth_telegram_pairing_loading),
+                    )
+                    is AuthUiState.Polling -> PollingContent(
+                        onOpenTelegram = { viewModel.reopenTelegram(context) },
+                        onRestart = { viewModel.startTelegramAuth(context) },
+                    )
+                    is AuthUiState.WaitingDevicePairing -> {
+                        val state = uiState as AuthUiState.WaitingDevicePairing
+                        DevicePairingContent(code = state.code)
+                    }
+                    is AuthUiState.WaitingTelegramPairing -> {
+                        val state = uiState as AuthUiState.WaitingTelegramPairing
+                        TelegramPairingContent(
+                            qrData = state.qrData,
+                            onBackToTelegramLogin = viewModel::showTelegramLogin,
+                        )
+                    }
+                    is AuthUiState.Success -> SuccessContent(onBack = onBack)
+                    is AuthUiState.Error -> ErrorContent(
+                        message = stringResource((uiState as AuthUiState.Error).messageRes),
+                        onRetry = { viewModel.retryAuth(context) },
+                    )
                 }
-                is AuthUiState.Success -> SuccessContent(onBack = onBack)
-                is AuthUiState.Error -> ErrorContent(
-                    message = stringResource((uiState as AuthUiState.Error).messageRes),
-                    onRetry = {
-                        if (startWithDevicePairing) {
-                            viewModel.startDevicePairing()
+            }
+        }
+    }
+}
+
+@Composable
+private fun AuthMethodTabs(
+    selectedMethod: AuthMethod,
+    onMethodSelected: (AuthMethod) -> Unit,
+) {
+    val shape = RoundedCornerShape(14.dp)
+    val isDark = isSystemInDarkTheme()
+    val methods = listOf(
+        AuthMethod.TELEGRAM to R.string.auth_pairing_tab_telegram,
+        AuthMethod.TOBEVPN_APP to R.string.auth_pairing_tab_tobevpn,
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh, shape)
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        methods.forEach { (method, labelRes) ->
+            val selected = method == selectedMethod
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(11.dp))
+                    .background(
+                        if (selected) {
+                            VpnGreen.copy(alpha = if (isDark) 0.22f else 0.16f)
                         } else {
-                            viewModel.resetState()
-                        }
+                            Color.Transparent
+                        },
+                    )
+                    .selectable(
+                        selected = selected,
+                        onClick = { onMethodSelected(method) },
+                        role = Role.Tab,
+                    )
+                    .padding(horizontal = 8.dp, vertical = 11.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = stringResource(labelRes),
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (selected) {
+                        if (isDark) VpnGreen else Color(0xFF16652E)
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     },
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
                 )
             }
         }
@@ -162,14 +252,16 @@ fun AuthScreen(
 @Composable
 private fun IdleContent(
     onTelegramLogin: () -> Unit,
+    onTelegramQrAccess: () -> Unit,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val brandColor = if (isDark) MaterialTheme.colorScheme.primary else androidx.compose.ui.graphics.Color(0xFF3F3F3F)
     CollaborationMark(isDark = isDark)
     Spacer(modifier = Modifier.height(24.dp))
     Text(
-        text = stringResource(R.string.auth_title),
+        text = stringResource(R.string.auth_telegram_title),
         style = MaterialTheme.typography.headlineMedium,
+        textAlign = TextAlign.Center,
     )
     Spacer(modifier = Modifier.height(12.dp))
     Text(
@@ -196,6 +288,28 @@ private fun IdleContent(
         },
     ) {
         Text(stringResource(R.string.auth_open_telegram))
+    }
+    Spacer(modifier = Modifier.height(56.dp))
+    Text(
+        text = stringResource(R.string.auth_telegram_other_phone_hint),
+        style = MaterialTheme.typography.bodySmall,
+        textAlign = TextAlign.Center,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Spacer(modifier = Modifier.height(2.dp))
+    TextButton(
+        onClick = onTelegramQrAccess,
+        colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+            contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.QrCode2,
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(stringResource(R.string.auth_show_login_qr))
     }
 }
 
@@ -284,18 +398,79 @@ private fun PollingContent(
 
 @Composable
 private fun DevicePairingContent(code: String) {
+    PairingQrContent(
+        title = stringResource(R.string.auth_device_pairing_title),
+        description = stringResource(R.string.auth_device_pairing_description),
+        qrData = DeepLinkBus.createPairingUri(code),
+        code = code,
+        waitingText = stringResource(R.string.auth_pairing_waiting),
+    )
+}
+
+@Composable
+private fun TelegramPairingContent(
+    qrData: String,
+    onBackToTelegramLogin: () -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val chooserTitle = stringResource(R.string.auth_share_qr_chooser)
+    val shareMessage = stringResource(R.string.auth_share_qr_message, qrData)
+    val shareError = stringResource(R.string.auth_share_qr_error)
+    var sharing by remember(qrData) { mutableStateOf(false) }
+
+    PairingQrContent(
+        title = stringResource(R.string.auth_telegram_pairing_title),
+        description = stringResource(R.string.auth_telegram_pairing_description),
+        qrData = qrData,
+        waitingText = stringResource(R.string.auth_telegram_pairing_waiting),
+        sharing = sharing,
+        secondaryActionText = stringResource(R.string.auth_back_to_local_telegram),
+        onSecondaryAction = onBackToTelegramLogin,
+        onShare = {
+            if (!sharing) {
+                sharing = true
+                scope.launch {
+                    val shared = shareQrCode(
+                        context = context,
+                        qrData = qrData,
+                        shareMessage = shareMessage,
+                        chooserTitle = chooserTitle,
+                    )
+                    sharing = false
+                    if (!shared) {
+                        Toast.makeText(context, shareError, Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        },
+    )
+}
+
+@Composable
+private fun PairingQrContent(
+    title: String,
+    description: String,
+    qrData: String,
+    waitingText: String,
+    code: String? = null,
+    sharing: Boolean = false,
+    onShare: (() -> Unit)? = null,
+    secondaryActionText: String? = null,
+    onSecondaryAction: (() -> Unit)? = null,
+) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val copiedMessage = stringResource(R.string.auth_pairing_code_copied)
 
     Text(
-        text = stringResource(R.string.auth_device_pairing_title),
+        text = title,
         style = MaterialTheme.typography.headlineSmall,
         textAlign = TextAlign.Center,
     )
     Spacer(modifier = Modifier.height(12.dp))
     Text(
-        text = stringResource(R.string.auth_device_pairing_description),
+        text = description,
         style = MaterialTheme.typography.bodyMedium,
         textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -303,48 +478,97 @@ private fun DevicePairingContent(code: String) {
     Spacer(modifier = Modifier.height(24.dp))
     Box(
         modifier = Modifier
-            .size(280.dp)
+            .widthIn(max = 280.dp)
+            .fillMaxWidth()
+            .aspectRatio(1f)
             .clip(RoundedCornerShape(22.dp))
             .background(Color.White)
             .padding(16.dp),
         contentAlignment = Alignment.Center,
     ) {
-        QrCode(data = DeepLinkBus.createPairingUri(code), modifier = Modifier.fillMaxSize())
+        QrCode(data = qrData, modifier = Modifier.fillMaxSize())
     }
-    Spacer(modifier = Modifier.height(16.dp))
-    Text(
-        text = stringResource(R.string.auth_pairing_code_label),
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
+    if (code != null) {
+        Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = code,
-            style = MaterialTheme.typography.titleLarge,
-            textAlign = TextAlign.Center,
+            text = stringResource(R.string.auth_pairing_code_label),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        IconButton(
-            onClick = {
-                clipboard.setText(AnnotatedString(code))
-                Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = code,
+                style = MaterialTheme.typography.titleLarge,
+                textAlign = TextAlign.Center,
+            )
+            IconButton(
+                onClick = {
+                    clipboard.setText(AnnotatedString(code))
+                    Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
+                },
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.ContentCopy,
+                    contentDescription = stringResource(R.string.auth_copy_pairing_code),
+                )
+            }
+        }
+    }
+    if (onShare != null) {
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(
+            onClick = onShare,
+            enabled = !sharing,
+            modifier = Modifier
+                .wrapContentWidth()
+                .height(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            colors = if (isSystemInDarkTheme()) {
+                androidx.compose.material3.ButtonDefaults.buttonColors()
+            } else {
+                androidx.compose.material3.ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF3F3F3F),
+                    contentColor = Color.White,
+                )
             },
         ) {
-            Icon(
-                imageVector = Icons.Outlined.ContentCopy,
-                contentDescription = stringResource(R.string.auth_copy_pairing_code),
-            )
+            if (sharing) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Outlined.Share,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(stringResource(R.string.auth_share_qr))
+            }
         }
     }
     Spacer(modifier = Modifier.height(12.dp))
     Text(
-        text = stringResource(R.string.auth_pairing_waiting),
+        text = waitingText,
         style = MaterialTheme.typography.bodyMedium,
         textAlign = TextAlign.Center,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
+    if (secondaryActionText != null && onSecondaryAction != null) {
+        Spacer(modifier = Modifier.height(40.dp))
+        TextButton(
+            onClick = onSecondaryAction,
+            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+        ) {
+            Text(secondaryActionText)
+        }
+    }
 }
 
 @Composable
@@ -358,24 +582,7 @@ private fun QrCode(
     LaunchedEffect(data) {
         val result = withContext(Dispatchers.Default) {
             runCatching {
-                val hints = mapOf(
-                    EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M,
-                    EncodeHintType.MARGIN to 0,
-                )
-                val matrix = QRCodeWriter().encode(data, BarcodeFormat.QR_CODE, 512, 512, hints)
-                val pixels = IntArray(matrix.width * matrix.height) { i ->
-                    if (matrix[i % matrix.width, i / matrix.width]) {
-                        android.graphics.Color.BLACK
-                    } else {
-                        android.graphics.Color.WHITE
-                    }
-                }
-                Bitmap.createBitmap(
-                    pixels,
-                    matrix.width,
-                    matrix.height,
-                    Bitmap.Config.RGB_565,
-                ).asImageBitmap()
+                createQrBitmap(data = data, size = 512, margin = 0).asImageBitmap()
             }.getOrNull()
         }
         if (result != null) bitmap = result else error = true
@@ -391,6 +598,71 @@ private fun QrCode(
             contentScale = ContentScale.Fit,
         )
     }
+}
+
+private fun createQrBitmap(
+    data: String,
+    size: Int,
+    margin: Int,
+): Bitmap {
+    val hints = mapOf(
+        EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M,
+        EncodeHintType.MARGIN to margin,
+    )
+    val matrix = QRCodeWriter().encode(data, BarcodeFormat.QR_CODE, size, size, hints)
+    val pixels = IntArray(matrix.width * matrix.height) { index ->
+        if (matrix[index % matrix.width, index / matrix.width]) {
+            android.graphics.Color.BLACK
+        } else {
+            android.graphics.Color.WHITE
+        }
+    }
+    return Bitmap.createBitmap(
+        pixels,
+        matrix.width,
+        matrix.height,
+        Bitmap.Config.ARGB_8888,
+    )
+}
+
+private suspend fun shareQrCode(
+    context: Context,
+    qrData: String,
+    shareMessage: String,
+    chooserTitle: String,
+): Boolean {
+    val sendIntent = withContext(Dispatchers.IO) {
+        runCatching {
+            val shareDirectory = File(context.cacheDir, "shared_qr").apply { mkdirs() }
+            val qrFile = File(shareDirectory, "tobevpn-access-qr.png")
+            val bitmap = createQrBitmap(data = qrData, size = 1024, margin = 2)
+            try {
+                qrFile.outputStream().buffered().use { output ->
+                    check(bitmap.compress(Bitmap.CompressFormat.PNG, 100, output))
+                }
+            } finally {
+                bitmap.recycle()
+            }
+
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                qrFile,
+            )
+            Intent(Intent.ACTION_SEND).apply {
+                type = "image/png"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TEXT, shareMessage)
+                clipData = ClipData.newUri(context.contentResolver, qrFile.name, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }.getOrNull()
+    } ?: return false
+
+    return runCatching {
+        context.startActivity(Intent.createChooser(sendIntent, chooserTitle))
+        true
+    }.getOrDefault(false)
 }
 
 @Composable

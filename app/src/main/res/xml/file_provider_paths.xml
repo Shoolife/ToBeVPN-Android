@@ -6,4 +6,6 @@
     <files-path name="updates_internal" path="updates/" />
     <!-- User-initiated export of locally retained diagnostic journals. -->
     <files-path name="diagnostic_logs" path="diagnostic_logs/" />
+    <!-- One-time QR image explicitly shared from the device-pairing screen. -->
+    <cache-path name="shared_auth_qr" path="shared_qr/" />
 </paths>

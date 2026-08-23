@@ -101,8 +101,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -123,6 +126,9 @@ import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.presentation.components.countryFlagForUi
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.SubscriptionExpiryUrgency
+import com.tobevpn.app.presentation.components.subscriptionExpiryMillisLeft
+import com.tobevpn.app.presentation.components.subscriptionExpiryUrgency
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import com.tobevpn.app.presentation.components.serverDisplayName
 import com.tobevpn.app.presentation.theme.AppScaledContent
@@ -160,6 +166,8 @@ fun MainScreen(
     val connectionPreparation by viewModel.connectionPreparation.collectAsStateWithLifecycle()
     val paymentSuccessVisible by viewModel.paymentSuccessVisible.collectAsStateWithLifecycle()
     val subscriptionUsageBlocked by viewModel.subscriptionUsageBlocked.collectAsStateWithLifecycle()
+    val subscriptionReminderSnooze by
+        viewModel.subscriptionReminderSnooze.collectAsStateWithLifecycle()
     val activity = LocalActivity.current
     val pageMaxWidth = responsiveMaxWidth(560.dp)
 
@@ -170,6 +178,9 @@ fun MainScreen(
     }
 
     var showSubscriptionSheet by remember { mutableStateOf(false) }
+    var selectCurrentTariffOnSubscriptionOpen by rememberSaveable {
+        mutableStateOf(false)
+    }
     var showTemporaryAccessDialog by remember { mutableStateOf(false) }
     var showBlockedDialog by remember { mutableStateOf(false) }
     val prevBlocked = remember { mutableStateOf(subscriptionUsageBlocked) }
@@ -346,11 +357,21 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            (authState as? AuthState.Authenticated)?.let { reminderAuth ->
+            val reminderAuth = authState as? AuthState.Authenticated
+            val reminderSnooze = subscriptionReminderSnooze
+            if (reminderAuth != null && reminderSnooze != null) {
                 SubscriptionReminderBanner(
                     auth = reminderAuth,
+                    snoozedUntilMillis = reminderSnooze.untilMillis,
+                    snoozedForExpiryMillis = reminderSnooze.expiresAtMillis,
                     onRenew = {
-                        viewModel.requestSubscriptionSheet { showSubscriptionSheet = true }
+                        viewModel.requestSubscriptionSheet {
+                            selectCurrentTariffOnSubscriptionOpen = true
+                            showSubscriptionSheet = true
+                        }
+                    },
+                    onSnooze = {
+                        viewModel.snoozeSubscriptionReminder(reminderAuth.planExpiresAt)
                     },
                 )
                 Spacer(modifier = Modifier.height(16.dp))
@@ -450,6 +471,7 @@ fun MainScreen(
                             .padding(horizontal = 24.dp)
                             .clickable {
                                 viewModel.requestSubscriptionSheet {
+                                    selectCurrentTariffOnSubscriptionOpen = false
                                     showSubscriptionSheet = true
                                 }
                             },
@@ -502,6 +524,7 @@ fun MainScreen(
                         usageInfo = usageInfo,
                         onClick = {
                             viewModel.requestSubscriptionSheet {
+                                selectCurrentTariffOnSubscriptionOpen = false
                                 showSubscriptionSheet = true
                             }
                         },
@@ -551,6 +574,7 @@ fun MainScreen(
             purchasePlansLoading = purchasePlansLoading,
             purchasePlansLoaded = purchasePlansLoaded,
             currentLimits = currentLimits,
+            initiallySelectCurrentTariff = selectCurrentTariffOnSubscriptionOpen,
             onLoadPurchasePlans = viewModel::loadPurchasePlans,
             onOpenPurchaseUrl = openPurchaseUrl,
             onDismiss = { showSubscriptionSheet = false },
@@ -933,22 +957,21 @@ private fun ErrorCard(message: String) {
 @Composable
 private fun SubscriptionReminderBanner(
     auth: AuthState.Authenticated,
+    snoozedUntilMillis: Long,
+    snoozedForExpiryMillis: Long?,
     onRenew: () -> Unit,
+    onSnooze: () -> Unit,
 ) {
     val dayMs = 86_400_000L
     val expiresAt = auth.planExpiresAt
 
-    val expired: Boolean
-    val title: String?
-    when {
+    val title: String? = when {
         auth.plan == UserPlan.EXPIRED -> {
-            title = stringResource(R.string.subscription_expired_title)
-            expired = true
+            stringResource(R.string.subscription_expired_title)
         }
         (auth.plan == UserPlan.PAID || auth.plan == UserPlan.ADMIN) && expiresAt != null -> {
-            val msLeft = expiresAt - System.currentTimeMillis()
-            expired = false
-            title = if (msLeft in 0..(3 * dayMs)) {
+            val msLeft = subscriptionExpiryMillisLeft(expiresAt)
+            if (msLeft in 0..(3 * dayMs)) {
                 val daysLeft = ceil(msLeft.toDouble() / dayMs).toInt()
                 if (daysLeft <= 0) stringResource(R.string.subscription_expiry_today)
                 else pluralStringResource(
@@ -956,23 +979,49 @@ private fun SubscriptionReminderBanner(
                 )
             } else null
         }
-        else -> { title = null; expired = false }
+        else -> null
     }
 
     if (title == null) return
 
-    // Dismiss for the current run; the banner returns on the next launch and
-    // whenever the plan/expiry changes (keyed remember).
-    var dismissed by remember(auth.plan, expiresAt) { mutableStateOf(false) }
-    if (dismissed) return
+    var snoozeClockMillis by remember(
+        snoozedUntilMillis,
+        snoozedForExpiryMillis,
+        expiresAt,
+    ) {
+        mutableStateOf(System.currentTimeMillis())
+    }
+    LaunchedEffect(snoozedUntilMillis, snoozedForExpiryMillis, expiresAt) {
+        val nowMillis = System.currentTimeMillis()
+        snoozeClockMillis = nowMillis
+        if (
+            isSubscriptionReminderSnoozed(
+                snoozedUntilMillis = snoozedUntilMillis,
+                snoozedForExpiryMillis = snoozedForExpiryMillis,
+                currentExpiryMillis = expiresAt,
+                nowMillis = nowMillis,
+            )
+        ) {
+            kotlinx.coroutines.delay((snoozedUntilMillis - nowMillis).coerceAtLeast(1L))
+            snoozeClockMillis = System.currentTimeMillis()
+        }
+    }
+    val persistentlySnoozed = isSubscriptionReminderSnoozed(
+        snoozedUntilMillis = snoozedUntilMillis,
+        snoozedForExpiryMillis = snoozedForExpiryMillis,
+        currentExpiryMillis = expiresAt,
+        nowMillis = snoozeClockMillis,
+    )
+    // Hide immediately while the DataStore write is still completing.
+    var dismissedLocally by remember(auth.plan, expiresAt) { mutableStateOf(false) }
+    if (persistentlySnoozed || dismissedLocally) return
 
     val dark = androidx.compose.foundation.isSystemInDarkTheme()
-    val accent = if (expired) VpnRed else VpnOrange
-    val cardColor = if (dark) {
-        if (expired) Color(0xFF2A1A1A) else Color(0xFF2A2415)
-    } else {
-        if (expired) Color(0xFFFFEBEE) else Color(0xFFFFF8E1)
-    }
+    // This banner is shown only in the critical final 72 hours (or after
+    // expiry), so it must match the red date/gradient state. Orange remains
+    // reserved for the earlier 3-to-7-day warning period, which has no banner.
+    val accent = VpnRed
+    val cardColor = if (dark) Color(0xFF2A1A1A) else Color(0xFFFFEBEE)
 
     Card(
         modifier = Modifier
@@ -981,26 +1030,62 @@ private fun SubscriptionReminderBanner(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = cardColor),
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
+        Column(
+            modifier = Modifier.padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 color = accent,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
             )
             Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = stringResource(R.string.subscription_renew_reminder_desc),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
             )
             Spacer(modifier = Modifier.height(16.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = onRenew, modifier = Modifier.weight(1f)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Button(
+                    onClick = onRenew,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp),
+                    shape = RoundedCornerShape(13.dp),
+                    colors = if (dark) {
+                        ButtonDefaults.buttonColors()
+                    } else {
+                        ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF3F3F3F),
+                            contentColor = Color.White,
+                        )
+                    },
+                ) {
                     Text(stringResource(R.string.subscription_renew_action))
                 }
                 Spacer(modifier = Modifier.width(8.dp))
-                TextButton(onClick = { dismissed = true }) {
+                TextButton(
+                    onClick = {
+                        dismissedLocally = true
+                        onSnooze()
+                    },
+                    modifier = Modifier.height(46.dp),
+                    shape = RoundedCornerShape(13.dp),
+                    colors = if (dark) {
+                        ButtonDefaults.textButtonColors(contentColor = Color.White)
+                    } else {
+                        ButtonDefaults.textButtonColors(contentColor = Color.Black)
+                    },
+                ) {
                     Text(stringResource(R.string.update_banner_later))
                 }
             }
@@ -1063,7 +1148,7 @@ private fun LimitExhaustedCard(onLoginClick: () -> Unit) {
                 shape = RoundedCornerShape(14.dp),
             ) {
                 Text(
-                    text = stringResource(R.string.login_via_telegram),
+                    text = stringResource(R.string.login_action),
                     fontWeight = FontWeight.SemiBold,
                 )
             }
@@ -1321,17 +1406,25 @@ private fun PlanCard(
     val serverPlanName = auth.planDisplayName?.takeIf {
         it.isNotBlank() && auth.plan != UserPlan.EXPIRED
     }
-    val (planLabel, planColor, expiresText) = when (auth.plan) {
-        UserPlan.ADMIN -> {
-            val dateStr = auth.planExpiresAt?.let { formatDate(it) } ?: ""
-            Triple(serverPlanName ?: stringResource(R.string.plan_unknown_name), VpnGreen, if (dateStr.isNotEmpty()) stringResource(R.string.plan_until, dateStr) else "")
-        }
-        UserPlan.PAID -> {
-            val dateStr = auth.planExpiresAt?.let { formatDate(it) } ?: ""
-            Triple(serverPlanName ?: stringResource(R.string.plan_unknown_name), VpnGreen, if (dateStr.isNotEmpty()) stringResource(R.string.plan_until, dateStr) else "")
-        }
-        UserPlan.EXPIRED -> Triple(stringResource(R.string.plan_expired), VpnRed, stringResource(R.string.plan_renew))
-        UserPlan.FREE_TRIAL -> Triple(serverPlanName ?: stringResource(R.string.plan_free), VpnOrange, "")
+    val planLabel = when (auth.plan) {
+        UserPlan.ADMIN, UserPlan.PAID ->
+            serverPlanName ?: stringResource(R.string.plan_unknown_name)
+        UserPlan.EXPIRED -> stringResource(R.string.plan_expired)
+        UserPlan.FREE_TRIAL -> serverPlanName ?: stringResource(R.string.plan_free)
+    }
+    val planColor = when (auth.plan) {
+        UserPlan.ADMIN, UserPlan.PAID -> VpnGreen
+        UserPlan.EXPIRED -> VpnRed
+        UserPlan.FREE_TRIAL -> VpnOrange
+    }
+    val expiresAt = auth.planExpiresAt.takeIf {
+        auth.plan == UserPlan.ADMIN || auth.plan == UserPlan.PAID
+    }
+    val expiresDate = expiresAt?.let(::formatDate)
+    val expiresText = when {
+        expiresDate != null -> stringResource(R.string.plan_until, expiresDate)
+        auth.plan == UserPlan.EXPIRED -> stringResource(R.string.plan_renew)
+        else -> ""
     }
 
     Card(
@@ -1370,8 +1463,17 @@ private fun PlanCard(
                     softWrap = false,
                 )
                 if (expiresText.isNotEmpty()) {
+                    val displayedExpiresText = if (expiresAt != null && expiresDate != null) {
+                        textWithAccentedDate(
+                            text = expiresText,
+                            date = expiresDate,
+                            dateColor = subscriptionExpiryDateColor(expiresAt),
+                        )
+                    } else {
+                        AnnotatedString(expiresText)
+                    }
                     Text(
-                        text = expiresText,
+                        text = displayedExpiresText,
                         style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -1643,6 +1745,7 @@ private fun SubscriptionBottomSheet(
     purchasePlansLoading: Boolean,
     purchasePlansLoaded: Boolean,
     currentLimits: CurrentPlanLimits?,
+    initiallySelectCurrentTariff: Boolean,
     onLoadPurchasePlans: () -> Unit,
     onOpenPurchaseUrl: (String?) -> Unit,
     onDismiss: () -> Unit,
@@ -1802,12 +1905,31 @@ private fun SubscriptionBottomSheet(
                                         )
                                         val description = when {
                                             authState.planExpiresAt != null -> {
-                                                stringResource(R.string.plan_active_until, formatDate(authState.planExpiresAt))
+                                                val expiresDate = formatDate(authState.planExpiresAt)
+                                                val description = stringResource(
+                                                    R.string.plan_active_until,
+                                                    expiresDate,
+                                                )
+                                                textWithAccentedDate(
+                                                    text = description,
+                                                    date = expiresDate,
+                                                    dateColor = subscriptionExpiryDateColor(
+                                                        authState.planExpiresAt,
+                                                    ),
+                                                )
                                             }
-                                            limitsLoading -> stringResource(R.string.loading_data)
-                                            trafficLimitBytes == null || currentDeviceLimit == null -> unknownQuotaDescription
-                                            trafficLimitBytes <= 0 && currentDeviceLimit <= 0 -> stringResource(R.string.plan_unlimited_access)
-                                            else -> stringResource(R.string.plan_active)
+                                            limitsLoading -> AnnotatedString(
+                                                stringResource(R.string.loading_data),
+                                            )
+                                            trafficLimitBytes == null || currentDeviceLimit == null ->
+                                                AnnotatedString(unknownQuotaDescription)
+                                            trafficLimitBytes <= 0 && currentDeviceLimit <= 0 ->
+                                                AnnotatedString(
+                                                    stringResource(R.string.plan_unlimited_access),
+                                                )
+                                            else -> AnnotatedString(
+                                                stringResource(R.string.plan_active),
+                                            )
                                         }
                                         CurrentPlanDescription(
                                             text = description,
@@ -2015,6 +2137,13 @@ private fun SubscriptionBottomSheet(
                 ?.sortedWith(compareBy<PurchasePlanDto> { it.orderIndex }.thenBy { it.name })
                 ?: emptyList()
             val hasServerPlans = sourcePlans.isNotEmpty()
+            val currentPlanDisplayName = (authState as? AuthState.Authenticated)
+                ?.planDisplayName
+            val preferredTariffKey = initialPurchasePlanTabKey(
+                plans = sourcePlans,
+                currentPlanDisplayName = currentPlanDisplayName,
+                selectCurrentPlan = initiallySelectCurrentTariff,
+            )
 
             val plansLoading = authState is AuthState.Authenticated &&
                 !hasServerPlans &&
@@ -2079,8 +2208,13 @@ private fun SubscriptionBottomSheet(
                     )
                 }
 
-                var selectedTariffKey by remember(tariffs) {
-                    mutableStateOf(tariffs.firstOrNull()?.key ?: "fallback")
+                var selectedTariffKey by remember(tariffs, preferredTariffKey) {
+                    mutableStateOf(
+                        preferredTariffKey
+                            ?.takeIf { preferred -> tariffs.any { it.key == preferred } }
+                            ?: tariffs.firstOrNull()?.key
+                            ?: "fallback",
+                    )
                 }
                 val selectedTariffIndex = tariffs
                     .indexOfFirst { it.key == selectedTariffKey }
@@ -2189,7 +2323,7 @@ private fun SubscriptionBottomSheet(
                             )
                         },
                     ) {
-                        SubscriptionActionText(stringResource(R.string.login_via_telegram))
+                        SubscriptionActionText(stringResource(R.string.login_action))
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
@@ -2583,6 +2717,11 @@ private fun CurrentPlanName(text: String, color: Color) {
 
 @Composable
 private fun CurrentPlanDescription(text: String, maxLines: Int = 1) {
+    CurrentPlanDescription(text = AnnotatedString(text), maxLines = maxLines)
+}
+
+@Composable
+private fun CurrentPlanDescription(text: AnnotatedString, maxLines: Int = 1) {
     Text(
         text = text,
         style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
@@ -2591,6 +2730,30 @@ private fun CurrentPlanDescription(text: String, maxLines: Int = 1) {
         softWrap = maxLines > 1,
         overflow = TextOverflow.Ellipsis,
     )
+}
+
+@Composable
+private fun subscriptionExpiryDateColor(expiresAtMillis: Long): Color =
+    when (subscriptionExpiryUrgency(expiresAtMillis)) {
+        SubscriptionExpiryUrgency.CRITICAL -> VpnRed
+        SubscriptionExpiryUrgency.WARNING -> VpnOrange
+        SubscriptionExpiryUrgency.NORMAL -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+private fun textWithAccentedDate(
+    text: String,
+    date: String,
+    dateColor: Color,
+): AnnotatedString = buildAnnotatedString {
+    append(text)
+    val dateStart = text.lastIndexOf(date)
+    if (dateStart >= 0) {
+        addStyle(
+            style = SpanStyle(color = dateColor),
+            start = dateStart,
+            end = dateStart + date.length,
+        )
+    }
 }
 
 @Composable

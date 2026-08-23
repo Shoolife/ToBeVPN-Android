@@ -47,6 +47,13 @@ object TelegramLinks {
         link = TelegramStartLink(botUsername = botUsername, startParam = startParam),
     )
 
+    fun buildWebStartLink(
+        startParam: String,
+        botUsername: String = DEFAULT_BOT_USERNAME,
+    ): String = createWebUri(
+        TelegramStartLink(botUsername = botUsername, startParam = startParam),
+    ).toString()
+
     fun openStartLink(context: Context, link: TelegramStartLink): Boolean {
         val tgIntent = Intent(Intent.ACTION_VIEW, createTelegramUri(link)).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
