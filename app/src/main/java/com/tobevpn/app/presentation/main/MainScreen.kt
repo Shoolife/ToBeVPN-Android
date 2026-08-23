@@ -16,6 +16,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -28,6 +29,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -75,7 +77,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -126,6 +127,7 @@ import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.presentation.components.countryFlagForUi
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
 import com.tobevpn.app.presentation.components.SubscriptionExpiryUrgency
 import com.tobevpn.app.presentation.components.subscriptionExpiryMillisLeft
 import com.tobevpn.app.presentation.components.subscriptionExpiryUrgency
@@ -182,10 +184,20 @@ fun MainScreen(
         mutableStateOf(false)
     }
     var showTemporaryAccessDialog by remember { mutableStateOf(false) }
+    var navigateToAuthAfterTemporaryAccessDialog by remember { mutableStateOf(false) }
     var showBlockedDialog by remember { mutableStateOf(false) }
     val prevBlocked = remember { mutableStateOf(subscriptionUsageBlocked) }
     var handledQuickSettingsConnectRequest by rememberSaveable { mutableStateOf(0) }
     val showTemporaryAccessBanner = authState is AuthState.Anonymous
+
+    LaunchedEffect(navigateToAuthAfterTemporaryAccessDialog) {
+        if (navigateToAuthAfterTemporaryAccessDialog) {
+            // Keep this screen composed until the exit animation finishes.
+            kotlinx.coroutines.delay(180)
+            navigateToAuthAfterTemporaryAccessDialog = false
+            onNavigateToAuth()
+        }
+    }
 
     LaunchedEffect(subscriptionUsageBlocked) {
         if (subscriptionUsageBlocked) {
@@ -546,15 +558,14 @@ fun MainScreen(
         }
         }
         }
-        if (showTemporaryAccessDialog && showTemporaryAccessBanner) {
-            TemporaryAccessTopDialog(
-                onAuthorize = {
-                    showTemporaryAccessDialog = false
-                    onNavigateToAuth()
-                },
-                onDismiss = { showTemporaryAccessDialog = false },
-            )
-        }
+        TemporaryAccessTopDialog(
+            visible = showTemporaryAccessDialog && showTemporaryAccessBanner,
+            onAuthorize = {
+                showTemporaryAccessDialog = false
+                navigateToAuthAfterTemporaryAccessDialog = true
+            },
+            onDismiss = { showTemporaryAccessDialog = false },
+        )
     }
 
     AnimatedVisibility(
@@ -654,139 +665,193 @@ private fun TemporaryAccessBanner(
         colors = CardDefaults.cardColors(containerColor = container),
         border = androidx.compose.foundation.BorderStroke(1.dp, border),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .background(accent.copy(alpha = 0.14f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Outlined.ErrorOutline,
-                    contentDescription = null,
-                    tint = accent,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
-            Text(
-                text = stringResource(R.string.temporary_access_banner),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.Bold,
-                color = accent,
-                modifier = Modifier.weight(1f),
-            )
-        }
+        Text(
+            text = stringResource(R.string.temporary_access_banner),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Bold,
+            color = accent,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+        )
     }
 }
 
 @Composable
 private fun TemporaryAccessTopDialog(
+    visible: Boolean,
     onAuthorize: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val dialogMaxWidth = responsiveMaxWidth(520.dp)
+    val dialogTextColor = if (isDark) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        Color.Black
+    }
+    val secondaryButtonColors = ButtonDefaults.buttonColors(
+        containerColor = if (isDark) {
+            MaterialTheme.colorScheme.surfaceVariant
+        } else {
+            Color.White
+        },
+        contentColor = dialogTextColor,
+    )
+    val secondaryButtonBorder = BorderStroke(
+        width = 1.dp,
+        color = if (isDark) {
+            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+        } else {
+            Color(0xFFD0D0D0)
+        },
+    )
+    val transitionState = remember { MutableTransitionState(false) }
+    transitionState.targetState = visible
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.32f))
-            .clickable(onClick = onDismiss)
-            .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        contentAlignment = Alignment.TopCenter,
-    ) {
-        Card(
+    if (transitionState.currentState || transitionState.targetState) {
+        Box(
             modifier = Modifier
-                .widthIn(max = dialogMaxWidth)
-                .fillMaxWidth()
+                .fillMaxSize()
                 .clickable(
-                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                    interactionSource = remember { MutableInteractionSource() },
                     indication = null,
-                    onClick = {},
+                    onClick = onDismiss,
                 ),
-            shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface,
-            ),
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
+            AnimatedVisibility(
+                visibleState = transitionState,
+                enter = fadeIn(tween(180)),
+                exit = fadeOut(tween(180)),
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(VpnRed.copy(alpha = 0.14f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.ErrorOutline,
-                            contentDescription = null,
-                            tint = VpnRed,
-                            modifier = Modifier.size(21.dp),
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text(
-                        text = stringResource(R.string.temporary_access_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = stringResource(R.string.temporary_access_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.32f)),
                 )
+            }
 
-                Spacer(modifier = Modifier.height(18.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                contentAlignment = Alignment.TopCenter,
+            ) {
+                AnimatedVisibility(
+                    visibleState = transitionState,
+                    enter = fadeIn(tween(180)) + scaleIn(tween(180), initialScale = 0.9f),
+                    exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.9f),
                 ) {
-                    TextButton(
-                        onClick = onDismiss,
-                        colors = ButtonDefaults.textButtonColors(
-                            contentColor = if (isDark) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                Color.Black
-                            },
+                    Card(
+                    modifier = Modifier
+                        .widthIn(max = dialogMaxWidth)
+                        .fillMaxWidth()
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
                         ),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface,
+                    ),
                     ) {
-                        Text(text = stringResource(R.string.cancel))
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = onAuthorize,
-                        colors = if (isDark) {
-                            ButtonDefaults.buttonColors()
-                        } else {
-                            ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF3F3F3F),
-                                contentColor = Color.White,
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(20.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(VpnRed.copy(alpha = 0.14f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Outlined.ErrorOutline,
+                                    contentDescription = null,
+                                    tint = VpnRed,
+                                    modifier = Modifier.size(29.dp),
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Text(
+                                text = stringResource(R.string.temporary_access_title),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
                             )
-                        },
-                    ) {
-                        Text(
-                            text = stringResource(R.string.temporary_access_authorize),
-                            fontWeight = FontWeight.SemiBold,
-                        )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text(
+                                text = stringResource(R.string.temporary_access_description),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = TextAlign.Center,
+                            )
+
+                            Spacer(modifier = Modifier.height(18.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Button(
+                                    onClick = onDismiss,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(46.dp),
+                                    shape = RoundedCornerShape(13.dp),
+                                    colors = secondaryButtonColors,
+                                    border = secondaryButtonBorder,
+                                    contentPadding = PaddingValues(horizontal = 10.dp),
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.cancel),
+                                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Button(
+                                    onClick = onAuthorize,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(46.dp),
+                                    shape = RoundedCornerShape(13.dp),
+                                    colors = if (isDark) {
+                                        ButtonDefaults.buttonColors()
+                                    } else {
+                                        ButtonDefaults.buttonColors(
+                                            containerColor = Color(0xFF3F3F3F),
+                                            contentColor = Color.White,
+                                        )
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 10.dp),
+                                ) {
+                                    Text(
+                                        text = stringResource(R.string.temporary_access_authorize),
+                                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1752,7 +1817,7 @@ private fun SubscriptionBottomSheet(
     onNavigateToAuth: () -> Unit,
 ) {
     val context = LocalContext.current
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberResistantModalBottomSheetState()
 
     // Fetch when the sheet appears and again after returning from Telegram,
     // where the user may have activated a promo code.

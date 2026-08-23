@@ -83,6 +83,7 @@ import com.tobevpn.app.R
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.util.DeepLinkBus
+import com.tobevpn.app.util.SafeDiagnostics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -656,14 +657,34 @@ private suspend fun shareQrCode(
                 clipData = ClipData.newUri(context.contentResolver, qrFile.name, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-        }.getOrNull()
-    } ?: return false
+        }.onFailure { error ->
+            SafeDiagnostics.warn(
+                AUTH_QR_SHARE_TAG,
+                "QR image share preparation failed: ${SafeDiagnostics.failureSummary(error)}",
+            )
+        }.getOrElse {
+            // The confirmation link still lets the subscription owner approve
+            // the sign-in if a vendor ROM or a packaging error prevents the
+            // temporary PNG from being exposed through FileProvider.
+            Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_TEXT, shareMessage)
+            }
+        }
+    }
 
     return runCatching {
         context.startActivity(Intent.createChooser(sendIntent, chooserTitle))
         true
+    }.onFailure { error ->
+        SafeDiagnostics.warn(
+            AUTH_QR_SHARE_TAG,
+            "QR share chooser failed: ${SafeDiagnostics.failureSummary(error)}",
+        )
     }.getOrDefault(false)
 }
+
+private const val AUTH_QR_SHARE_TAG = "AuthQrShare"
 
 @Composable
 private fun SuccessContent(onBack: () -> Unit) {

@@ -28,7 +28,6 @@ import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,8 +46,12 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -75,34 +78,93 @@ private data class WhatsNewHighlight(
     val descriptionRes: Int,
 )
 
+// Keep the hero artwork identical to the desktop client's custom three-spark
+// SVG instead of changing it to match an individual release highlight.
+private val WhatsNewHeroIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "WhatsNewHeroSparkles",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f,
+    ).apply {
+        path(
+            fill = SolidColor(Color.Transparent),
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 1.8f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+        ) {
+            moveTo(12f, 3f)
+            lineTo(13.15f, 6.35f)
+            lineTo(16.5f, 7.5f)
+            lineTo(13.15f, 8.65f)
+            lineTo(12f, 12f)
+            lineTo(10.85f, 8.65f)
+            lineTo(7.5f, 7.5f)
+            lineTo(10.85f, 6.35f)
+            close()
+        }
+        path(
+            fill = SolidColor(Color.Transparent),
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 1.8f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+        ) {
+            moveTo(18.5f, 12f)
+            lineTo(19.22f, 14.03f)
+            lineTo(21.25f, 14.75f)
+            lineTo(19.22f, 15.47f)
+            lineTo(18.5f, 17.5f)
+            lineTo(17.78f, 15.47f)
+            lineTo(15.75f, 14.75f)
+            lineTo(17.78f, 14.03f)
+            close()
+        }
+        path(
+            fill = SolidColor(Color.Transparent),
+            stroke = SolidColor(Color.Black),
+            strokeLineWidth = 1.8f,
+            strokeLineCap = StrokeCap.Round,
+            strokeLineJoin = StrokeJoin.Round,
+        ) {
+            moveTo(6f, 14f)
+            lineTo(6.88f, 16.62f)
+            lineTo(9.5f, 17.5f)
+            lineTo(6.88f, 18.38f)
+            lineTo(6f, 21f)
+            lineTo(5.12f, 18.38f)
+            lineTo(2.5f, 17.5f)
+            lineTo(5.12f, 16.62f)
+            close()
+        }
+    }.build()
+}
+
 // The highlights describe only the currently installed version — there is no
 // release archive here, mirroring the desktop "What's new" dialog. Update this
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.Devices,
-        titleRes = R.string.whats_new_auth_methods_title,
-        descriptionRes = R.string.whats_new_auth_methods_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Outlined.QrCode2,
-        titleRes = R.string.whats_new_auth_qr_title,
-        descriptionRes = R.string.whats_new_auth_qr_desc,
-    ),
-    WhatsNewHighlight(
         icon = Icons.Filled.Share,
-        titleRes = R.string.whats_new_auth_share_title,
-        descriptionRes = R.string.whats_new_auth_share_desc,
+        titleRes = R.string.whats_new_qr_share_fix_title,
+        descriptionRes = R.string.whats_new_qr_share_fix_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.Devices,
+        titleRes = R.string.whats_new_devices_title,
+        descriptionRes = R.string.whats_new_devices_desc,
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.Sync,
-        titleRes = R.string.whats_new_auth_background_title,
-        descriptionRes = R.string.whats_new_auth_background_desc,
+        titleRes = R.string.whats_new_bottom_sheets_title,
+        descriptionRes = R.string.whats_new_bottom_sheets_desc,
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.NotificationsActive,
-        titleRes = R.string.whats_new_subscription_reminder_title,
-        descriptionRes = R.string.whats_new_subscription_reminder_desc,
+        titleRes = R.string.whats_new_interface_polish_title,
+        descriptionRes = R.string.whats_new_interface_polish_desc,
     ),
 )
 
@@ -191,7 +253,7 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
-                            imageVector = Icons.Outlined.QrCode2,
+                            imageVector = WhatsNewHeroIcon,
                             contentDescription = null,
                             tint = onAccent,
                             modifier = Modifier.size(30.dp),

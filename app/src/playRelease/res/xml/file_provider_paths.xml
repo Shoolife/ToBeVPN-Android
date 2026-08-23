@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <!-- The Google Play build shares only a user-selected diagnostic journal.
-         APK update directories remain available exclusively to direct builds. -->
+    <!-- The Google Play build shares only files created by explicit user
+         actions. APK update directories remain exclusive to direct builds. -->
     <files-path name="diagnostic_logs" path="diagnostic_logs/" />
+    <!-- One-time QR image created after the user taps "Share QR code". -->
+    <cache-path name="shared_auth_qr" path="shared_qr/" />
 </paths>

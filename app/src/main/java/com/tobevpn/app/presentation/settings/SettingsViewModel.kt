@@ -3,6 +3,7 @@ package com.tobevpn.app.presentation.settings
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -36,6 +37,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -288,9 +290,11 @@ class SettingsViewModel @Inject constructor(
 
     private val _linkedDevicesState = MutableStateFlow(LinkedDevicesUiState())
     val linkedDevicesState: StateFlow<LinkedDevicesUiState> = _linkedDevicesState.asStateFlow()
+    private var linkedDevicesRefreshJob: Job? = null
 
     private companion object {
         const val TAG = "SettingsViewModel"
+        const val MIN_DEVICES_REFRESH_FEEDBACK_MS = 900L
     }
 
     private fun launchGuarded(
@@ -319,6 +323,7 @@ class SettingsViewModel @Inject constructor(
                 if (state is AuthState.Authenticated) {
                     authRepository.registerCurrentDevice()
                 } else {
+                    linkedDevicesRefreshJob?.cancel()
                     _linkedDevicesState.value = LinkedDevicesUiState()
                 }
             }
@@ -387,26 +392,37 @@ class SettingsViewModel @Inject constructor(
             )
             return
         }
+        if (linkedDevicesRefreshJob?.isActive == true) return
 
-        viewModelScope.launch {
+        linkedDevicesRefreshJob = viewModelScope.launch {
+            val before = _linkedDevicesState.value
+            val isRefresh = before.hasLoaded
+            val refreshFeedbackStartedAt = if (isRefresh) {
+                SystemClock.elapsedRealtime()
+            } else {
+                null
+            }
             val currentDeviceId = authRepository.getOrCreateDeviceId()
             val currentDeviceAliases = authRepository.getCurrentDeviceAliases()
-            _linkedDevicesState.value = _linkedDevicesState.value.copy(
-                isLoading = true,
+            _linkedDevicesState.value = before.copy(
+                isLoading = !isRefresh,
+                isRefreshing = isRefresh,
                 errorMessage = null,
                 currentDeviceId = currentDeviceId,
                 currentDeviceAliases = currentDeviceAliases,
             )
 
-            authRepository.registerCurrentDevice()
-            runCatching { authRepository.pingHwidOnly() }
-
             _linkedDevicesState.value = try {
+                authRepository.registerCurrentDevice()
+                runCatching { authRepository.pingHwidOnly() }
                 val response = botApi.getDevices()
                 val data = response.data
                 if (response.success && data != null) {
+                    awaitMinimumDevicesRefreshFeedback(refreshFeedbackStartedAt)
                     LinkedDevicesUiState(
                         isLoading = false,
+                        isRefreshing = false,
+                        hasLoaded = true,
                         currentDeviceId = currentDeviceId,
                         currentDeviceAliases = currentDeviceAliases,
                         currentCount = data.currentCount,
@@ -414,18 +430,31 @@ class SettingsViewModel @Inject constructor(
                         devices = data.devices.orEmpty(),
                     )
                 } else {
+                    awaitMinimumDevicesRefreshFeedback(refreshFeedbackStartedAt)
                     _linkedDevicesState.value.copy(
                         isLoading = false,
+                        isRefreshing = false,
                         errorMessage = response.message ?: "Could not load devices.",
                     )
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (e: Exception) {
+                awaitMinimumDevicesRefreshFeedback(refreshFeedbackStartedAt)
                 _linkedDevicesState.value.copy(
                     isLoading = false,
+                    isRefreshing = false,
                     errorMessage = e.message ?: "Could not load devices.",
                 )
             }
         }
+    }
+
+    private suspend fun awaitMinimumDevicesRefreshFeedback(startedAt: Long?) {
+        if (startedAt == null) return
+        val elapsed = SystemClock.elapsedRealtime() - startedAt
+        val remaining = MIN_DEVICES_REFRESH_FEEDBACK_MS - elapsed
+        if (remaining > 0) delay(remaining)
     }
 
     fun disconnectDevice(deviceId: String) {
@@ -514,6 +543,8 @@ class SettingsViewModel @Inject constructor(
 
 data class LinkedDevicesUiState(
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
+    val hasLoaded: Boolean = false,
     val currentDeviceId: String? = null,
     val currentDeviceAliases: Set<String> = emptySet(),
     val currentCount: Int? = null,

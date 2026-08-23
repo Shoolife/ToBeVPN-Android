@@ -86,7 +86,7 @@
     <string name="speed_test_subtitle">Check your internet speed</string>
     <string name="subscription">Subscription</string>
     <string name="free_tier_hint">Free tier • Sign in to upgrade</string>
-    <string name="temporary_access_banner">SIGN IN SO YOU DO NOT LOSE ACCESS</string>
+    <string name="temporary_access_banner">SIGN IN TO KEEP ACCESS TO TOBEVPN SERVERS</string>
     <string name="temporary_access_title">Temporary access</string>
     <string name="temporary_access_description">You are using temporary trial access. It is issued once, ends quickly, and can be lost after reinstalling the app or changing devices. Sign in to attach access to your account.</string>
     <!-- Subscription renewal reminder banner -->
@@ -485,16 +485,14 @@
     <string name="whats_new_version">Version %1$s</string>
     <string name="whats_new_intro">Highlights in the installed version</string>
     <string name="whats_new_done">Got it</string>
-    <string name="whats_new_auth_methods_title">All sign-in methods in one place</string>
-    <string name="whats_new_auth_methods_desc">You can now sign in through Telegram or confirm sign-in using an already authorized ToBeVPN app on another phone.</string>
-    <string name="whats_new_auth_qr_title">Confirm sign-in with a QR code</string>
-    <string name="whats_new_auth_qr_desc">The subscription owner can scan the QR code with an iPhone or Android phone and confirm the new phone’s sign-in in the Telegram bot.</string>
-    <string name="whats_new_auth_share_title">Share the QR code</string>
-    <string name="whats_new_auth_share_desc">Send the QR image and confirmation link to the subscription owner through any supported messenger.</string>
-    <string name="whats_new_auth_background_title">Sign-in completes reliably</string>
-    <string name="whats_new_auth_background_desc">QR confirmation now finishes after you return to the main screen, then updates the account, subscription, and VPN servers automatically.</string>
-    <string name="whats_new_subscription_reminder_title">Easier subscription renewal</string>
-    <string name="whats_new_subscription_reminder_desc">Before your subscription expires, the app highlights the date and reminds you to renew. “Renew” opens your current plan, while “Later” hides the reminder for 12 hours.</string>
+    <string name="whats_new_qr_share_fix_title">Reliable QR sharing</string>
+    <string name="whats_new_qr_share_fix_desc">Fixed QR sharing in the Google Play build. If the image cannot be prepared, the app sends the sign-in confirmation link instead.</string>
+    <string name="whats_new_devices_title">Easier device management</string>
+    <string name="whats_new_devices_desc">The devices sheet keeps the correct height at every selected interface scale, while its list scrolls independently and refreshes smoothly.</string>
+    <string name="whats_new_bottom_sheets_title">Protection from accidental closing</string>
+    <string name="whats_new_bottom_sheets_desc">The subscription and devices sheets are now harder to close accidentally: a short swipe smoothly returns them to place.</string>
+    <string name="whats_new_interface_polish_title">Interface polish</string>
+    <string name="whats_new_interface_polish_desc">Updated the temporary-access prompt and restored the signature icon in the What’s New window.</string>
     <string name="version">Version</string>
     <string name="xray">XRay</string>
     <string name="language">Language</string>

@@ -1,5 +1,13 @@
 package com.tobevpn.app.presentation.settings
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -11,9 +19,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -51,7 +62,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -60,10 +70,18 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -72,6 +90,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Velocity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -82,10 +101,16 @@ import com.tobevpn.app.data.remote.dto.LinkedDeviceDto
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.AuthState
+import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.SpinningRefreshIcon
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
+import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.BrandSoftCardFill
+import com.tobevpn.app.presentation.theme.LocalAppBaseDensity
+import com.tobevpn.app.presentation.theme.LocalAppInterfaceScale
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.util.DeviceQrScanAction
@@ -631,7 +656,7 @@ private fun LinkedDevicesBottomSheet(
     onDisconnect: (String) -> Unit,
     onClearError: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberResistantModalBottomSheetState()
     val devicesCount = state.currentCount ?: state.devices.size
     val currentDevice = state.devices.firstOrNull {
         it.matchesDeviceAliases(state.currentDeviceAliases)
@@ -639,13 +664,129 @@ private fun LinkedDevicesBottomSheet(
     val otherDevices = state.devices.filterNot {
         it.matchesDeviceAliases(state.currentDeviceAliases)
     }
+    val refreshActive = state.isLoading || state.isRefreshing
     val canLinkMoreDevices = state.maxDevices == 0 || devicesCount < state.maxDevices
     val isDark = isSystemInDarkTheme()
+    val sheetContainerColor = if (isDark) {
+        BottomSheetDefaults.ContainerColor
+    } else {
+        Color.White
+    }
+    val hostViewHeightPx = LocalView.current.height
+    val baseDensity = LocalAppBaseDensity.current ?: LocalDensity.current
+    val interfaceScale = LocalAppInterfaceScale.current
+    val fallbackWindowHeightPx = with(baseDensity) {
+        LocalConfiguration.current.screenHeightDp.dp.toPx()
+    }
+    val windowHeightPx = hostViewHeightPx
+        .takeIf { it > 0 }
+        ?.toFloat()
+        ?: fallbackWindowHeightPx
+    // ModalBottomSheet is hosted in a separate ComposeView whose LocalDensity is the unscaled
+    // platform density. The requested percentage therefore has to be kept in physical pixels.
+    // Converting the window through the app-scaled density would turn 93% into about 72% at 1.3x.
+    val targetSheetHeightPx = windowHeightPx * DEVICES_SHEET_HEIGHT_FRACTION
+    // DragHandle is wrapped in AppScaledContent, so its physical 48.dp height scales too and sits
+    // outside the body measured below.
+    val scaledDragHandleHeightPx = with(baseDensity) {
+        (DEVICES_SHEET_DRAG_HANDLE_HEIGHT * interfaceScale).toPx()
+    }
     val lightOutlinedButtonColors = ButtonDefaults.outlinedButtonColors(
         contentColor = Color.Black,
         disabledContentColor = Color.Black.copy(alpha = 0.38f),
     )
     val lightOutlinedButtonBorder = BorderStroke(1.dp, Color(0xFFD6D6D6))
+    val otherDevicesScrollState = rememberScrollState()
+    val refreshPlaceholderAlpha = if (refreshActive) {
+        deviceRefreshPlaceholderAlpha()
+    } else {
+        1f
+    }
+    LaunchedEffect(refreshActive) {
+        if (refreshActive) otherDevicesScrollState.scrollTo(0)
+    }
+    val keepSheetStillAtListBounds = remember(otherDevicesScrollState) {
+        object : NestedScrollConnection {
+            private fun consumeBeyondListBounds(deltaY: Float): Float {
+                val draggingPastTop = otherDevicesScrollState.value == 0 && deltaY > 0f
+                val draggingPastBottom =
+                    otherDevicesScrollState.value == otherDevicesScrollState.maxValue && deltaY < 0f
+                return if (draggingPastTop || draggingPastBottom) {
+                    deltaY
+                } else {
+                    0f
+                }
+            }
+
+            override fun onPreScroll(
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset = Offset(
+                x = 0f,
+                y = consumeBeyondListBounds(available.y),
+            )
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset = Offset(
+                x = 0f,
+                y = consumeBeyondListBounds(available.y),
+            )
+
+            override suspend fun onPreFling(available: Velocity): Velocity = Velocity(
+                x = 0f,
+                y = consumeBeyondListBounds(available.y),
+            )
+
+            override suspend fun onPostFling(
+                consumed: Velocity,
+                available: Velocity,
+            ): Velocity = Velocity(
+                x = 0f,
+                y = consumeBeyondListBounds(available.y),
+            )
+        }
+    }
+    val otherDevicesTopFadeAlpha by animateFloatAsState(
+        targetValue = if (!refreshActive && otherDevicesScrollState.value > 0) 1f else 0f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "otherDevicesTopFade",
+    )
+    val otherDevicesBottomFadeAlpha by animateFloatAsState(
+        targetValue = if (
+            !refreshActive &&
+            otherDevicesScrollState.value < otherDevicesScrollState.maxValue
+        ) {
+            1f
+        } else {
+            0f
+        },
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "otherDevicesBottomFade",
+    )
+    var sheetContentVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        sheetContentVisible = true
+    }
+    val sheetContentAlpha by animateFloatAsState(
+        targetValue = if (sheetContentVisible) 1f else 0f,
+        animationSpec = tween(
+            durationMillis = 280,
+            delayMillis = 60,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "DevicesSheetContentAlpha",
+    )
+    val sheetContentOffset by animateDpAsState(
+        targetValue = if (sheetContentVisible) 0.dp else 18.dp,
+        animationSpec = tween(
+            durationMillis = 450,
+            easing = FastOutSlowInEasing,
+        ),
+        label = "DevicesSheetContentOffset",
+    )
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -656,176 +797,274 @@ private fun LinkedDevicesBottomSheet(
                 BottomSheetDefaults.DragHandle()
             }
         },
-        containerColor = if (isDark) {
-            BottomSheetDefaults.ContainerColor
-        } else {
-            Color.White
-        },
+        containerColor = sheetContainerColor,
+        contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {
-        AppScaledContent {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 32.dp)
-                    .verticalScroll(rememberScrollState()),
-            ) {
-            Text(
-                text = stringResource(R.string.devices_title),
-                style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = if (state.maxDevices == 0) {
-                    stringResource(R.string.devices_count_unlimited, devicesCount)
-                } else {
-                    stringResource(
-                        R.string.devices_count,
-                        devicesCount,
-                        state.maxDevices,
-                    )
-                },
-                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Button(
-                    onClick = onScanQr,
-                    enabled = !state.isLoading && canLinkMoreDevices,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = if (isDark) {
-                        ButtonDefaults.buttonColors()
-                    } else {
-                        ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF3F3F3F),
-                            contentColor = Color.White,
-                        )
-                    },
+        val modalDensity = LocalDensity.current
+        val sheetBodyHeight = with(modalDensity) {
+            (targetSheetHeightPx - scaledDragHandleHeightPx)
+                .coerceAtLeast(1f)
+                .toDp()
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(sheetBodyHeight),
+        ) {
+            AppScaledContent {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .offset(y = sheetContentOffset)
+                        .alpha(sheetContentAlpha)
+                        .navigationBarsPadding()
+                        .padding(bottom = 8.dp),
                 ) {
-                    DeviceActionText(stringResource(R.string.devices_scan_qr))
-                }
-                OutlinedButton(
-                    onClick = onEnterCode,
-                    enabled = !state.isLoading && canLinkMoreDevices,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = if (isDark) {
-                        ButtonDefaults.outlinedButtonColors()
-                    } else {
-                        lightOutlinedButtonColors
-                    },
-                    border = if (isDark) ButtonDefaults.outlinedButtonBorder else lightOutlinedButtonBorder,
-                ) {
-                    DeviceActionText(stringResource(R.string.devices_enter_code))
-                }
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            OutlinedButton(
-                onClick = onRefresh,
-                enabled = !state.isLoading,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = if (isDark) {
-                    ButtonDefaults.outlinedButtonColors()
-                } else {
-                    lightOutlinedButtonColors
-                },
-                border = if (isDark) ButtonDefaults.outlinedButtonBorder else lightOutlinedButtonBorder,
-            ) {
-                DeviceActionText(stringResource(R.string.devices_refresh))
-            }
-
-            if (!canLinkMoreDevices) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = stringResource(R.string.devices_limit_reached),
-                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-
-            state.errorMessage?.let { message ->
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = message,
-                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.clickable { onClearError() },
-                )
-            }
-
-            Spacer(modifier = Modifier.height(20.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(20.dp))
-
-            if (state.isLoading) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 24.dp),
+                    ) {
                     Text(
-                        text = stringResource(R.string.devices_loading),
+                        text = stringResource(R.string.devices_title),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = if (state.maxDevices == 0) {
+                            stringResource(R.string.devices_count_unlimited, devicesCount)
+                        } else {
+                            stringResource(
+                                R.string.devices_count,
+                                devicesCount,
+                                state.maxDevices,
+                            )
+                        },
                         style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-            } else {
-                currentDevice?.let { device ->
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        Button(
+                            onClick = onScanQr,
+                            enabled = !refreshActive && canLinkMoreDevices,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = if (isDark) {
+                                ButtonDefaults.buttonColors()
+                            } else {
+                                ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF3F3F3F),
+                                    contentColor = Color.White,
+                                )
+                            },
+                        ) {
+                            DeviceActionText(stringResource(R.string.devices_scan_qr))
+                        }
+                        OutlinedButton(
+                            onClick = onEnterCode,
+                            enabled = !refreshActive && canLinkMoreDevices,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = if (isDark) {
+                                ButtonDefaults.outlinedButtonColors()
+                            } else {
+                                lightOutlinedButtonColors
+                            },
+                            border = if (isDark) {
+                                ButtonDefaults.outlinedButtonBorder
+                            } else {
+                                lightOutlinedButtonBorder
+                            },
+                        ) {
+                            DeviceActionText(stringResource(R.string.devices_enter_code))
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = onRefresh,
+                        enabled = !state.isLoading,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = if (isDark) {
+                            ButtonDefaults.outlinedButtonColors()
+                        } else {
+                            lightOutlinedButtonColors
+                        },
+                        border = if (isDark) {
+                            ButtonDefaults.outlinedButtonBorder
+                        } else {
+                            lightOutlinedButtonBorder
+                        },
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                        ) {
+                            SpinningRefreshIcon(
+                                spinning = refreshActive,
+                                contentDescription = null,
+                                size = 20.dp,
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = stringResource(R.string.devices_refresh),
+                                style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+
+                    if (!canLinkMoreDevices) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.devices_limit_reached),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+
+                    state.errorMessage?.let { message ->
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = message,
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.clickable { onClearError() },
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    if (refreshActive) {
+                        Text(
+                            text = stringResource(R.string.devices_this_device),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LinkedDeviceLoadingCard(
+                            alpha = refreshPlaceholderAlpha,
+                            isCurrent = true,
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                    } else {
+                        currentDevice?.let { device ->
+                            Text(
+                                text = stringResource(R.string.devices_this_device),
+                                style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            LinkedDeviceCard(
+                                device = device,
+                                isCurrent = true,
+                                isBusy = false,
+                                onDisconnect = onDisconnect,
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+                        }
+                    }
+
                     Text(
-                        text = stringResource(R.string.devices_this_device),
+                        text = stringResource(R.string.devices_other_devices),
                         style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    LinkedDeviceCard(
-                        device = device,
-                        isCurrent = true,
-                        isBusy = false,
-                        onDisconnect = onDisconnect,
-                    )
-                    Spacer(modifier = Modifier.height(20.dp))
-                }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    }
 
-                Text(
-                    text = stringResource(R.string.devices_other_devices),
-                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-
-                if (otherDevices.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.devices_empty),
-                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    otherDevices.forEach { device ->
-                        LinkedDeviceCard(
-                            device = device,
-                            isCurrent = false,
-                            isBusy = state.busyDeviceId == device.deviceId,
-                            onDisconnect = onDisconnect,
+                    if (!refreshActive && otherDevices.isEmpty()) {
+                        Text(
+                            text = stringResource(R.string.devices_empty),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(horizontal = 24.dp),
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalFadingEdges(
+                                        topAlpha = otherDevicesTopFadeAlpha,
+                                        bottomAlpha = otherDevicesBottomFadeAlpha,
+                                        fadeHeight = 38.dp,
+                                    ),
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .nestedScroll(keepSheetStillAtListBounds)
+                                        .verticalScroll(otherDevicesScrollState)
+                                        // The scrolling viewport spans the entire sheet. Cards keep
+                                        // the same 24.dp side insets as the fixed content above.
+                                        .padding(horizontal = 24.dp, vertical = 12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                                ) {
+                                    if (refreshActive) {
+                                        repeat(3) {
+                                            LinkedDeviceLoadingCard(
+                                                alpha = refreshPlaceholderAlpha,
+                                                isCurrent = false,
+                                            )
+                                        }
+                                    } else {
+                                        otherDevices.forEach { device ->
+                                            LinkedDeviceCard(
+                                                device = device,
+                                                isCurrent = false,
+                                                isBusy = state.busyDeviceId == device.deviceId,
+                                                onDisconnect = onDisconnect,
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            VerticalScrollEdgeArrow(
+                                alpha = otherDevicesTopFadeAlpha,
+                                isTop = true,
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .padding(top = 2.dp),
+                            )
+                            VerticalScrollEdgeArrow(
+                                alpha = otherDevicesBottomFadeAlpha,
+                                isTop = false,
+                                modifier = Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .padding(bottom = 2.dp),
+                            )
+                        }
                     }
                 }
-            }
             }
         }
     }
@@ -842,6 +1081,76 @@ private fun DeviceActionText(text: String) {
         overflow = TextOverflow.Ellipsis,
         textAlign = TextAlign.Center,
     )
+}
+
+private const val DEVICES_SHEET_HEIGHT_FRACTION = 0.93f
+private val DEVICES_SHEET_DRAG_HANDLE_HEIGHT = 48.dp
+
+@Composable
+private fun deviceRefreshPlaceholderAlpha(): Float {
+    val transition = rememberInfiniteTransition(label = "devices-refresh")
+    val alpha by transition.animateFloat(
+        initialValue = 0.42f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 720),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "devices-placeholder-alpha",
+    )
+    return alpha
+}
+
+@Composable
+private fun LinkedDeviceLoadingCard(
+    alpha: Float,
+    isCurrent: Boolean,
+) {
+    val placeholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = if (isSystemInDarkTheme()) {
+            CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+            )
+        } else {
+            CardDefaults.cardColors(
+                containerColor = BrandSoftCardFill,
+            )
+        },
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .alpha(alpha),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.56f)
+                    .height(18.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(placeholderColor),
+            )
+            Spacer(modifier = Modifier.height(7.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.38f)
+                    .height(15.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(placeholderColor),
+            )
+            Spacer(modifier = Modifier.height(14.dp))
+            Box(
+                modifier = Modifier
+                    .width(if (isCurrent) 126.dp else 132.dp)
+                    .height(if (isCurrent) 16.dp else 40.dp)
+                    .clip(RoundedCornerShape(if (isCurrent) 6.dp else 12.dp))
+                    .background(placeholderColor),
+            )
+        }
+    }
 }
 
 @Composable
