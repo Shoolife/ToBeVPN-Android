@@ -18,10 +18,11 @@
 
     <!-- Onboarding -->
     <string name="onboarding_subtitle">Пробный тариф для первого подключения</string>
-    <string name="onboarding_feature_trial">%1$s трафика до входа</string>
-    <string name="onboarding_feature_device">Войдите через Telegram — ещё 3 ГБ на 3 дня</string>
-    <string name="onboarding_feature_auth">Вход без логина и пароля — только через Telegram</string>
-    <string name="onboarding_feature_tools">Серверы, статистика и тест скорости встроены</string>
+    <string name="onboarding_tablet_subtitle">Быстрый и безопасный VPN\nна базе XRay</string>
+    <string name="onboarding_feature_trial">%1$s трафика без авторизации</string>
+    <string name="onboarding_feature_device">После входа — %1$s на %2$s</string>
+    <string name="onboarding_feature_auth">Вход через Telegram или по QR-коду</string>
+    <string name="onboarding_feature_tools">Серверы, статистика и тест скорости — в приложении</string>
     <string name="onboarding_start">Продолжить</string>
     <plurals name="onboarding_trial_days">
         <item quantity="one">%1$d день</item>
@@ -499,14 +500,14 @@
     <string name="whats_new_version">Версия %1$s</string>
     <string name="whats_new_intro">Главные изменения установленной версии</string>
     <string name="whats_new_done">Понятно</string>
-    <string name="whats_new_qr_share_fix_title">Надёжная отправка QR-кода</string>
-    <string name="whats_new_qr_share_fix_desc">Исправили отправку QR-кода в сборке Google Play. Если изображение нельзя подготовить, приложение отправит ссылку для подтверждения входа.</string>
-    <string name="whats_new_devices_title">Удобнее управлять устройствами</string>
-    <string name="whats_new_devices_desc">Окно устройств сохраняет правильную высоту при любом выбранном масштабе, а список прокручивается независимо и показывает плавное обновление.</string>
-    <string name="whats_new_bottom_sheets_title">Защита от случайного закрытия</string>
-    <string name="whats_new_bottom_sheets_desc">Окна подписки и устройств теперь сложнее закрыть случайным жестом: короткий свайп плавно возвращает их на место.</string>
-    <string name="whats_new_interface_polish_title">Полировка интерфейса</string>
-    <string name="whats_new_interface_polish_desc">Обновили подсказку временного доступа и вернули фирменную иконку в окно «Что нового».</string>
+    <string name="whats_new_tablet_layout_title">Интерфейс для больших экранов</string>
+    <string name="whats_new_tablet_layout_desc">Для планшетов переработали первый запуск и главный экран, увеличили шрифт на всех экранах и расширили статистику и настройки. На телефонах сохраняется компактная компоновка.</string>
+    <string name="whats_new_subscription_sheet_title">Удобнее выбирать тариф</string>
+    <string name="whats_new_subscription_sheet_desc">Окно подписки ограничено по высоте, а список периодов прокручивается отдельно и показывает стрелки и плавное затемнение по краям.</string>
+    <string name="whats_new_device_controls_title">Управление устройствами</string>
+    <string name="whats_new_device_controls_desc">Кнопка обновления перенесена вверх, а отметка текущего устройства и отключение других устройств расположены справа в карточках.</string>
+    <string name="whats_new_onboarding_title">Точнее первый запуск</string>
+    <string name="whats_new_onboarding_desc">Условия пробного доступа показывают 3 ГБ на 3 дня, обновлены подсказки входа через Telegram и QR-код, улучшено отображение фирменного знака.</string>
     <string name="version">Версия</string>
     <string name="xray">XRay</string>
     <string name="language">Язык</string>

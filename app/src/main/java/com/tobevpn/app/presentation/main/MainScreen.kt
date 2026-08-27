@@ -23,6 +23,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.FlingBehavior
+import androidx.compose.foundation.gestures.ScrollScope
+import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -32,9 +35,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -97,9 +103,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -113,6 +123,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -126,6 +137,9 @@ import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.presentation.components.countryFlagForUi
+import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT
+import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_HEIGHT_FRACTION
+import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
 import com.tobevpn.app.presentation.components.SubscriptionExpiryUrgency
@@ -133,11 +147,15 @@ import com.tobevpn.app.presentation.components.subscriptionExpiryMillisLeft
 import com.tobevpn.app.presentation.components.subscriptionExpiryUrgency
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import com.tobevpn.app.presentation.components.serverDisplayName
+import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.AppAlertDialog
+import com.tobevpn.app.presentation.theme.LocalAppBaseDensity
+import com.tobevpn.app.presentation.theme.LocalAppInterfaceScale
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.presentation.theme.VpnRed
+import com.tobevpn.app.presentation.theme.isLargeTabletLayout
 import com.tobevpn.app.presentation.theme.responsiveMaxWidth
 import kotlin.math.ceil
 
@@ -170,8 +188,15 @@ fun MainScreen(
     val subscriptionUsageBlocked by viewModel.subscriptionUsageBlocked.collectAsStateWithLifecycle()
     val subscriptionReminderSnooze by
         viewModel.subscriptionReminderSnooze.collectAsStateWithLifecycle()
+    val appFilterReminder by viewModel.appFilterReminder.collectAsStateWithLifecycle()
     val activity = LocalActivity.current
     val pageMaxWidth = responsiveMaxWidth(560.dp)
+    val tabletDetailsMaxWidth = responsiveMaxWidth(560.dp)
+    val tabletReminderMaxWidth = responsiveMaxWidth(520.dp)
+    val useLargeTabletLayout = isLargeTabletLayout()
+    val isAnonExhausted = authState is AuthState.Anonymous && usageInfo.isExhausted
+    val reminderAuth = authState as? AuthState.Authenticated
+    val reminderSnooze = subscriptionReminderSnooze
 
     // Re-sync on every resume (e.g. after payment in Telegram)
     LifecycleResumeEffect(Unit) {
@@ -186,6 +211,7 @@ fun MainScreen(
     var showTemporaryAccessDialog by remember { mutableStateOf(false) }
     var navigateToAuthAfterTemporaryAccessDialog by remember { mutableStateOf(false) }
     var showBlockedDialog by remember { mutableStateOf(false) }
+    val onBlockedClick: () -> Unit = { showBlockedDialog = true }
     val prevBlocked = remember { mutableStateOf(subscriptionUsageBlocked) }
     var handledQuickSettingsConnectRequest by rememberSaveable { mutableStateOf(0) }
     val showTemporaryAccessBanner = authState is AuthState.Anonymous
@@ -324,6 +350,140 @@ fun MainScreen(
                 .padding(paddingValues),
             contentAlignment = Alignment.TopCenter,
         ) {
+        if (useLargeTabletLayout) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 48.dp, vertical = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(0.50f)
+                        .fillMaxHeight()
+                        .offset(x = (-16).dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    ConnectButtonLarge(
+                        connectionState = connectionState,
+                        isPreparing = connectionPreparation,
+                        blocked = subscriptionUsageBlocked,
+                        enlarged = true,
+                        onClick = if (subscriptionUsageBlocked) onBlockedClick else onConnectClick,
+                    )
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    StatusText(
+                        connectionState = connectionState,
+                        isPreparing = connectionPreparation,
+                        suppressError = isAnonExhausted || subscriptionUsageBlocked,
+                        reminder = appFilterReminder,
+                        enlarged = true,
+                    )
+
+                    // The temporary-access notice belongs to the connect
+                    // column: it explains what happens to the button the user
+                    // is looking at, so it sits under the status caption
+                    // instead of floating above the details cards.
+                    if (showTemporaryAccessBanner) {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Box(
+                            modifier = Modifier
+                                .widthIn(max = tabletReminderMaxWidth)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            TemporaryAccessBanner(
+                                onClick = { showTemporaryAccessDialog = true },
+                                modifier = Modifier.fillMaxWidth(0.82f),
+                            )
+                        }
+                    }
+
+                    if (reminderAuth != null && reminderSnooze != null) {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Box(
+                            modifier = Modifier
+                                .widthIn(max = tabletReminderMaxWidth)
+                                .fillMaxWidth(),
+                        ) {
+                            SubscriptionReminderBanner(
+                                auth = reminderAuth,
+                                snoozedUntilMillis = reminderSnooze.untilMillis,
+                                snoozedForExpiryMillis = reminderSnooze.expiresAtMillis,
+                                onRenew = {
+                                    viewModel.requestSubscriptionSheet {
+                                        selectCurrentTariffOnSubscriptionOpen = true
+                                        showSubscriptionSheet = true
+                                    }
+                                },
+                                onSnooze = {
+                                    viewModel.snoozeSubscriptionReminder(reminderAuth.planExpiresAt)
+                                },
+                            )
+                        }
+                    }
+                }
+
+                Box(
+                    modifier = Modifier
+                        .weight(0.50f)
+                        .fillMaxHeight()
+                        .offset(x = (-24).dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(
+                            modifier = Modifier
+                                .widthIn(max = tabletDetailsMaxWidth)
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                                .padding(vertical = 16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            if (isAnonExhausted) {
+                                LimitExhaustedCard(onLoginClick = onNavigateToAuth)
+                                Spacer(modifier = Modifier.height(16.dp))
+                            }
+
+                            HomeDetailsCards(
+                                subscriptionUsageBlocked = subscriptionUsageBlocked,
+                                authState = authState,
+                                usageInfo = usageInfo,
+                                currentServer = currentServer,
+                                automaticServerSelection = automaticServerSelection,
+                                sessionBytes = sessionBytes,
+                                sessionTime = sessionTime,
+                                onNavigateToServers = onNavigateToServers,
+                                onNavigateToStats = onNavigateToStats,
+                                onNavigateToSpeedTest = onNavigateToSpeedTest,
+                                onBlockedClick = onBlockedClick,
+                                onOpenSubscription = {
+                                    viewModel.requestSubscriptionSheet {
+                                        selectCurrentTariffOnSubscriptionOpen = false
+                                        showSubscriptionSheet = true
+                                    }
+                                },
+                            )
+
+                            Spacer(modifier = Modifier.height(24.dp))
+                        }
+
+                        if (paymentSuccessVisible) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopCenter)
+                                    .widthIn(max = tabletDetailsMaxWidth)
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp),
+                            ) {
+                                PaymentSuccessBanner(onDismiss = viewModel::dismissPaymentSuccess)
+                            }
+                        }
+                }
+            }
+        } else {
         Column(
             modifier = Modifier
                 .widthIn(max = pageMaxWidth)
@@ -334,6 +494,7 @@ fun MainScreen(
             if (showTemporaryAccessBanner) {
                 TemporaryAccessBanner(
                     onClick = { showTemporaryAccessDialog = true },
+                    modifier = Modifier.fillMaxWidth(0.82f),
                 )
             }
 
@@ -344,15 +505,13 @@ fun MainScreen(
                 connectionState = connectionState,
                 isPreparing = connectionPreparation,
                 blocked = subscriptionUsageBlocked,
-                onClick = if (subscriptionUsageBlocked) {{ showBlockedDialog = true }} else onConnectClick,
+                onClick = if (subscriptionUsageBlocked) onBlockedClick else onConnectClick,
             )
 
             Spacer(modifier = Modifier.height(16.dp))
 
             // When the anonymous limit is exhausted we surface a dedicated banner
             // below, so suppress the generic red error text to avoid duplication.
-            val isAnonExhausted = authState is AuthState.Anonymous && usageInfo.isExhausted
-            val appFilterReminder by viewModel.appFilterReminder.collectAsStateWithLifecycle()
             StatusText(
                 connectionState = connectionState,
                 isPreparing = connectionPreparation,
@@ -369,8 +528,6 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            val reminderAuth = authState as? AuthState.Authenticated
-            val reminderSnooze = subscriptionReminderSnooze
             if (reminderAuth != null && reminderSnooze != null) {
                 SubscriptionReminderBanner(
                     auth = reminderAuth,
@@ -389,160 +546,25 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(16.dp))
             }
 
-            // The in-app updater banner now lives at MainActivity level — it
-            // overlays every screen instead of only Home, so the user can act
-            // on a "new version available" notification from wherever they
-            // happen to be in the app.
-
-            ServerSelectorCard(
-                server = if (subscriptionUsageBlocked) null else currentServer,
-                onClick = if (subscriptionUsageBlocked) {{ }} else onNavigateToServers,
-                isAuthenticated = authState is AuthState.Authenticated,
-                automatic = automaticServerSelection,
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Traffic stats
-            TrafficCard(
+            HomeDetailsCards(
+                subscriptionUsageBlocked = subscriptionUsageBlocked,
+                authState = authState,
+                usageInfo = usageInfo,
+                currentServer = currentServer,
+                automaticServerSelection = automaticServerSelection,
                 sessionBytes = sessionBytes,
                 sessionTime = sessionTime,
-                onStatsClick = onNavigateToStats,
+                onNavigateToServers = onNavigateToServers,
+                onNavigateToStats = onNavigateToStats,
+                onNavigateToSpeedTest = onNavigateToSpeedTest,
+                onBlockedClick = onBlockedClick,
+                onOpenSubscription = {
+                    viewModel.requestSubscriptionSheet {
+                        selectCurrentTariffOnSubscriptionOpen = false
+                        showSubscriptionSheet = true
+                    }
+                },
             )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Speed test
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .clickable(onClick = onNavigateToSpeedTest),
-                shape = RoundedCornerShape(16.dp),
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        Icons.Default.Speed,
-                        contentDescription = null,
-                        // Black on light theme to match the rest of the
-                        // section labels; dark keeps the dynamic primary.
-                        tint = if (androidx.compose.foundation.isSystemInDarkTheme()) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            Color.Black
-                        },
-                        modifier = Modifier.size(28.dp),
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.speed_test_title),
-                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
-                                MaterialTheme.colorScheme.onSurface
-                            } else {
-                                Color.Black
-                            },
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = stringResource(R.string.speed_test_subtitle),
-                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Icon(
-                        Icons.Default.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Auth / Plan section
-            if (subscriptionUsageBlocked) {
-                BlockedSubscriptionCard(onClick = { showBlockedDialog = true })
-            } else when (authState) {
-                is AuthState.Anonymous -> {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp)
-                            .clickable {
-                                viewModel.requestSubscriptionSheet {
-                                    selectCurrentTariffOnSubscriptionOpen = false
-                                    showSubscriptionSheet = true
-                                }
-                            },
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    stringResource(R.string.subscription),
-                                    style = fixedLayoutTextStyle(
-                                        MaterialTheme.typography.titleSmall,
-                                    ),
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (androidx.compose.foundation.isSystemInDarkTheme()) {
-                                        MaterialTheme.colorScheme.onSurface
-                                    } else {
-                                        Color.Black
-                                    },
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                                Text(
-                                    stringResource(R.string.free_tier_hint),
-                                    style = fixedLayoutTextStyle(
-                                        MaterialTheme.typography.bodySmall,
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            SubscriptionUsageSummary(usageInfo = usageInfo)
-                            Icon(
-                                Icons.Default.KeyboardArrowRight,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-                is AuthState.Authenticated -> {
-                    PlanCard(
-                        auth = authState as AuthState.Authenticated,
-                        usageInfo = usageInfo,
-                        onClick = {
-                            viewModel.requestSubscriptionSheet {
-                                selectCurrentTariffOnSubscriptionOpen = false
-                                showSubscriptionSheet = true
-                            }
-                        },
-                    )
-                }
-            }
 
             Spacer(modifier = Modifier.height(24.dp))
         }
@@ -555,6 +577,7 @@ fun MainScreen(
             ) {
                 PaymentSuccessBanner(onDismiss = viewModel::dismissPaymentSuccess)
             }
+        }
         }
         }
         }
@@ -591,6 +614,160 @@ fun MainScreen(
             onDismiss = { showSubscriptionSheet = false },
             onNavigateToAuth = onNavigateToAuth,
         )
+    }
+}
+
+@Composable
+private fun HomeDetailsCards(
+    subscriptionUsageBlocked: Boolean,
+    authState: AuthState,
+    usageInfo: UsageInfo,
+    currentServer: Server?,
+    automaticServerSelection: Boolean,
+    sessionBytes: Long,
+    sessionTime: Long,
+    onNavigateToServers: () -> Unit,
+    onNavigateToStats: () -> Unit,
+    onNavigateToSpeedTest: () -> Unit,
+    onBlockedClick: () -> Unit,
+    onOpenSubscription: () -> Unit,
+) {
+    ServerSelectorCard(
+        server = if (subscriptionUsageBlocked) null else currentServer,
+        onClick = if (subscriptionUsageBlocked) ({}) else onNavigateToServers,
+        isAuthenticated = authState is AuthState.Authenticated,
+        automatic = automaticServerSelection,
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    TrafficCard(
+        sessionBytes = sessionBytes,
+        sessionTime = sessionTime,
+        onStatsClick = onNavigateToStats,
+    )
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    SpeedTestCard(onClick = onNavigateToSpeedTest)
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    if (subscriptionUsageBlocked) {
+        BlockedSubscriptionCard(onClick = onBlockedClick)
+    } else when (authState) {
+        is AuthState.Anonymous -> {
+            AnonymousSubscriptionCard(
+                usageInfo = usageInfo,
+                onClick = onOpenSubscription,
+            )
+        }
+
+        is AuthState.Authenticated -> {
+            PlanCard(
+                auth = authState,
+                usageInfo = usageInfo,
+                onClick = onOpenSubscription,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SpeedTestCard(onClick: () -> Unit) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Default.Speed,
+                contentDescription = null,
+                tint = if (isDark) MaterialTheme.colorScheme.primary else Color.Black,
+                modifier = Modifier.size(28.dp),
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.speed_test_title),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDark) MaterialTheme.colorScheme.onSurface else Color.Black,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(R.string.speed_test_subtitle),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AnonymousSubscriptionCard(
+    usageInfo: UsageInfo,
+    onClick: () -> Unit,
+) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp)
+            .clickable(onClick = onClick),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    stringResource(R.string.subscription),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDark) MaterialTheme.colorScheme.onSurface else Color.Black,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    stringResource(R.string.free_tier_hint),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            SubscriptionUsageSummary(usageInfo = usageInfo)
+            Icon(
+                Icons.Default.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 
@@ -651,16 +828,17 @@ private fun PaymentSuccessBanner(
 @Composable
 private fun TemporaryAccessBanner(
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
     val container = if (isDark) Color(0xFF2A2021) else Color(0xFFFFF1F1)
     val border = if (isDark) Color(0xFF7A3430) else Color(0xFFFFC6C2)
     val accent = if (isDark) Color(0xFFFF8A80) else VpnRed
 
+    // Width is decided by the caller's container, not by the banner itself,
+    // so it can line up with the other blocks of whichever column hosts it.
     Card(
-        modifier = Modifier
-            .fillMaxWidth(0.82f)
-            .clickable(onClick = onClick),
+        modifier = modifier.clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = container),
         border = androidx.compose.foundation.BorderStroke(1.dp, border),
@@ -864,6 +1042,7 @@ private fun ConnectButtonLarge(
     connectionState: ConnectionState,
     isPreparing: Boolean,
     blocked: Boolean = false,
+    enlarged: Boolean = false,
     onClick: () -> Unit,
 ) {
     val isConnected = connectionState is ConnectionState.Connected
@@ -895,9 +1074,11 @@ private fun ConnectButtonLarge(
     val rippleIndication = androidx.compose.material3.ripple(
         color = MaterialTheme.colorScheme.onSurface,
     )
+    val buttonSize = if (enlarged) 288.dp else 180.dp
+    val iconSize = if (enlarged) 102.4.dp else 64.dp
     Box(
         modifier = Modifier
-            .size(180.dp)
+            .size(buttonSize)
             .scale(scale)
             .clip(CircleShape)
             .background(backgroundColor)
@@ -917,7 +1098,7 @@ private fun ConnectButtonLarge(
                 else -> "Connect"
             },
             tint = iconColor,
-            modifier = Modifier.size(64.dp),
+            modifier = Modifier.size(iconSize),
         )
     }
 }
@@ -928,6 +1109,7 @@ private fun StatusText(
     isPreparing: Boolean = false,
     suppressError: Boolean = false,
     reminder: String? = null,
+    enlarged: Boolean = false,
 ) {
     val disconnected = stringResource(R.string.state_disconnected)
     // Connection errors win over the ambient reminder — once the user has
@@ -960,7 +1142,16 @@ private fun StatusText(
     }
     Text(
         text = text,
-        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
+        style = fixedLayoutTextStyle(
+            if (enlarged) {
+                MaterialTheme.typography.displaySmall.copy(
+                    fontSize = 35.2.sp,
+                    lineHeight = 44.8.sp,
+                )
+            } else {
+                MaterialTheme.typography.titleLarge
+            },
+        ),
         fontWeight = FontWeight.SemiBold,
         color = color,
         maxLines = 1,
@@ -1422,6 +1613,7 @@ private fun SubscriptionUsageSummary(
 ) {
     if (usageInfo.bytesLimit <= 0L) return
 
+    val useLargeTabletLayout = isLargeTabletLayout()
     val progress = usageInfo.trafficProgress
     val minimumUsageFontSize = fixedLayoutTextStyle(
         TextStyle(fontSize = 11.sp),
@@ -1431,7 +1623,10 @@ private fun SubscriptionUsageSummary(
     ).fontSize
     Column(
         modifier = modifier
-            .widthIn(min = 116.dp, max = 148.dp)
+            .widthIn(
+                min = if (useLargeTabletLayout) 148.dp else 116.dp,
+                max = if (useLargeTabletLayout) 184.dp else 148.dp,
+            )
             .padding(start = 12.dp, end = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -1818,6 +2013,20 @@ private fun SubscriptionBottomSheet(
 ) {
     val context = LocalContext.current
     val sheetState = rememberResistantModalBottomSheetState()
+    val hostViewHeightPx = LocalView.current.height
+    val baseDensity = LocalAppBaseDensity.current ?: LocalDensity.current
+    val interfaceScale = LocalAppInterfaceScale.current
+    val fallbackWindowHeightPx = with(baseDensity) {
+        LocalConfiguration.current.screenHeightDp.dp.toPx()
+    }
+    val windowHeightPx = hostViewHeightPx
+        .takeIf { it > 0 }
+        ?.toFloat()
+        ?: fallbackWindowHeightPx
+    val targetSheetHeightPx = windowHeightPx * APP_MODAL_SHEET_HEIGHT_FRACTION
+    val scaledDragHandleHeightPx = with(baseDensity) {
+        (APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT * interfaceScale).toPx()
+    }
 
     // Fetch when the sheet appears and again after returning from Telegram,
     // where the user may have activated a promo code.
@@ -1867,18 +2076,29 @@ private fun SubscriptionBottomSheet(
         } else {
             Color.White
         },
+        contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {
-        AppScaledContent {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .offset(y = sheetContentOffset)
-                    .alpha(sheetContentAlpha)
-                    .verticalScroll(rememberScrollState())
-                    .navigationBarsPadding()
-                    .padding(horizontal = 24.dp)
-                    .padding(bottom = 32.dp),
-            ) {
+        val modalDensity = LocalDensity.current
+        val sheetBodyHeight = with(modalDensity) {
+            (targetSheetHeightPx - scaledDragHandleHeightPx)
+                .coerceAtLeast(1f)
+                .toDp()
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = sheetBodyHeight),
+        ) {
+            AppScaledContent {
+                Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .offset(y = sheetContentOffset)
+                            .alpha(sheetContentAlpha)
+                            .navigationBarsPadding()
+                            .padding(horizontal = 24.dp)
+                            .padding(bottom = 32.dp),
+                    ) {
             // Header
             Text(
                 text = stringResource(R.string.subscription),
@@ -2049,9 +2269,9 @@ private fun SubscriptionBottomSheet(
                                     label = stringResource(R.string.devices_label),
                                 )
                             }
-                        }
                     }
                 }
+            }
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -2308,51 +2528,159 @@ private fun SubscriptionBottomSheet(
                             ?: "month",
                     )
                 }
+                val tariffPeriodsScrollState = rememberScrollState()
+                val defaultTariffPeriodsFlingBehavior = ScrollableDefaults.flingBehavior()
+                val tariffPeriodsFlingBehavior = remember(defaultTariffPeriodsFlingBehavior) {
+                    VelocityScaledFlingBehavior(
+                        delegate = defaultTariffPeriodsFlingBehavior,
+                        velocityScale = TARIFF_LIST_FLING_VELOCITY_SCALE,
+                    )
+                }
+                LaunchedEffect(selectedTariff?.key) {
+                    tariffPeriodsScrollState.scrollTo(0)
+                }
+                val tariffPeriodsTopFadeAlpha by animateFloatAsState(
+                    targetValue = if (tariffPeriodsScrollState.value > 0) 1f else 0f,
+                    animationSpec = tween(
+                        durationMillis = 180,
+                        easing = FastOutSlowInEasing,
+                    ),
+                    label = "TariffPeriodsTopFade",
+                )
+                val tariffPeriodsBottomFadeAlpha by animateFloatAsState(
+                    targetValue = if (
+                        tariffPeriodsScrollState.value < tariffPeriodsScrollState.maxValue
+                    ) {
+                        1f
+                    } else {
+                        0f
+                    },
+                    animationSpec = tween(
+                        durationMillis = 180,
+                        easing = FastOutSlowInEasing,
+                    ),
+                    label = "TariffPeriodsBottomFade",
+                )
+                val keepSheetStillAtTariffListBounds = remember(tariffPeriodsScrollState) {
+                    object : NestedScrollConnection {
+                        private fun consumeBeyondListBounds(deltaY: Float): Float {
+                            val draggingPastTop =
+                                tariffPeriodsScrollState.value == 0 && deltaY > 0f
+                            val draggingPastBottom =
+                                tariffPeriodsScrollState.value == tariffPeriodsScrollState.maxValue &&
+                                    deltaY < 0f
+                            return if (draggingPastTop || draggingPastBottom) deltaY else 0f
+                        }
 
-                Column(
+                        override fun onPreScroll(
+                            available: Offset,
+                            source: NestedScrollSource,
+                        ): Offset = Offset(
+                            x = 0f,
+                            y = consumeBeyondListBounds(available.y),
+                        )
+
+                        override fun onPostScroll(
+                            consumed: Offset,
+                            available: Offset,
+                            source: NestedScrollSource,
+                        ): Offset = Offset(
+                            x = 0f,
+                            y = consumeBeyondListBounds(available.y),
+                        )
+
+                        override suspend fun onPreFling(available: Velocity): Velocity = Velocity(
+                            x = 0f,
+                            y = consumeBeyondListBounds(available.y),
+                        )
+
+                        override suspend fun onPostFling(
+                            consumed: Velocity,
+                            available: Velocity,
+                        ): Velocity = Velocity(
+                            x = 0f,
+                            y = consumeBeyondListBounds(available.y),
+                        )
+                    }
+                }
+
+                Box(
                     modifier = Modifier
+                        .weight(1f, fill = false)
                         .fillMaxWidth()
-                        .animateContentSize(
-                            animationSpec = tween(
-                                durationMillis = 450,
-                                easing = FastOutSlowInEasing,
-                            ),
-                        ),
                 ) {
-                    AnimatedContent(
-                        targetState = selectedTariff?.key.orEmpty(),
-                        transitionSpec = {
-                            fadeIn(
-                                animationSpec = tween(
-                                    durationMillis = 260,
-                                    delayMillis = 70,
-                                    easing = FastOutSlowInEasing,
-                                ),
-                            ) togetherWith fadeOut(
-                                animationSpec = tween(
-                                    durationMillis = 160,
-                                    easing = FastOutSlowInEasing,
-                                ),
-                            )
-                        },
-                        label = "TariffPeriodsTransition",
-                    ) { tariffKey ->
-                        val animatedPeriods = tariffs.firstOrNull { it.key == tariffKey }?.periods.orEmpty()
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            animatedPeriods.forEach { plan ->
-                                PlanOption(
-                                    title = plan.title,
-                                    priceDisplay = plan.priceDisplay,
-                                    originalPriceDisplay = plan.originalPriceDisplay,
-                                    discountPercent = plan.discountPercent,
-                                    description = plan.description,
-                                    selected = selectedPlan == plan.key,
-                                    onClick = { selectedPlan = plan.key },
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalFadingEdges(
+                                topAlpha = tariffPeriodsTopFadeAlpha,
+                                bottomAlpha = tariffPeriodsBottomFadeAlpha,
+                                fadeHeight = 38.dp,
+                            ),
+                    ) {
+                        AnimatedContent(
+                            targetState = selectedTariff?.key.orEmpty(),
+                            modifier = Modifier.fillMaxWidth(),
+                            transitionSpec = {
+                                fadeIn(
+                                    animationSpec = tween(
+                                        durationMillis = 260,
+                                        delayMillis = 70,
+                                        easing = FastOutSlowInEasing,
+                                    ),
+                                ) togetherWith fadeOut(
+                                    animationSpec = tween(
+                                        durationMillis = 160,
+                                        easing = FastOutSlowInEasing,
+                                    ),
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
+                            },
+                            label = "TariffPeriodsTransition",
+                        ) { tariffKey ->
+                            val animatedPeriods = tariffs
+                                .firstOrNull { it.key == tariffKey }
+                                ?.periods
+                                .orEmpty()
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .nestedScroll(keepSheetStillAtTariffListBounds)
+                                    .verticalScroll(
+                                        state = tariffPeriodsScrollState,
+                                        flingBehavior = tariffPeriodsFlingBehavior,
+                                    )
+                                    .padding(vertical = 12.dp),
+                            ) {
+                                animatedPeriods.forEach { plan ->
+                                    PlanOption(
+                                        title = plan.title,
+                                        priceDisplay = plan.priceDisplay,
+                                        originalPriceDisplay = plan.originalPriceDisplay,
+                                        discountPercent = plan.discountPercent,
+                                        description = plan.description,
+                                        selected = selectedPlan == plan.key,
+                                        onClick = { selectedPlan = plan.key },
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                }
                             }
                         }
                     }
+
+                    VerticalScrollEdgeArrow(
+                        alpha = tariffPeriodsTopFadeAlpha,
+                        isTop = true,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 2.dp),
+                    )
+                    VerticalScrollEdgeArrow(
+                        alpha = tariffPeriodsBottomFadeAlpha,
+                        isTop = false,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 2.dp),
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -2400,8 +2728,7 @@ private fun SubscriptionBottomSheet(
                     )
                 } else {
                     val selectedLabel = periods.firstOrNull { it.key == selectedPlan }
-                        ?: periods.firstOrNull()
-                        ?: return@Column
+                        ?: periods.first()
                     val selectedActionTitle = selectedTariff
                         ?.takeIf { it.key != "fallback" && it.title.isNotBlank() }
                         ?.let { "${it.title} · ${selectedLabel.title}" }
@@ -2469,9 +2796,25 @@ private fun SubscriptionBottomSheet(
                         )
                     }
                 }
-            }
+                    }
+                }
             }
         }
+    }
+}
+
+private const val TARIFF_LIST_FLING_VELOCITY_SCALE = 0.45f
+
+private class VelocityScaledFlingBehavior(
+    private val delegate: FlingBehavior,
+    private val velocityScale: Float,
+) : FlingBehavior {
+    override suspend fun ScrollScope.performFling(initialVelocity: Float): Float {
+        val scaledVelocity = initialVelocity * velocityScale
+        val remainingScaledVelocity = with(delegate) {
+            performFling(scaledVelocity)
+        }
+        return remainingScaledVelocity / velocityScale
     }
 }
 

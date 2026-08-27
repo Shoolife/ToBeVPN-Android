@@ -23,9 +23,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Devices
-import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
@@ -147,24 +147,24 @@ private val WhatsNewHeroIcon: ImageVector by lazy {
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.Share,
-        titleRes = R.string.whats_new_qr_share_fix_title,
-        descriptionRes = R.string.whats_new_qr_share_fix_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Filled.Devices,
-        titleRes = R.string.whats_new_devices_title,
-        descriptionRes = R.string.whats_new_devices_desc,
+        icon = Icons.Filled.AspectRatio,
+        titleRes = R.string.whats_new_tablet_layout_title,
+        descriptionRes = R.string.whats_new_tablet_layout_desc,
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.Sync,
-        titleRes = R.string.whats_new_bottom_sheets_title,
-        descriptionRes = R.string.whats_new_bottom_sheets_desc,
+        titleRes = R.string.whats_new_subscription_sheet_title,
+        descriptionRes = R.string.whats_new_subscription_sheet_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.NotificationsActive,
-        titleRes = R.string.whats_new_interface_polish_title,
-        descriptionRes = R.string.whats_new_interface_polish_desc,
+        icon = Icons.Filled.Devices,
+        titleRes = R.string.whats_new_device_controls_title,
+        descriptionRes = R.string.whats_new_device_controls_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.Share,
+        titleRes = R.string.whats_new_onboarding_title,
+        descriptionRes = R.string.whats_new_onboarding_desc,
     ),
 )
 

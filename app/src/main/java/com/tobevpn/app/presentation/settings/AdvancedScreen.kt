@@ -102,6 +102,8 @@ import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT
+import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_HEIGHT_FRACTION
 import com.tobevpn.app.presentation.components.SpinningRefreshIcon
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
@@ -672,6 +674,11 @@ private fun LinkedDevicesBottomSheet(
     } else {
         Color.White
     }
+    val refreshIconColor = if (isDark) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        Color.Black
+    }
     val hostViewHeightPx = LocalView.current.height
     val baseDensity = LocalAppBaseDensity.current ?: LocalDensity.current
     val interfaceScale = LocalAppInterfaceScale.current
@@ -685,11 +692,11 @@ private fun LinkedDevicesBottomSheet(
     // ModalBottomSheet is hosted in a separate ComposeView whose LocalDensity is the unscaled
     // platform density. The requested percentage therefore has to be kept in physical pixels.
     // Converting the window through the app-scaled density would turn 93% into about 72% at 1.3x.
-    val targetSheetHeightPx = windowHeightPx * DEVICES_SHEET_HEIGHT_FRACTION
+    val targetSheetHeightPx = windowHeightPx * APP_MODAL_SHEET_HEIGHT_FRACTION
     // DragHandle is wrapped in AppScaledContent, so its physical 48.dp height scales too and sits
     // outside the body measured below.
     val scaledDragHandleHeightPx = with(baseDensity) {
-        (DEVICES_SHEET_DRAG_HANDLE_HEIGHT * interfaceScale).toPx()
+        (APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT * interfaceScale).toPx()
     }
     val lightOutlinedButtonColors = ButtonDefaults.outlinedButtonColors(
         contentColor = Color.Black,
@@ -825,28 +832,48 @@ private fun LinkedDevicesBottomSheet(
                             .fillMaxWidth()
                             .padding(horizontal = 24.dp),
                     ) {
-                    Text(
-                        text = stringResource(R.string.devices_title),
-                        style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = if (state.maxDevices == 0) {
-                            stringResource(R.string.devices_count_unlimited, devicesCount)
-                        } else {
-                            stringResource(
-                                R.string.devices_count,
-                                devicesCount,
-                                state.maxDevices,
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = stringResource(R.string.devices_title),
+                                style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
                             )
-                        },
-                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = if (state.maxDevices == 0) {
+                                    stringResource(
+                                        R.string.devices_count_unlimited,
+                                        devicesCount,
+                                    )
+                                } else {
+                                    stringResource(
+                                        R.string.devices_count,
+                                        devicesCount,
+                                        state.maxDevices,
+                                    )
+                                },
+                                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        IconButton(
+                            onClick = onRefresh,
+                            enabled = !state.isLoading,
+                        ) {
+                            SpinningRefreshIcon(
+                                spinning = refreshActive,
+                                contentDescription = stringResource(R.string.devices_refresh),
+                                tint = refreshIconColor,
+                            )
+                        }
+                    }
 
                     Spacer(modifier = Modifier.height(20.dp))
 
@@ -889,43 +916,6 @@ private fun LinkedDevicesBottomSheet(
                             DeviceActionText(stringResource(R.string.devices_enter_code))
                         }
                     }
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedButton(
-                        onClick = onRefresh,
-                        enabled = !state.isLoading,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = if (isDark) {
-                            ButtonDefaults.outlinedButtonColors()
-                        } else {
-                            lightOutlinedButtonColors
-                        },
-                        border = if (isDark) {
-                            ButtonDefaults.outlinedButtonBorder
-                        } else {
-                            lightOutlinedButtonBorder
-                        },
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                        ) {
-                            SpinningRefreshIcon(
-                                spinning = refreshActive,
-                                contentDescription = null,
-                                size = 20.dp,
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = stringResource(R.string.devices_refresh),
-                                style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-
                     if (!canLinkMoreDevices) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -1083,9 +1073,6 @@ private fun DeviceActionText(text: String) {
     )
 }
 
-private const val DEVICES_SHEET_HEIGHT_FRACTION = 0.93f
-private val DEVICES_SHEET_DRAG_HANDLE_HEIGHT = 48.dp
-
 @Composable
 private fun deviceRefreshPlaceholderAlpha(): Float {
     val transition = rememberInfiniteTransition(label = "devices-refresh")
@@ -1120,28 +1107,31 @@ private fun LinkedDeviceLoadingCard(
             )
         },
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
                 .alpha(alpha),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.56f)
-                    .height(18.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(placeholderColor),
-            )
-            Spacer(modifier = Modifier.height(7.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.38f)
-                    .height(15.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(placeholderColor),
-            )
-            Spacer(modifier = Modifier.height(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.56f)
+                        .height(18.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(placeholderColor),
+                )
+                Spacer(modifier = Modifier.height(7.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.38f)
+                        .height(15.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(placeholderColor),
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
             Box(
                 modifier = Modifier
                     .width(if (isCurrent) 126.dp else 132.dp)
@@ -1173,89 +1163,98 @@ private fun LinkedDeviceCard(
             )
         },
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                text = deviceTitle(device),
-                style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
-                fontWeight = FontWeight.SemiBold,
-                color = if (isSystemInDarkTheme()) {
-                    MaterialTheme.colorScheme.onSurface
-                } else {
-                    Color.Black
-                },
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = deviceSubtitle(device),
-                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                softWrap = false,
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            val timestamp = device.lastSeenAt ?: device.linkedAt
-            if (timestamp != null) {
-                Spacer(modifier = Modifier.height(6.dp))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = stringResource(R.string.devices_last_active, formatDeviceDate(timestamp)),
-                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    text = deviceTitle(device),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isSystemInDarkTheme()) {
+                        MaterialTheme.colorScheme.onSurface
+                    } else {
+                        Color.Black
+                    },
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = deviceSubtitle(device),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                 )
+
+                val timestamp = device.lastSeenAt ?: device.linkedAt
+                if (timestamp != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = stringResource(
+                            R.string.devices_last_active,
+                            formatDeviceDate(timestamp),
+                        ),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.width(16.dp))
             if (isCurrent) {
                 Text(
                     text = stringResource(R.string.devices_current_badge),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
                     color = VpnGreen,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start,
+                FilledTonalButton(
+                    onClick = { onDisconnect(device.deviceId) },
+                    enabled = !isBusy,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.filledTonalButtonColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.68f),
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                        disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
                 ) {
-                    FilledTonalButton(
-                        onClick = { onDisconnect(device.deviceId) },
-                        enabled = !isBusy,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.68f),
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp),
-                    ) {
-                        if (isBusy) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.LinkOff,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.devices_disconnect),
-                            style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
+                    if (isBusy) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.LinkOff,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
                         )
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.devices_disconnect),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             }
         }

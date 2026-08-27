@@ -40,5 +40,8 @@ fun rememberResistantModalBottomSheetState(): SheetState {
     }
 }
 
+internal const val APP_MODAL_SHEET_HEIGHT_FRACTION = 0.93f
+internal val APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT = 48.dp
+
 private const val DISMISS_DISTANCE_FRACTION = 0.22f
 private val DISMISS_VELOCITY_THRESHOLD = 900.dp

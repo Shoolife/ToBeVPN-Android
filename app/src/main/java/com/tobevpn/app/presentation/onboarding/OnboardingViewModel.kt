@@ -13,6 +13,7 @@ import javax.inject.Inject
 
 // Fallback defaults used only when /api/config is unreachable or omits a field.
 private const val DEFAULT_ANON_TRAFFIC_BYTES = 1_073_741_824L  // 1 GB — pre-sign-in
+private const val DEFAULT_FREE_TRIAL_DAYS = 3
 
 @HiltViewModel
 class OnboardingViewModel @Inject constructor(
@@ -42,6 +43,8 @@ class OnboardingViewModel @Inject constructor(
                     _trialTerms.value = TrialTermsUiState(
                         anonBytes = config.anonTrafficBytes.takeIf { it > 0 }
                             ?: DEFAULT_ANON_TRAFFIC_BYTES,
+                        freeTrialDays = config.freeTrialDays.takeIf { it > 0 }
+                            ?: DEFAULT_FREE_TRIAL_DAYS,
                     )
                 }
         }
@@ -51,4 +54,6 @@ class OnboardingViewModel @Inject constructor(
 data class TrialTermsUiState(
     /** Traffic available before signing in (anonymous). */
     val anonBytes: Long = DEFAULT_ANON_TRAFFIC_BYTES,
+    /** Duration of the signed-in trial. */
+    val freeTrialDays: Int = DEFAULT_FREE_TRIAL_DAYS,
 )

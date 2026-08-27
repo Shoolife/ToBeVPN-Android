@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.Canvas as AndroidCanvas
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -57,10 +58,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -70,10 +73,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
@@ -274,8 +279,10 @@ private fun IdleContent(
     Spacer(modifier = Modifier.height(32.dp))
     Button(
         onClick = onTelegramLogin,
+        // Sized to its label, like the "Поделиться QR-кодом" button: a
+        // full-width CTA turns into a banner on tablets.
         modifier = Modifier
-            .fillMaxWidth()
+            .wrapContentWidth()
             .height(52.dp),
         shape = RoundedCornerShape(14.dp),
         // Same dark-grey CTA family as "Купить" / "Сканировать QR".
@@ -331,14 +338,91 @@ private fun CollaborationMark(isDark: Boolean) {
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Image(
-            painter = painterResource(R.drawable.partner_collab_lines),
-            contentDescription = null,
-            modifier = Modifier.size(width = 98.dp, height = 92.dp),
-            colorFilter = ColorFilter.tint(lineColor),
+        PartnerCollabMark(
+            tint = lineColor,
+            width = 98.dp,
+            height = 92.dp,
         )
     }
 }
+
+/**
+ * The partner mark is a traced line drawing whose strokes are thinner than a
+ * pixel at display size. Rasterising the vector straight into ~98 dp drops and
+ * breaks them, so the artwork reads as noise. Draw it four times larger and
+ * halve it twice instead: every final pixel then averages the strokes that
+ * fall into it, which is what the original PNG asset effectively did.
+ */
+@Composable
+private fun PartnerCollabMark(tint: Color, width: Dp, height: Dp) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val widthPx = with(density) { width.roundToPx() }
+    val heightPx = with(density) { height.roundToPx() }
+    val bitmap = remember(widthPx, heightPx) {
+        downsampledDrawable(
+            context = context,
+            drawableRes = R.drawable.partner_collab_lines,
+            widthPx = widthPx,
+            heightPx = heightPx,
+        )
+    }
+
+    if (bitmap == null) {
+        Image(
+            painter = painterResource(R.drawable.partner_collab_lines),
+            contentDescription = null,
+            modifier = Modifier.size(width = width, height = height),
+            colorFilter = ColorFilter.tint(tint),
+        )
+    } else {
+        Image(
+            bitmap = bitmap,
+            contentDescription = null,
+            modifier = Modifier.size(width = width, height = height),
+            contentScale = ContentScale.Fit,
+            colorFilter = ColorFilter.tint(tint),
+            filterQuality = FilterQuality.High,
+        )
+    }
+}
+
+private fun downsampledDrawable(
+    context: Context,
+    drawableRes: Int,
+    widthPx: Int,
+    heightPx: Int,
+): ImageBitmap? {
+    if (widthPx <= 0 || heightPx <= 0) return null
+    val drawable = ContextCompat.getDrawable(context, drawableRes) ?: return null
+    var bitmap = Bitmap.createBitmap(
+        widthPx * SUPER_SAMPLE_FACTOR,
+        heightPx * SUPER_SAMPLE_FACTOR,
+        Bitmap.Config.ARGB_8888,
+    )
+    AndroidCanvas(bitmap).also { canvas ->
+        drawable.setBounds(0, 0, canvas.width, canvas.height)
+        drawable.draw(canvas)
+    }
+    // Halving steps, not one big scale: bilinear filtering only averages the
+    // four neighbouring pixels, so a single 4x reduction would skip most of
+    // the strokes it is supposed to blend.
+    var factor = SUPER_SAMPLE_FACTOR
+    while (factor > 1) {
+        factor /= 2
+        val scaled = Bitmap.createScaledBitmap(
+            bitmap,
+            widthPx * factor,
+            heightPx * factor,
+            true,
+        )
+        if (scaled !== bitmap) bitmap.recycle()
+        bitmap = scaled
+    }
+    return bitmap.asImageBitmap()
+}
+
+private const val SUPER_SAMPLE_FACTOR = 4
 
 @Composable
 private fun OpeningContent(

@@ -21,6 +21,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -125,121 +127,120 @@ fun SettingsScreen(
     val nameDisplay by viewModel.profileNameDisplay.collectAsStateWithLifecycle()
     val avatarLoading by viewModel.avatarLoading.collectAsStateWithLifecycle()
     var showLogoutConfirm by remember { mutableStateOf(false) }
-
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    SettingsSingleLineText(
-                        text = stringResource(R.string.settings),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.back),
+            topBar = {
+                TopAppBar(
+                    title = {
+                        SettingsSingleLineText(
+                            text = stringResource(R.string.settings),
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
                         )
-                    }
-                },
-                // Sign out lives in the top-right corner of the screen, mirroring
-                // the back button — only shown while signed in.
-                actions = {
-                    if (authState is AuthState.Authenticated) {
-                        IconButton(onClick = { showLogoutConfirm = true }) {
+                    },
+                    navigationIcon = {
+                        IconButton(onClick = onBack) {
                             Icon(
-                                imageVector = Icons.AutoMirrored.Filled.Logout,
-                                contentDescription = stringResource(R.string.logout),
-                                tint = if (isSystemInDarkTheme()) {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                } else {
-                                    Color.Black
-                                },
+                                Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = stringResource(R.string.back),
                             )
                         }
+                    },
+                    // Sign out lives in the top-right corner of the screen, mirroring
+                    // the back button — only shown while signed in.
+                    actions = {
+                        if (authState is AuthState.Authenticated) {
+                            IconButton(onClick = { showLogoutConfirm = true }) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Logout,
+                                    contentDescription = stringResource(R.string.logout),
+                                    tint = if (isSystemInDarkTheme()) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        Color.Black
+                                    },
+                                )
+                            }
+                        }
+                    },
+                )
+            },
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .padding(horizontal = 16.dp)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                AccountCard(
+                    authState = authState,
+                    nameDisplay = nameDisplay,
+                    avatarLoading = avatarLoading,
+                    onNavigateToAuth = onNavigateToAuth,
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Two-column category grid. Keep About in the bottom-right tile;
+                // Promocodes occupies the matching bottom-left position.
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SettingsCategoryTile(
+                            icon = Icons.Filled.Palette,
+                            accent = AccentViolet,
+                            label = stringResource(R.string.settings_personalization),
+                            description = stringResource(R.string.settings_personalization_desc),
+                            onClick = onNavigateToPersonalization,
+                        )
+                        SettingsCategoryTile(
+                            icon = Icons.Filled.Tune,
+                            accent = VpnBlue,
+                            label = stringResource(R.string.settings_advanced),
+                            description = stringResource(R.string.settings_advanced_desc),
+                            onClick = onNavigateToAdvanced,
+                        )
                     }
-                },
-            )
-        },
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
-        ) {
-            AccountCard(
-                authState = authState,
-                nameDisplay = nameDisplay,
-                avatarLoading = avatarLoading,
-                onNavigateToAuth = onNavigateToAuth,
-            )
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SettingsCategoryTile(
+                            icon = Icons.Filled.SupportAgent,
+                            accent = VpnGreen,
+                            label = stringResource(R.string.settings_support),
+                            description = stringResource(R.string.settings_support_desc),
+                            onClick = onNavigateToSupport,
+                        )
+                        SettingsCategoryTile(
+                            icon = Icons.Filled.GroupAdd,
+                            accent = ReferralAccent,
+                            label = stringResource(R.string.settings_referrals),
+                            description = stringResource(R.string.settings_referrals_desc),
+                            onClick = onNavigateToReferrals,
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SettingsCategoryTile(
+                            icon = Icons.Filled.LocalOffer,
+                            accent = PromocodeAccent,
+                            iconTint = if (isSystemInDarkTheme()) {
+                                PromocodeAccent
+                            } else {
+                                PromocodeAccentOnLight
+                            },
+                            label = stringResource(R.string.settings_promocodes),
+                            description = stringResource(R.string.settings_promocodes_desc),
+                            onClick = onNavigateToPromocodes,
+                        )
+                        SettingsCategoryTile(
+                            icon = Icons.Filled.Info,
+                            accent = VpnOrange,
+                            label = stringResource(R.string.about),
+                            description = stringResource(R.string.settings_about_desc),
+                            onClick = onNavigateToAbout,
+                        )
+                    }
+                }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Two-column category grid. Keep About in the bottom-right tile;
-            // Promocodes occupies the matching bottom-left position.
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SettingsCategoryTile(
-                        icon = Icons.Filled.Palette,
-                        accent = AccentViolet,
-                        label = stringResource(R.string.settings_personalization),
-                        description = stringResource(R.string.settings_personalization_desc),
-                        onClick = onNavigateToPersonalization,
-                    )
-                    SettingsCategoryTile(
-                        icon = Icons.Filled.Tune,
-                        accent = VpnBlue,
-                        label = stringResource(R.string.settings_advanced),
-                        description = stringResource(R.string.settings_advanced_desc),
-                        onClick = onNavigateToAdvanced,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SettingsCategoryTile(
-                        icon = Icons.Filled.SupportAgent,
-                        accent = VpnGreen,
-                        label = stringResource(R.string.settings_support),
-                        description = stringResource(R.string.settings_support_desc),
-                        onClick = onNavigateToSupport,
-                    )
-                    SettingsCategoryTile(
-                        icon = Icons.Filled.GroupAdd,
-                        accent = ReferralAccent,
-                        label = stringResource(R.string.settings_referrals),
-                        description = stringResource(R.string.settings_referrals_desc),
-                        onClick = onNavigateToReferrals,
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    SettingsCategoryTile(
-                        icon = Icons.Filled.LocalOffer,
-                        accent = PromocodeAccent,
-                        iconTint = if (isSystemInDarkTheme()) {
-                            PromocodeAccent
-                        } else {
-                            PromocodeAccentOnLight
-                        },
-                        label = stringResource(R.string.settings_promocodes),
-                        description = stringResource(R.string.settings_promocodes_desc),
-                        onClick = onNavigateToPromocodes,
-                    )
-                    SettingsCategoryTile(
-                        icon = Icons.Filled.Info,
-                        accent = VpnOrange,
-                        label = stringResource(R.string.about),
-                        description = stringResource(R.string.settings_about_desc),
-                        onClick = onNavigateToAbout,
-                    )
-                }
+                Spacer(modifier = Modifier.height(16.dp))
             }
-
-            Spacer(modifier = Modifier.height(16.dp))
-        }
     }
 
     // Confirm before signing out — logout wipes the local session and needs a
@@ -271,22 +272,17 @@ private fun LogoutConfirmDialog(
     } else {
         Color.Black
     }
-    val secondaryButtonColors = ButtonDefaults.buttonColors(
-        containerColor = if (darkTheme) {
-            MaterialTheme.colorScheme.surfaceVariant
-        } else {
-            Color.White
-        },
-        contentColor = dialogTextColor,
-    )
-    val secondaryButtonBorder = BorderStroke(
-        width = 1.dp,
-        color = if (darkTheme) {
-            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
-        } else {
-            Color(0xFFD0D0D0)
-        },
-    )
+    // Same secondary button treatment as the restart-required dialog.
+    val secondaryButtonColors = if (darkTheme) {
+        ButtonDefaults.outlinedButtonColors()
+    } else {
+        ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
+    }
+    val secondaryButtonBorder = if (darkTheme) {
+        ButtonDefaults.outlinedButtonBorder
+    } else {
+        BorderStroke(1.dp, Color(0xFFD6D6D6))
+    }
     val transitionState = remember { MutableTransitionState(false) }
     transitionState.targetState = visible
     if (transitionState.currentState || transitionState.targetState) {
@@ -343,6 +339,11 @@ private fun LogoutConfirmDialog(
                         Surface(
                             modifier = Modifier
                                 .padding(horizontal = 40.dp)
+                                // Bounded like AppAlertDialog (the restart-required
+                                // dialog): without a max width the card stretches to
+                                // the full tablet screen and the text lines sprawl.
+                                .widthIn(min = 280.dp, max = 560.dp)
+                                .fillMaxWidth()
                                 // Swallow taps so clicking the card doesn't dismiss it.
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
@@ -381,14 +382,15 @@ private fun LogoutConfirmDialog(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                             ) {
-                                Button(
+                                OutlinedButton(
                                     onClick = onDismiss,
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(46.dp),
-                                    shape = RoundedCornerShape(13.dp),
+                                    shape = RoundedCornerShape(14.dp),
                                     colors = secondaryButtonColors,
                                     border = secondaryButtonBorder,
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
                                 ) {
                                     Text(
                                         text = stringResource(R.string.cancel),
@@ -405,7 +407,7 @@ private fun LogoutConfirmDialog(
                                     modifier = Modifier
                                         .weight(1f)
                                         .height(46.dp),
-                                    shape = RoundedCornerShape(13.dp),
+                                    shape = RoundedCornerShape(14.dp),
                                     colors = if (darkTheme) {
                                         ButtonDefaults.buttonColors()
                                     } else {
@@ -414,6 +416,7 @@ private fun LogoutConfirmDialog(
                                             contentColor = Color.White,
                                         )
                                     },
+                                    contentPadding = PaddingValues(horizontal = 12.dp),
                                 ) {
                                     Text(
                                         text = stringResource(R.string.logout),

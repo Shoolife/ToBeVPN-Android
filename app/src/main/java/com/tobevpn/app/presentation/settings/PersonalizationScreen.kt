@@ -112,6 +112,7 @@ import com.tobevpn.app.presentation.servers.ServerListScalePreview
 import com.tobevpn.app.presentation.theme.LocalAppBaseDensity
 import com.tobevpn.app.presentation.theme.LocalAppFontScale
 import com.tobevpn.app.presentation.theme.LocalAppInterfaceScale
+import com.tobevpn.app.presentation.theme.LocalAppLayoutFontScaleMultiplier
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
@@ -585,14 +586,18 @@ private fun PreviewScaledContent(
     val baseDensity = LocalAppBaseDensity.current ?: LocalDensity.current
     val normalizedInterfaceScale = normalizeInterfaceScale(interfaceScale)
     val normalizedFontScale = normalizeFontScale(fontScale)
+    val layoutFontScaleMultiplier = LocalAppLayoutFontScaleMultiplier.current
     val previewDensity = remember(
         baseDensity,
         normalizedInterfaceScale,
         normalizedFontScale,
+        layoutFontScaleMultiplier,
     ) {
         Density(
             density = baseDensity.density * normalizedInterfaceScale,
-            fontScale = baseDensity.fontScale * normalizedFontScale,
+            fontScale = baseDensity.fontScale *
+                normalizedFontScale *
+                layoutFontScaleMultiplier,
         )
     }
 

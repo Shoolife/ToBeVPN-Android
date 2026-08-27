@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -47,6 +48,7 @@ internal val LocalAppInterfaceScale = staticCompositionLocalOf {
 internal val LocalAppFontScale = staticCompositionLocalOf {
     DEFAULT_FONT_SCALE
 }
+internal val LocalAppLayoutFontScaleMultiplier = staticCompositionLocalOf { 1f }
 internal val LocalAppBoldText = staticCompositionLocalOf { false }
 internal val LocalAppOutlinedText = staticCompositionLocalOf { false }
 internal val LocalAppTextOutlineColor = staticCompositionLocalOf { Color.Transparent }
@@ -57,16 +59,23 @@ internal fun AppScaledContent(content: @Composable () -> Unit) {
     val baseDensity = LocalAppBaseDensity.current ?: currentDensity
     val interfaceScale = normalizeInterfaceScale(LocalAppInterfaceScale.current)
     val fontScale = normalizeFontScale(LocalAppFontScale.current)
-    val scaledDensity = remember(baseDensity, interfaceScale, fontScale) {
+    val layoutFontScaleMultiplier = LocalAppLayoutFontScaleMultiplier.current
+    val scaledDensity = remember(
+        baseDensity,
+        interfaceScale,
+        fontScale,
+        layoutFontScaleMultiplier,
+    ) {
         if (
             interfaceScale == DEFAULT_INTERFACE_SCALE &&
-            fontScale == DEFAULT_FONT_SCALE
+            fontScale == DEFAULT_FONT_SCALE &&
+            layoutFontScaleMultiplier == 1f
         ) {
             baseDensity
         } else {
             Density(
                 density = baseDensity.density * interfaceScale,
-                fontScale = baseDensity.fontScale * fontScale,
+                fontScale = baseDensity.fontScale * fontScale * layoutFontScaleMultiplier,
             )
         }
     }
@@ -87,6 +96,32 @@ internal fun responsiveMaxWidth(maxWidth: Dp): Dp {
     val interfaceScale = normalizeInterfaceScale(LocalAppInterfaceScale.current)
     return maxWidth / interfaceScale
 }
+
+/**
+ * A raw Android configuration breakpoint, deliberately independent from the
+ * user-selected interface scale. The two-pane layout is intended for large
+ * landscape tablets; phones keep their compact layout even when rotated.
+ */
+@Composable
+internal fun isLargeTabletLayout(): Boolean {
+    val configuration = LocalConfiguration.current
+    return configuration.smallestScreenWidthDp >= LARGE_TABLET_MIN_WIDTH_DP &&
+        configuration.screenWidthDp >= LARGE_TABLET_MIN_LANDSCAPE_WIDTH_DP
+}
+
+/**
+ * Tablet-sized device in any orientation. The two-pane layout additionally
+ * needs landscape width, but a page that simply spans the window only needs the
+ * device to be big: bounding it to phone width leaves a portrait tablet with
+ * empty margins on both sides.
+ */
+@Composable
+internal fun isTabletLayout(): Boolean =
+    LocalConfiguration.current.smallestScreenWidthDp >= LARGE_TABLET_MIN_WIDTH_DP
+
+private const val LARGE_TABLET_MIN_WIDTH_DP = 720
+private const val LARGE_TABLET_MIN_LANDSCAPE_WIDTH_DP = 960
+internal const val LARGE_TABLET_FONT_SCALE_MULTIPLIER = 1.2f
 
 /**
  * Material's AlertDialog is hosted in another Android window, where LocalDensity

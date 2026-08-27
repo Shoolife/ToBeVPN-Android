@@ -151,20 +151,29 @@ fun ToBeVPNTheme(
     val baseDensity = LocalDensity.current
     val normalizedInterfaceScale = normalizeInterfaceScale(interfaceScale)
     val normalizedFontScale = normalizeFontScale(fontScale)
+    val layoutFontScaleMultiplier = if (isLargeTabletLayout()) {
+        LARGE_TABLET_FONT_SCALE_MULTIPLIER
+    } else {
+        1f
+    }
     val effectiveDensity = remember(
         baseDensity,
         normalizedInterfaceScale,
         normalizedFontScale,
+        layoutFontScaleMultiplier,
     ) {
         if (
             normalizedInterfaceScale == DEFAULT_INTERFACE_SCALE &&
-            normalizedFontScale == DEFAULT_FONT_SCALE
+            normalizedFontScale == DEFAULT_FONT_SCALE &&
+            layoutFontScaleMultiplier == 1f
         ) {
             baseDensity
         } else {
             Density(
                 density = baseDensity.density * normalizedInterfaceScale,
-                fontScale = baseDensity.fontScale * normalizedFontScale,
+                fontScale = baseDensity.fontScale *
+                    normalizedFontScale *
+                    layoutFontScaleMultiplier,
             )
         }
     }
@@ -198,6 +207,7 @@ fun ToBeVPNTheme(
         LocalAppBaseDensity provides baseDensity,
         LocalAppInterfaceScale provides normalizedInterfaceScale,
         LocalAppFontScale provides normalizedFontScale,
+        LocalAppLayoutFontScaleMultiplier provides layoutFontScaleMultiplier,
         LocalAppBoldText provides boldText,
         LocalAppOutlinedText provides outlinedText,
         LocalAppTextOutlineColor provides if (darkTheme) Color.Black else Color.White,

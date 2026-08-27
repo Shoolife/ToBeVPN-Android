@@ -18,10 +18,11 @@
 
     <!-- Onboarding -->
     <string name="onboarding_subtitle">Trial plan for your first connection</string>
-    <string name="onboarding_feature_trial">%1$s of free traffic before signing in</string>
-    <string name="onboarding_feature_device">Sign in via Telegram — 3 GB more for 3 days</string>
-    <string name="onboarding_feature_auth">No login or password — just Telegram</string>
-    <string name="onboarding_feature_tools">Servers, statistics, and speed test are built in</string>
+    <string name="onboarding_tablet_subtitle">Fast and secure VPN\npowered by XRay</string>
+    <string name="onboarding_feature_trial">%1$s of traffic without signing in</string>
+    <string name="onboarding_feature_device">After signing in — %1$s for %2$s</string>
+    <string name="onboarding_feature_auth">Sign in via Telegram or QR code</string>
+    <string name="onboarding_feature_tools">Servers, statistics, and speed test — all in the app</string>
     <string name="onboarding_start">Continue</string>
     <plurals name="onboarding_trial_days">
         <item quantity="one">%1$d day</item>
@@ -485,14 +486,14 @@
     <string name="whats_new_version">Version %1$s</string>
     <string name="whats_new_intro">Highlights in the installed version</string>
     <string name="whats_new_done">Got it</string>
-    <string name="whats_new_qr_share_fix_title">Reliable QR sharing</string>
-    <string name="whats_new_qr_share_fix_desc">Fixed QR sharing in the Google Play build. If the image cannot be prepared, the app sends the sign-in confirmation link instead.</string>
-    <string name="whats_new_devices_title">Easier device management</string>
-    <string name="whats_new_devices_desc">The devices sheet keeps the correct height at every selected interface scale, while its list scrolls independently and refreshes smoothly.</string>
-    <string name="whats_new_bottom_sheets_title">Protection from accidental closing</string>
-    <string name="whats_new_bottom_sheets_desc">The subscription and devices sheets are now harder to close accidentally: a short swipe smoothly returns them to place.</string>
-    <string name="whats_new_interface_polish_title">Interface polish</string>
-    <string name="whats_new_interface_polish_desc">Updated the temporary-access prompt and restored the signature icon in the What’s New window.</string>
+    <string name="whats_new_tablet_layout_title">Made for larger screens</string>
+    <string name="whats_new_tablet_layout_desc">On tablets, onboarding and Home have new layouts, text is larger across every screen, and statistics and settings use the available space. Phones keep their compact layout.</string>
+    <string name="whats_new_subscription_sheet_title">Easier plan selection</string>
+    <string name="whats_new_subscription_sheet_desc">The subscription sheet has a height limit, while billing periods scroll independently with arrows and smooth edge fades.</string>
+    <string name="whats_new_device_controls_title">Device management</string>
+    <string name="whats_new_device_controls_desc">Refresh is now at the top, while the current-device badge and controls for disconnecting other devices sit on the right side of their cards.</string>
+    <string name="whats_new_onboarding_title">Clearer first launch</string>
+    <string name="whats_new_onboarding_desc">Trial terms now show 3 GB for 3 days, Telegram and QR sign-in hints are clearer, and the partner mark renders more cleanly.</string>
     <string name="version">Version</string>
     <string name="xray">XRay</string>
     <string name="language">Language</string>
