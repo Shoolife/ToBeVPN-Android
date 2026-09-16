@@ -6,14 +6,17 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
 import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
+import com.tobevpn.app.domain.model.DEFAULT_SERVER_PING_TIMEOUT_SECONDS
 import com.tobevpn.app.domain.model.normalizeFontScale
 import com.tobevpn.app.domain.model.normalizeInterfaceScale
+import com.tobevpn.app.domain.model.normalizeServerPingTimeoutSeconds
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -39,6 +42,12 @@ data class SubscriptionReminderSnooze(
     val expiresAtMillis: Long? = null,
 )
 
+data class TrafficLimitAlertState(
+    val limitBytes: Long = 0L,
+    val lastUsedBytes: Long = 0L,
+    val notifiedThresholdMask: Long = 0L,
+)
+
 /**
  * One atomic view of the three preferences that describe a server choice.
  * Collecting the fields as separate flows can expose transient mixed values
@@ -57,10 +66,12 @@ class PrefsDataStore @Inject constructor(
     private object Keys {
         val DEVICE_ID = stringPreferencesKey("device_id")
         val ONBOARDING_SEEN = booleanPreferencesKey("onboarding_seen")
+        val DISPLAY_SCALE_HINT_PENDING = booleanPreferencesKey("display_scale_hint_pending")
         val SELECTED_SERVER_ID = stringPreferencesKey("selected_server_id")
         val SELECTED_SERVER_KEY = stringPreferencesKey("selected_server_key")
         val AUTOMATIC_SERVER_SELECTION = booleanPreferencesKey("automatic_server_selection")
         val SERVER_QUALITY_STATE = stringPreferencesKey("server_quality_state")
+        val SERVER_PING_TIMEOUT_SECONDS = intPreferencesKey("server_ping_timeout_seconds")
         val EMAIL_PROMPT_SHOWN = booleanPreferencesKey("email_prompt_shown")
         val NOTIFICATION_PERMISSION_PROMPTED = booleanPreferencesKey("notification_permission_prompted")
         // USER_EMAIL was removed in v9 — email now lives in the encrypted
@@ -96,6 +107,10 @@ class PrefsDataStore @Inject constructor(
             longPreferencesKey("subscription_reminder_snoozed_until")
         val SUBSCRIPTION_REMINDER_EXPIRES_AT =
             longPreferencesKey("subscription_reminder_expires_at")
+        val TRAFFIC_ALERT_LIMIT_BYTES = longPreferencesKey("traffic_alert_limit_bytes")
+        val TRAFFIC_ALERT_LAST_USED_BYTES = longPreferencesKey("traffic_alert_last_used_bytes")
+        val TRAFFIC_ALERT_NOTIFIED_MASK = longPreferencesKey("traffic_alert_notified_mask")
+        val SPEED_TEST_HISTORY = stringPreferencesKey("speed_test_history")
         val SERVER_CACHE_OWNER = stringPreferencesKey("server_cache_owner")
         val PURCHASE_PLANS_CACHE_OWNER = stringPreferencesKey("purchase_plans_cache_owner")
         val PURCHASE_PLANS_CACHE_JSON = stringPreferencesKey("purchase_plans_cache_json")
@@ -115,6 +130,9 @@ class PrefsDataStore @Inject constructor(
 
     val deviceId: Flow<String?> = context.dataStore.data.map { it[Keys.DEVICE_ID] }
     val onboardingSeen: Flow<Boolean> = context.dataStore.data.map { it[Keys.ONBOARDING_SEEN] ?: false }
+    val displayScaleHintPending: Flow<Boolean> = context.dataStore.data
+        .map { it[Keys.DISPLAY_SCALE_HINT_PENDING] ?: false }
+        .distinctUntilChanged()
     val serverSelection: Flow<ServerSelectionPreferences> = context.dataStore.data
         .map { preferences ->
             val selectedId = preferences[Keys.SELECTED_SERVER_ID]
@@ -135,6 +153,14 @@ class PrefsDataStore @Inject constructor(
     val automaticServerSelection: Flow<Boolean> = serverSelection
         .map { it.automatic }
         .distinctUntilChanged()
+    val serverPingTimeoutSeconds: Flow<Int> = context.dataStore.data
+        .map { preferences ->
+            normalizeServerPingTimeoutSeconds(
+                preferences[Keys.SERVER_PING_TIMEOUT_SECONDS]
+                    ?: DEFAULT_SERVER_PING_TIMEOUT_SECONDS,
+            )
+        }
+        .distinctUntilChanged()
     val emailPromptShown: Flow<Boolean> = context.dataStore.data.map { it[Keys.EMAIL_PROMPT_SHOWN] ?: false }
     val notificationPermissionPrompted: Flow<Boolean> = context.dataStore.data.map {
         it[Keys.NOTIFICATION_PERMISSION_PROMPTED] ?: false
@@ -151,6 +177,10 @@ class PrefsDataStore @Inject constructor(
                 )
             }
             .distinctUntilChanged()
+
+    val speedTestHistoryJson: Flow<String?> = context.dataStore.data
+        .map { preferences -> preferences[Keys.SPEED_TEST_HISTORY] }
+        .distinctUntilChanged()
 
     suspend fun setProfileNameDisplay(value: String) {
         context.dataStore.edit { it[Keys.PROFILE_NAME_DISPLAY] = value }
@@ -264,8 +294,19 @@ class PrefsDataStore @Inject constructor(
         context.dataStore.edit { it[Keys.DEVICE_ID] = id }
     }
 
-    suspend fun setOnboardingSeen() {
-        context.dataStore.edit { it[Keys.ONBOARDING_SEEN] = true }
+    suspend fun setOnboardingSeen(showDisplayScaleHint: Boolean = false) {
+        context.dataStore.edit {
+            it[Keys.ONBOARDING_SEEN] = true
+            if (showDisplayScaleHint) {
+                it[Keys.DISPLAY_SCALE_HINT_PENDING] = true
+            } else {
+                it.remove(Keys.DISPLAY_SCALE_HINT_PENDING)
+            }
+        }
+    }
+
+    suspend fun consumeDisplayScaleHint() {
+        context.dataStore.edit { it.remove(Keys.DISPLAY_SCALE_HINT_PENDING) }
     }
 
     suspend fun setSelectedServerId(id: String) {
@@ -311,6 +352,13 @@ class PrefsDataStore @Inject constructor(
     }
 
     suspend fun getServerSelection(): ServerSelectionPreferences = serverSelection.first()
+
+    suspend fun getServerPingTimeoutSeconds(): Int = serverPingTimeoutSeconds.first()
+
+    suspend fun setServerPingTimeoutSeconds(value: Int) {
+        val normalized = normalizeServerPingTimeoutSeconds(value)
+        context.dataStore.edit { it[Keys.SERVER_PING_TIMEOUT_SECONDS] = normalized }
+    }
 
     suspend fun getServerQualityState(): String? {
         return context.dataStore.data.first()[Keys.SERVER_QUALITY_STATE]
@@ -412,6 +460,35 @@ class PrefsDataStore @Inject constructor(
             } else {
                 it.remove(Keys.SUBSCRIPTION_REMINDER_EXPIRES_AT)
             }
+        }
+    }
+
+    suspend fun getTrafficLimitAlertState(): TrafficLimitAlertState {
+        val preferences = context.dataStore.data.first()
+        return TrafficLimitAlertState(
+            limitBytes = preferences[Keys.TRAFFIC_ALERT_LIMIT_BYTES] ?: 0L,
+            lastUsedBytes = preferences[Keys.TRAFFIC_ALERT_LAST_USED_BYTES] ?: 0L,
+            notifiedThresholdMask = preferences[Keys.TRAFFIC_ALERT_NOTIFIED_MASK] ?: 0L,
+        )
+    }
+
+    suspend fun setTrafficLimitAlertState(state: TrafficLimitAlertState) {
+        context.dataStore.edit {
+            if (state.limitBytes <= 0L) {
+                it.remove(Keys.TRAFFIC_ALERT_LIMIT_BYTES)
+                it.remove(Keys.TRAFFIC_ALERT_LAST_USED_BYTES)
+                it.remove(Keys.TRAFFIC_ALERT_NOTIFIED_MASK)
+            } else {
+                it[Keys.TRAFFIC_ALERT_LIMIT_BYTES] = state.limitBytes
+                it[Keys.TRAFFIC_ALERT_LAST_USED_BYTES] = state.lastUsedBytes
+                it[Keys.TRAFFIC_ALERT_NOTIFIED_MASK] = state.notifiedThresholdMask
+            }
+        }
+    }
+
+    suspend fun setSpeedTestHistoryJson(value: String) {
+        context.dataStore.edit { preferences ->
+            preferences[Keys.SPEED_TEST_HISTORY] = value
         }
     }
 

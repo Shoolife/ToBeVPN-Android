@@ -6,6 +6,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -15,6 +16,7 @@ import com.tobevpn.app.presentation.appfilter.AppFilterScreen
 import com.tobevpn.app.presentation.auth.AuthScreen
 import com.tobevpn.app.presentation.main.MainScreen
 import com.tobevpn.app.presentation.onboarding.OnboardingScreen
+import com.tobevpn.app.presentation.onboarding.DisplayScaleHintDialog
 import com.tobevpn.app.presentation.promocodes.PromocodesScreen
 import com.tobevpn.app.presentation.referrals.ReferralsScreen
 import com.tobevpn.app.presentation.servers.ServerListScreen
@@ -26,6 +28,7 @@ import com.tobevpn.app.presentation.settings.SettingsScreen
 import com.tobevpn.app.presentation.settings.SettingsViewModel
 import com.tobevpn.app.presentation.settings.SupportScreen
 import com.tobevpn.app.presentation.speedtest.SpeedTestScreen
+import com.tobevpn.app.presentation.speedtest.SpeedTestHistoryScreen
 import com.tobevpn.app.presentation.stats.StatsScreen
 import com.tobevpn.app.util.DeepLinkBus
 import com.tobevpn.app.util.DeepLinkDestination
@@ -39,7 +42,9 @@ fun AppNavHost(
     quickSettingsConnectRequest: Int = 0,
     modifier: Modifier = Modifier,
 ) {
-    hiltViewModel<AppSessionViewModel>()
+    val appSessionViewModel = hiltViewModel<AppSessionViewModel>()
+    val showDisplayScaleHint by appSessionViewModel.displayScaleHintPending
+        .collectAsStateWithLifecycle(initialValue = false)
     val startDestination: Any = if (startFromOnboarding) OnboardingRoute else MainRoute
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
 
@@ -117,6 +122,12 @@ fun AppNavHost(
         composable<SpeedTestRoute> {
             SpeedTestScreen(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
+                onNavigateToHistory = { navController.navigateSingleTop(SpeedTestHistoryRoute) },
+            )
+        }
+        composable<SpeedTestHistoryRoute> {
+            SpeedTestHistoryScreen(
+                onBack = { navController.popBackStackOrRecover(SpeedTestRoute) },
             )
         }
         composable<SettingsRoute> {
@@ -188,6 +199,19 @@ fun AppNavHost(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
             )
         }
+    }
+
+    if (showDisplayScaleHint) {
+        DisplayScaleHintDialog(
+            onDismiss = appSessionViewModel::consumeDisplayScaleHint,
+            onConfigure = {
+                appSessionViewModel.consumeDisplayScaleHint()
+                // DisplayScaleTextRoute uses the Settings-scoped ViewModel, so
+                // keep SettingsRoute directly below it in the back stack.
+                navController.navigateSingleTop(SettingsRoute)
+                navController.navigateSingleTop(DisplayScaleTextRoute)
+            },
+        )
     }
 }
 

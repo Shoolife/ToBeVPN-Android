@@ -151,6 +151,7 @@ import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.LocalAppBaseDensity
+import com.tobevpn.app.presentation.theme.LocalAppDarkTheme
 import com.tobevpn.app.presentation.theme.LocalAppInterfaceScale
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
@@ -2012,6 +2013,7 @@ private fun SubscriptionBottomSheet(
     onNavigateToAuth: () -> Unit,
 ) {
     val context = LocalContext.current
+    val isDarkTheme = LocalAppDarkTheme.current
     val sheetState = rememberResistantModalBottomSheetState()
     val hostViewHeightPx = LocalView.current.height
     val baseDensity = LocalAppBaseDensity.current ?: LocalDensity.current
@@ -2071,7 +2073,7 @@ private fun SubscriptionBottomSheet(
         // Pure white sheet on light theme so it reads as a clean modal
         // surface against the off-white app background. Dark theme keeps
         // the M3 default surfaceContainerLow.
-        containerColor = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+        containerColor = if (isDarkTheme) {
             androidx.compose.material3.BottomSheetDefaults.ContainerColor
         } else {
             Color.White
@@ -2143,7 +2145,7 @@ private fun SubscriptionBottomSheet(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(16.dp),
-                colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                colors = if (isDarkTheme) {
                     CardDefaults.cardColors()
                 } else {
                     CardDefaults.cardColors(
@@ -2707,7 +2709,7 @@ private fun SubscriptionBottomSheet(
                             .height(52.dp),
                         shape = RoundedCornerShape(14.dp),
                         // Match the "Купить" / "Сканировать QR" CTA family.
-                        colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                        colors = if (isDarkTheme) {
                             androidx.compose.material3.ButtonDefaults.buttonColors()
                         } else {
                             androidx.compose.material3.ButtonDefaults.buttonColors(
@@ -2778,7 +2780,7 @@ private fun SubscriptionBottomSheet(
                         // strongest action on the white sheet. Dark theme: keep
                         // the default M3 button so it doesn't disappear into
                         // the dark background.
-                        colors = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                        colors = if (isDarkTheme) {
                             androidx.compose.material3.ButtonDefaults.buttonColors()
                         } else {
                             androidx.compose.material3.ButtonDefaults.buttonColors(
@@ -3215,7 +3217,7 @@ private fun AppliedDiscountBanner(
     discountPercent: Int,
     modifier: Modifier = Modifier,
 ) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDark = LocalAppDarkTheme.current
     val accentColor = if (isDark) Color(0xFF81C784) else Color(0xFF2E7D32)
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -3265,7 +3267,7 @@ private fun PlanOption(
     // + grey row is enough to mark the choice. Dark theme keeps the M3
     // default primaryContainer for selected so it stays accessible against
     // the dark sheet background.
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val isDark = LocalAppDarkTheme.current
     val containerColor = when {
         selected && isDark -> MaterialTheme.colorScheme.primaryContainer
         selected -> com.tobevpn.app.presentation.theme.BrandCardFill
@@ -3297,7 +3299,7 @@ private fun PlanOption(
             // light grey row; dark theme keeps M3 primary so it picks up
             // the dynamic accent colour on dark surfaces.
             val ringColor = if (selected) {
-                if (androidx.compose.foundation.isSystemInDarkTheme()) {
+                if (isDark) {
                     MaterialTheme.colorScheme.primary
                 } else {
                     com.tobevpn.app.presentation.theme.BrandSelectionRing
@@ -3305,7 +3307,7 @@ private fun PlanOption(
             } else {
                 MaterialTheme.colorScheme.outlineVariant
             }
-            val dotColor = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+            val dotColor = if (isDark) {
                 MaterialTheme.colorScheme.onPrimary
             } else {
                 Color.White

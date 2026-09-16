@@ -35,10 +35,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -58,6 +60,8 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -65,6 +69,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -101,6 +106,8 @@ import com.tobevpn.app.data.remote.dto.LinkedDeviceDto
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.AuthState
+import com.tobevpn.app.domain.model.MAX_SERVER_PING_TIMEOUT_SECONDS
+import com.tobevpn.app.domain.model.MIN_SERVER_PING_TIMEOUT_SECONDS
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT
 import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_HEIGHT_FRACTION
@@ -112,12 +119,15 @@ import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.BrandSoftCardFill
 import com.tobevpn.app.presentation.theme.LocalAppBaseDensity
+import com.tobevpn.app.presentation.theme.LocalAppDarkTheme
 import com.tobevpn.app.presentation.theme.LocalAppInterfaceScale
+import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.util.DeviceQrScanAction
 import com.tobevpn.app.util.DeviceQrScanParser
 import com.tobevpn.app.util.TelegramLinks
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,6 +142,7 @@ fun AdvancedScreen(
     val appFilterState by viewModel.appFilterSummary.collectAsStateWithLifecycle()
     val emailSaveResult by viewModel.emailSaveResult.collectAsStateWithLifecycle()
     val savedEmail by viewModel.userEmail.collectAsStateWithLifecycle()
+    val serverPingTimeoutSeconds by viewModel.serverPingTimeoutSeconds.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val devicesLimitReachedText = stringResource(R.string.devices_limit_reached)
     val authOpenTelegramErrorText = stringResource(R.string.auth_error_open_telegram)
@@ -268,6 +279,13 @@ fun AdvancedScreen(
 
             AppFilterRow(state = appFilterState, onClick = onNavigateToAppFilter)
 
+            Spacer(modifier = Modifier.height(16.dp))
+
+            ServerPingTimeoutCard(
+                valueSeconds = serverPingTimeoutSeconds,
+                onValueChangeFinished = viewModel::setServerPingTimeoutSeconds,
+            )
+
             if (authState is AuthState.Authenticated) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Card(
@@ -304,7 +322,7 @@ fun AdvancedScreen(
     when (val result = tvPairResult) {
         null -> {}
         is TvPairResult.PendingConfirmation -> {
-            val isDark = isSystemInDarkTheme()
+            val isDark = LocalAppDarkTheme.current
             val dialogShape = RoundedCornerShape(28.dp)
             val dialogBorderColor = if (isDark) {
                 Color.White.copy(alpha = 0.16f)
@@ -454,7 +472,7 @@ fun AdvancedScreen(
         }
 
         is TvPairResult.Error -> {
-            val isDark = isSystemInDarkTheme()
+            val isDark = LocalAppDarkTheme.current
             AppAlertDialog(
                 onDismissRequest = { viewModel.clearTvPairResult() },
                 title = { DialogTitleText(stringResource(R.string.link_tv_error_title)) },
@@ -489,6 +507,160 @@ fun AdvancedScreen(
                 showPairingCodeInput = false
                 viewModel.requestTvPairConfirmation(code)
             },
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ServerPingTimeoutCard(
+    valueSeconds: Int,
+    onValueChangeFinished: (Int) -> Unit,
+) {
+    var sliderValue by remember { mutableFloatStateOf(valueSeconds.toFloat()) }
+    val selectedSeconds = sliderValue.roundToInt().coerceIn(
+        MIN_SERVER_PING_TIMEOUT_SECONDS,
+        MAX_SERVER_PING_TIMEOUT_SECONDS,
+    )
+    val canDecrease = selectedSeconds > MIN_SERVER_PING_TIMEOUT_SECONDS
+    val canIncrease = selectedSeconds < MAX_SERVER_PING_TIMEOUT_SECONDS
+    val sliderColors = SliderDefaults.colors(
+        thumbColor = VpnBlue,
+        activeTrackColor = VpnBlue,
+        activeTickColor = Color.White,
+        inactiveTrackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f),
+        inactiveTickColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f),
+    )
+
+    LaunchedEffect(valueSeconds) {
+        sliderValue = valueSeconds.toFloat()
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.server_ping_timeout_title),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.server_ping_timeout_description),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = stringResource(R.string.server_ping_timeout_value, selectedSeconds),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                    fontWeight = FontWeight.Bold,
+                    color = VpnBlue,
+                    textAlign = TextAlign.End,
+                    maxLines = 1,
+                    softWrap = false,
+                    modifier = Modifier
+                        .width(52.dp)
+                        .padding(top = 2.dp),
+                )
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                PingTimeoutStepButton(
+                    icon = Icons.Filled.Remove,
+                    contentDescription = stringResource(R.string.server_ping_timeout_decrease),
+                    enabled = canDecrease,
+                    onClick = {
+                        val selected = (selectedSeconds - 1)
+                            .coerceAtLeast(MIN_SERVER_PING_TIMEOUT_SECONDS)
+                        sliderValue = selected.toFloat()
+                        onValueChangeFinished(selected)
+                    },
+                )
+                Slider(
+                    value = selectedSeconds.toFloat(),
+                    onValueChange = { sliderValue = it.roundToInt().toFloat() },
+                    onValueChangeFinished = {
+                        onValueChangeFinished(selectedSeconds)
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(horizontal = 6.dp),
+                    valueRange = MIN_SERVER_PING_TIMEOUT_SECONDS.toFloat()..
+                        MAX_SERVER_PING_TIMEOUT_SECONDS.toFloat(),
+                    steps = MAX_SERVER_PING_TIMEOUT_SECONDS -
+                        MIN_SERVER_PING_TIMEOUT_SECONDS - 1,
+                    colors = sliderColors,
+                    track = { sliderState ->
+                        SliderDefaults.Track(
+                            sliderState = sliderState,
+                            colors = sliderColors,
+                            drawStopIndicator = null,
+                            drawTick = { offset, color ->
+                                val edgeInset = center.y
+                                val isEndpoint = offset.x <= edgeInset + 0.5f ||
+                                    offset.x >= size.width - edgeInset - 0.5f
+                                if (!isEndpoint) {
+                                    drawCircle(
+                                        color = color,
+                                        center = offset,
+                                        radius = SliderDefaults.TickSize.toPx() / 2f,
+                                    )
+                                }
+                            },
+                        )
+                    },
+                )
+                PingTimeoutStepButton(
+                    icon = Icons.Filled.Add,
+                    contentDescription = stringResource(R.string.server_ping_timeout_increase),
+                    enabled = canIncrease,
+                    onClick = {
+                        val selected = (selectedSeconds + 1)
+                            .coerceAtMost(MAX_SERVER_PING_TIMEOUT_SECONDS)
+                        sliderValue = selected.toFloat()
+                        onValueChangeFinished(selected)
+                    },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PingTimeoutStepButton(
+    icon: ImageVector,
+    contentDescription: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    IconButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.size(40.dp),
+        colors = IconButtonDefaults.iconButtonColors(
+            containerColor = Color.Transparent,
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            disabledContainerColor = Color.Transparent,
+            disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
+        ),
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            modifier = Modifier.size(20.dp),
         )
     }
 }
@@ -532,7 +704,9 @@ private fun PairingCodeInputDialog(
     var code by remember { mutableStateOf("") }
     val normalizedCode = code.trim()
     var showCodeError by remember { mutableStateOf(false) }
-    val isDark = isSystemInDarkTheme()
+    // Dialogs are rendered in a separate Android window. Reading the system
+    // theme here would ignore the theme explicitly selected in ToBeVPN.
+    val isDark = LocalAppDarkTheme.current
 
     AppAlertDialog(
         onDismissRequest = onDismiss,
@@ -668,7 +842,9 @@ private fun LinkedDevicesBottomSheet(
     }
     val refreshActive = state.isLoading || state.isRefreshing
     val canLinkMoreDevices = state.maxDevices == 0 || devicesCount < state.maxDevices
-    val isDark = isSystemInDarkTheme()
+    // The sheet has its own Android window, so use the effective in-app theme
+    // instead of the device theme for the sheet and all of its controls.
+    val isDark = LocalAppDarkTheme.current
     val sheetContainerColor = if (isDark) {
         BottomSheetDefaults.ContainerColor
     } else {
@@ -1093,11 +1269,12 @@ private fun LinkedDeviceLoadingCard(
     alpha: Float,
     isCurrent: Boolean,
 ) {
+    val isDark = LocalAppDarkTheme.current
     val placeholderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = if (isSystemInDarkTheme()) {
+        colors = if (isDark) {
             CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             )
@@ -1150,10 +1327,11 @@ private fun LinkedDeviceCard(
     isBusy: Boolean,
     onDisconnect: (String) -> Unit,
 ) {
+    val isDark = LocalAppDarkTheme.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
-        colors = if (isSystemInDarkTheme()) {
+        colors = if (isDark) {
             CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
             )
@@ -1174,7 +1352,7 @@ private fun LinkedDeviceCard(
                     text = deviceTitle(device),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                     fontWeight = FontWeight.SemiBold,
-                    color = if (isSystemInDarkTheme()) {
+                    color = if (isDark) {
                         MaterialTheme.colorScheme.onSurface
                     } else {
                         Color.Black

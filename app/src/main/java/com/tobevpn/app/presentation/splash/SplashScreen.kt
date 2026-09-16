@@ -11,11 +11,13 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,6 +41,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tobevpn.app.R
@@ -169,11 +172,17 @@ fun SplashScreen(onFinished: () -> Unit) {
             Text(
                 text = stringResource(R.string.splash_tagline),
                 fontSize = 16.sp,
+                lineHeight = 22.sp,
                 fontFamily = SplashFont,
                 fontWeight = FontWeight.Light,
                 color = subtitleColor,
                 letterSpacing = 3.sp,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                softWrap = true,
                 modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
                     .alpha(textAlpha.value)
                     .graphicsLayer { translationY = textOffset.value.dp.toPx() },
             )

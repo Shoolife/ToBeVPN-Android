@@ -87,6 +87,32 @@ class VpnConfigInstrumentedTest {
     }
 
     @Test
+    fun outboundDelayConfigKeepsExactProxyButRemovesTunnelOnlySections() {
+        val root = JSONObject(
+            VpnConfig.buildOutboundDelayConfigJson(
+                server(network = "xhttp", security = "reality", path = "/probe"),
+            ),
+        )
+        val outbound = proxyOutbound(root)
+
+        assertEquals(0, root.getJSONArray("inbounds").length())
+        assertFalse(root.has("dns"))
+        assertFalse(root.has("stats"))
+        assertFalse(root.has("policy"))
+        assertEquals(0, root.getJSONObject("routing").getJSONArray("rules").length())
+        assertEquals("vless", outbound.getString("protocol"))
+        assertEquals(
+            "xhttp",
+            outbound.getJSONObject("streamSettings").getString("network"),
+        )
+        assertEquals(
+            "reality",
+            outbound.getJSONObject("streamSettings").getString("security"),
+        )
+        assertFalse(outbound.has("mux"))
+    }
+
+    @Test
     fun grpcGunProfileEmitsSingleStreamSettings() {
         val stream = proxyStreamSettings(
             Server(

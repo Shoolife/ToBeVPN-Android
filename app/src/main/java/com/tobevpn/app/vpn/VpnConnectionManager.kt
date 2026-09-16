@@ -15,6 +15,7 @@ import com.tobevpn.app.data.local.dao.TrafficLogDao
 import com.tobevpn.app.data.local.entity.TrafficLogEntity
 import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.data.repository.AuthRepository
+import com.tobevpn.app.data.repository.BaseStationBypassProfileProbeRepository
 import com.tobevpn.app.data.repository.BaseStationBypassRepository
 import com.tobevpn.app.data.repository.matchesBaseStationBypassSelectionId
 import com.tobevpn.app.data.repository.ServerQualityRepository
@@ -83,6 +84,8 @@ class VpnConnectionManager @Inject constructor(
     private val vpnRepository: VpnRepository,
     private val serverQualityRepository: ServerQualityRepository,
     private val baseStationBypassRepository: BaseStationBypassRepository,
+    private val baseStationBypassProfileProbeRepository:
+        BaseStationBypassProfileProbeRepository,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val mutex = Mutex()
@@ -899,15 +902,21 @@ class VpnConnectionManager @Inject constructor(
                         )
                     }
                 } else if (automatic) {
-                    serverQualityRepository.selectBestServer(
+                    val verifiedDelays = baseStationBypassProfileProbeRepository
+                        .getCachedProfileDelays(availableServers)
+                    serverQualityRepository.selectBestVerifiedServer(
                         servers = availableServers,
+                        verifiedDelays = verifiedDelays,
                         excludedServers = excludedAutoServers,
-                        avoidEndpointServers = excludedAutoServers,
-                        recentlyFailedProfiles = recentTunnelFailures.penalisedServers(
-                            SystemClock.elapsedRealtime(),
-                        ),
-                        forceProbe = excludeFailedInAutomaticMode,
-                    )
+                    ) ?: serverQualityRepository.selectBestServer(
+                            servers = availableServers,
+                            excludedServers = excludedAutoServers,
+                            avoidEndpointServers = excludedAutoServers,
+                            recentlyFailedProfiles = recentTunnelFailures.penalisedServers(
+                                SystemClock.elapsedRealtime(),
+                            ),
+                            forceProbe = excludeFailedInAutomaticMode,
+                        )
                 } else {
                     availableServers.firstOrNull { it.id == server.id }
                         ?: availableServers.firstOrNull { it.name == server.name }
@@ -960,15 +969,42 @@ class VpnConnectionManager @Inject constructor(
                 // failed in this connection cycle. Bypass credentials sharing
                 // one TCP endpoint remain eligible until that exact profile
                 // has failed as well.
-                serverQualityRepository.selectBestServer(
+                val excludedProfileIds = excludedAutoServers.mapTo(mutableSetOf(), Server::id)
+                val candidatesToVerify = candidates.filterNot {
+                    it.id in excludedProfileIds
+                }
+                // A full Xray delay call can take several seconds for an
+                // unreachable profile, so connection startup never launches
+                // a new public-list sweep. Reuse full-profile results from an
+                // explicit list refresh when available; otherwise start from
+                // the bounded TCP/history choice below and let the existing
+                // live-tunnel traffic check be authoritative.
+                val verifiedDelays = baseStationBypassProfileProbeRepository
+                    .getCachedProfileDelays(candidatesToVerify)
+                serverQualityRepository.selectBestVerifiedServer(
                     servers = candidates,
+                    verifiedDelays = verifiedDelays,
                     excludedServers = excludedAutoServers,
-                    avoidEndpointServers = excludedAutoServers,
-                    recentlyFailedProfiles = recentTunnelFailures.penalisedServers(
-                        SystemClock.elapsedRealtime(),
-                    ),
-                    forceProbe = excludeFailedInAutomaticMode,
-                )
+                ) ?: run {
+                    // A profile probe can time out because its HTTP target is
+                    // temporarily unavailable even though the tunnel itself
+                    // would work. Preserve the existing bounded startup
+                    // validation as a fallback, but never present this TCP
+                    // result as a verified green ping in the server list.
+                    SafeDiagnostics.warn(
+                        TAG,
+                        "No profile-confirmed bypass candidate; using bounded TCP fallback",
+                    )
+                    serverQualityRepository.selectBestServer(
+                        servers = candidates,
+                        excludedServers = excludedAutoServers,
+                        avoidEndpointServers = excludedAutoServers,
+                        recentlyFailedProfiles = recentTunnelFailures.penalisedServers(
+                            SystemClock.elapsedRealtime(),
+                        ),
+                        forceProbe = excludeFailedInAutomaticMode,
+                    )
+                }
             } else {
                 candidates.firstOrNull {
                     matchesBaseStationBypassSelectionId(it, server.id)

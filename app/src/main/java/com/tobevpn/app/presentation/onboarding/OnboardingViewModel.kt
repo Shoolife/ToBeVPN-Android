@@ -28,9 +28,9 @@ class OnboardingViewModel @Inject constructor(
         loadTrialTerms()
     }
 
-    fun completeOnboarding() {
+    fun completeOnboarding(showDisplayScaleHint: Boolean) {
         viewModelScope.launch {
-            prefsDataStore.setOnboardingSeen()
+            prefsDataStore.setOnboardingSeen(showDisplayScaleHint)
         }
     }
 

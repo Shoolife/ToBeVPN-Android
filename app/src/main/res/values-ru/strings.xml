@@ -24,6 +24,9 @@
     <string name="onboarding_feature_auth">Вход через Telegram или по QR-коду</string>
     <string name="onboarding_feature_tools">Серверы, статистика и тест скорости — в приложении</string>
     <string name="onboarding_start">Продолжить</string>
+    <string name="display_scale_hint_title">Настройте размер интерфейса</string>
+    <string name="display_scale_hint_description">Параметры экрана вашего устройства заметно отличаются от эталонных. Настройте размер интерфейса и текста для удобного отображения ToBeVPN.</string>
+    <string name="display_scale_hint_action">Настроить</string>
     <plurals name="onboarding_trial_days">
         <item quantity="one">%1$d день</item>
         <item quantity="few">%1$d дня</item>
@@ -80,6 +83,8 @@
     <string name="server_auto_selected">Выбран автоматически</string>
     <string name="server_offline">offline</string>
     <string name="server_unavailable">Недоступен</string>
+    <string name="server_profile_no_response">Нет ответа</string>
+    <string name="base_station_bypass_probe_progress">Проверено %1$d из %2$d</string>
     <string name="servers_load_error">Ошибка загрузки</string>
     <string name="servers_empty">Нет доступных серверов</string>
     <string name="server_choose">Выберите сервер</string>
@@ -142,6 +147,9 @@
     <string name="payment_success_title">Подписка активирована</string>
     <string name="payment_success_description">Оплата прошла успешно. Ваш тариф обновлён.</string>
     <string name="payment_notification_channel">Оплата подписки</string>
+    <string name="traffic_limit_notification_channel">Остаток трафика</string>
+    <string name="traffic_limit_notification_title">Трафик заканчивается</string>
+    <string name="traffic_limit_notification_description">Осталось %1$s ГБ трафика.</string>
     <string name="login_action">Войти</string>
     <string name="login_required_for_purchase">Для покупки подписки нужно сначала авторизоваться</string>
     <string name="buy_plan">Купить «%1$s» за %2$s</string>
@@ -207,6 +215,11 @@
     <string name="settings_support">Поддержка</string>
     <string name="settings_personalization_desc">Язык и оформление</string>
     <string name="settings_advanced_desc">Устройства и приложения</string>
+    <string name="server_ping_timeout_title">Таймаут проверки серверов</string>
+    <string name="server_ping_timeout_description">Сколько ждать ответа сервера при проверке доступности. Большее значение помогает в медленных или ограниченных сетях, но увеличивает время полной проверки.</string>
+    <string name="server_ping_timeout_value">%1$d с</string>
+    <string name="server_ping_timeout_decrease">Уменьшить таймаут проверки серверов</string>
+    <string name="server_ping_timeout_increase">Увеличить таймаут проверки серверов</string>
     <string name="settings_support_desc">Ответы и помощь</string>
     <string name="settings_about_desc">Версия и обновления</string>
     <string name="settings_referrals">Рефералы</string>
@@ -500,14 +513,14 @@
     <string name="whats_new_version">Версия %1$s</string>
     <string name="whats_new_intro">Главные изменения установленной версии</string>
     <string name="whats_new_done">Понятно</string>
-    <string name="whats_new_tablet_layout_title">Интерфейс для больших экранов</string>
-    <string name="whats_new_tablet_layout_desc">Для планшетов переработали первый запуск и главный экран, увеличили шрифт на всех экранах и расширили статистику и настройки. На телефонах сохраняется компактная компоновка.</string>
-    <string name="whats_new_subscription_sheet_title">Удобнее выбирать тариф</string>
-    <string name="whats_new_subscription_sheet_desc">Окно подписки ограничено по высоте, а список периодов прокручивается отдельно и показывает стрелки и плавное затемнение по краям.</string>
-    <string name="whats_new_device_controls_title">Управление устройствами</string>
-    <string name="whats_new_device_controls_desc">Кнопка обновления перенесена вверх, а отметка текущего устройства и отключение других устройств расположены справа в карточках.</string>
-    <string name="whats_new_onboarding_title">Точнее первый запуск</string>
-    <string name="whats_new_onboarding_desc">Условия пробного доступа показывают 3 ГБ на 3 дня, обновлены подсказки входа через Telegram и QR-код, улучшено отображение фирменного знака.</string>
+    <string name="whats_new_server_checks_title">Точнее проверка серверов</string>
+    <string name="whats_new_server_checks_desc">Проверка серверов учитывает реальную готовность профиля к подключению, показывает общий прогресс и позволяет настроить таймаут ответа для медленных и ограниченных сетей.</string>
+    <string name="whats_new_speed_test_title">Новый тест скорости</string>
+    <string name="whats_new_speed_test_desc">Повысили точность измерения, добавили плавную визуализацию и отдельную историю до 100 результатов с удалением ненужных записей.</string>
+    <string name="whats_new_traffic_alerts_title">Контроль остатка трафика</string>
+    <string name="whats_new_traffic_alerts_desc" formatted="false">Приложение заранее уведомит, когда останется 20%, 10% или 5% трафика, и покажет остаток в гигабайтах.</string>
+    <string name="whats_new_display_scale_title">Удобнее на разных экранах</string>
+    <string name="whats_new_display_scale_desc">На устройствах с необычным разрешением или системным масштабом при первом запуске появится подсказка для настройки размера интерфейса и текста.</string>
     <string name="version">Версия</string>
     <string name="xray">XRay</string>
     <string name="language">Язык</string>
@@ -551,6 +564,7 @@
 
     <!-- Speed test -->
     <string name="speed_press_start">Нажмите «Начать»</string>
+    <string name="speed_checking_connection">Проверка соединения…</string>
     <string name="speed_via_vpn">Через VPN</string>
     <string name="speed_direct">Напрямую</string>
     <string name="speed_no_tunnel">Подключитесь к VPN, чтобы измерить скорость туннеля.</string>
@@ -565,6 +579,10 @@
     <string name="speed_stop">Остановить</string>
     <string name="speed_no_connection">Нет соединения</string>
     <string name="speed_measure_failed">Не удалось измерить скорость</string>
+    <string name="speed_history_title">История измерений</string>
+    <string name="speed_history_local_hint">Хранится только на этом устройстве</string>
+    <string name="speed_history_empty">Здесь появятся последние успешные измерения</string>
+    <string name="speed_history_delete">Удалить измерение</string>
 
     <!-- Devices -->
     <string name="devices_title">Устройства</string>

@@ -21,6 +21,9 @@ object StatsRoute
 object SpeedTestRoute
 
 @Serializable
+object SpeedTestHistoryRoute
+
+@Serializable
 object OnboardingRoute
 
 @Serializable

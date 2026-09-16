@@ -25,8 +25,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Devices
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -147,24 +147,24 @@ private val WhatsNewHeroIcon: ImageVector by lazy {
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.AspectRatio,
-        titleRes = R.string.whats_new_tablet_layout_title,
-        descriptionRes = R.string.whats_new_tablet_layout_desc,
-    ),
-    WhatsNewHighlight(
         icon = Icons.Filled.Sync,
-        titleRes = R.string.whats_new_subscription_sheet_title,
-        descriptionRes = R.string.whats_new_subscription_sheet_desc,
+        titleRes = R.string.whats_new_server_checks_title,
+        descriptionRes = R.string.whats_new_server_checks_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.Devices,
-        titleRes = R.string.whats_new_device_controls_title,
-        descriptionRes = R.string.whats_new_device_controls_desc,
+        icon = Icons.Filled.Speed,
+        titleRes = R.string.whats_new_speed_test_title,
+        descriptionRes = R.string.whats_new_speed_test_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.Share,
-        titleRes = R.string.whats_new_onboarding_title,
-        descriptionRes = R.string.whats_new_onboarding_desc,
+        icon = Icons.Filled.Notifications,
+        titleRes = R.string.whats_new_traffic_alerts_title,
+        descriptionRes = R.string.whats_new_traffic_alerts_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.AspectRatio,
+        titleRes = R.string.whats_new_display_scale_title,
+        descriptionRes = R.string.whats_new_display_scale_desc,
     ),
 )
 

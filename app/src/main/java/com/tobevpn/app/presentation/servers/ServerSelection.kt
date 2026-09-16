@@ -75,11 +75,22 @@ fun resolveSelectedServer(
 }
 
 /**
- * Keep the profile order until the user explicitly measures latency. Once a
- * measurement exists, reachable entries are ordered by ping and failed TCP
- * probes are grouped at the bottom. Sorting is stable for equal values.
+ * Keep the profile order until the user explicitly verifies the list. Once a
+ * measurement exists, end-to-end confirmed entries are ordered by real Xray
+ * delay and unconfirmed profiles are grouped at the bottom. Sorting is stable
+ * for equal values.
  */
 fun sortBaseStationBypassServersForDisplay(
+    servers: List<Server>,
+    pingsMeasured: Boolean,
+): List<Server> = sortVerifiedServersForDisplay(servers, pingsMeasured)
+
+/**
+ * After an explicit end-to-end Xray check, put confirmed profiles first by
+ * real delay and group failed profiles at the bottom. Before the check the
+ * server order supplied by the panel/profile remains untouched.
+ */
+fun sortVerifiedServersForDisplay(
     servers: List<Server>,
     pingsMeasured: Boolean,
 ): List<Server> {

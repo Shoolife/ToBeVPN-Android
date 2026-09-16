@@ -8,6 +8,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -45,6 +46,14 @@ internal val BrandCardFill = Color(0xFFEEEEEE)
 internal val BrandSoftCardFill = Color(0xFFF2F2F2)
 internal val BrandIconAccent = Color(0xFF5C5E6A)
 internal val BrandSelectionRing = Color(0xFF5A5D6C)
+
+/**
+ * The effective in-app theme, independent from the phone's system setting.
+ * Dialogs and bottom sheets can be hosted in a separate Android window where
+ * isSystemInDarkTheme() sees that window's system configuration instead of
+ * the LocalConfiguration override supplied by the app.
+ */
+val LocalAppDarkTheme = staticCompositionLocalOf { false }
 
 private val LightColorScheme = lightColorScheme(
     primary = BrandNeutralPrimary,
@@ -210,6 +219,7 @@ fun ToBeVPNTheme(
         LocalAppLayoutFontScaleMultiplier provides layoutFontScaleMultiplier,
         LocalAppBoldText provides boldText,
         LocalAppOutlinedText provides outlinedText,
+        LocalAppDarkTheme provides darkTheme,
         LocalAppTextOutlineColor provides if (darkTheme) Color.Black else Color.White,
         LocalDensity provides effectiveDensity,
     ) {

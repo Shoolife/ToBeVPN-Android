@@ -26,6 +26,9 @@ fun serverCountryCodeForUi(countryCode: String, serverName: String): String {
 }
 
 private val COUNTRY_NAME_TO_CODE = mapOf(
+    "ru" to "RU",
+    "russia" to "RU",
+    "россия" to "RU",
     "нидерланды" to "NL",
     "netherlands" to "NL",
     "швеция" to "SE",

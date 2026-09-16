@@ -24,6 +24,9 @@
     <string name="onboarding_feature_auth">Sign in via Telegram or QR code</string>
     <string name="onboarding_feature_tools">Servers, statistics, and speed test — all in the app</string>
     <string name="onboarding_start">Continue</string>
+    <string name="display_scale_hint_title">Adjust the interface size</string>
+    <string name="display_scale_hint_description">Your device’s display settings differ noticeably from the reference settings. Adjust the interface and text size for a more comfortable ToBeVPN experience.</string>
+    <string name="display_scale_hint_action">Customize</string>
     <plurals name="onboarding_trial_days">
         <item quantity="one">%1$d day</item>
         <item quantity="other">%1$d days</item>
@@ -78,6 +81,8 @@
     <string name="server_auto_selected">Selected automatically</string>
     <string name="server_offline">Offline</string>
     <string name="server_unavailable">Unavailable</string>
+    <string name="server_profile_no_response">No response</string>
+    <string name="base_station_bypass_probe_progress">Checked %1$d of %2$d</string>
     <string name="servers_load_error">Failed to load</string>
     <string name="servers_empty">No servers available</string>
     <string name="server_choose">Choose a server</string>
@@ -138,6 +143,9 @@
     <string name="payment_success_title">Subscription activated</string>
     <string name="payment_success_description">Payment succeeded. Your plan has been updated.</string>
     <string name="payment_notification_channel">Subscription payments</string>
+    <string name="traffic_limit_notification_channel">Traffic balance</string>
+    <string name="traffic_limit_notification_title">Traffic is running out</string>
+    <string name="traffic_limit_notification_description">%1$s GB of traffic remaining.</string>
     <string name="login_action">Sign in</string>
     <string name="login_required_for_purchase">You need to sign in before purchasing a subscription</string>
     <string name="buy_plan">Buy "%1$s" for %2$s</string>
@@ -203,6 +211,11 @@
     <string name="settings_support">Support</string>
     <string name="settings_personalization_desc">Language &amp; appearance</string>
     <string name="settings_advanced_desc">Devices &amp; apps</string>
+    <string name="server_ping_timeout_title">Server ping timeout</string>
+    <string name="server_ping_timeout_description">How long to wait for a server response during availability checks. A longer timeout helps on slow or restricted networks, but makes a full check take longer.</string>
+    <string name="server_ping_timeout_value">%1$d s</string>
+    <string name="server_ping_timeout_decrease">Decrease server ping timeout</string>
+    <string name="server_ping_timeout_increase">Increase server ping timeout</string>
     <string name="settings_support_desc">FAQ &amp; help</string>
     <string name="settings_about_desc">Version &amp; updates</string>
     <string name="settings_referrals">Referrals</string>
@@ -486,14 +499,14 @@
     <string name="whats_new_version">Version %1$s</string>
     <string name="whats_new_intro">Highlights in the installed version</string>
     <string name="whats_new_done">Got it</string>
-    <string name="whats_new_tablet_layout_title">Made for larger screens</string>
-    <string name="whats_new_tablet_layout_desc">On tablets, onboarding and Home have new layouts, text is larger across every screen, and statistics and settings use the available space. Phones keep their compact layout.</string>
-    <string name="whats_new_subscription_sheet_title">Easier plan selection</string>
-    <string name="whats_new_subscription_sheet_desc">The subscription sheet has a height limit, while billing periods scroll independently with arrows and smooth edge fades.</string>
-    <string name="whats_new_device_controls_title">Device management</string>
-    <string name="whats_new_device_controls_desc">Refresh is now at the top, while the current-device badge and controls for disconnecting other devices sit on the right side of their cards.</string>
-    <string name="whats_new_onboarding_title">Clearer first launch</string>
-    <string name="whats_new_onboarding_desc">Trial terms now show 3 GB for 3 days, Telegram and QR sign-in hints are clearer, and the partner mark renders more cleanly.</string>
+    <string name="whats_new_server_checks_title">More accurate server checks</string>
+    <string name="whats_new_server_checks_desc">Server checks now verify that a profile is actually ready to connect, show overall progress, and let you adjust the response timeout for slow or restricted networks.</string>
+    <string name="whats_new_speed_test_title">Redesigned speed test</string>
+    <string name="whats_new_speed_test_desc">Measurements are more accurate, the test has smoother visuals, and a separate history keeps up to 100 results with swipe-to-delete.</string>
+    <string name="whats_new_traffic_alerts_title">Traffic balance alerts</string>
+    <string name="whats_new_traffic_alerts_desc" formatted="false">The app now warns you when 20%, 10%, or 5% of your traffic remains and shows the balance in gigabytes.</string>
+    <string name="whats_new_display_scale_title">Better on different displays</string>
+    <string name="whats_new_display_scale_desc">Devices with unusual resolution or system scaling now get a first-launch hint to adjust interface and text size.</string>
     <string name="version">Version</string>
     <string name="xray">XRay</string>
     <string name="language">Language</string>
@@ -537,6 +550,7 @@
 
     <!-- Speed test -->
     <string name="speed_press_start">Press "Start"</string>
+    <string name="speed_checking_connection">Checking connection…</string>
     <string name="speed_via_vpn">Via VPN</string>
     <string name="speed_direct">Direct</string>
     <string name="speed_no_tunnel">Connect to the VPN to measure tunnel speed.</string>
@@ -551,6 +565,10 @@
     <string name="speed_stop">Stop</string>
     <string name="speed_no_connection">No connection</string>
     <string name="speed_measure_failed">Speed measurement failed</string>
+    <string name="speed_history_title">Measurement history</string>
+    <string name="speed_history_local_hint">Stored only on this device</string>
+    <string name="speed_history_empty">Your latest successful measurements will appear here</string>
+    <string name="speed_history_delete">Delete measurement</string>
 
     <!-- Devices -->
     <string name="devices_title">Devices</string>

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.repository.AuthRepository
+import com.tobevpn.app.data.repository.BaseStationBypassProfileProbeRepository
 import com.tobevpn.app.data.repository.BaseStationBypassRepository
 import com.tobevpn.app.data.repository.ServerQualityRepository
 import com.tobevpn.app.data.repository.VpnRepository
@@ -24,9 +25,15 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import javax.inject.Inject
+
+data class ServerProbeProgress(
+    val completed: Int,
+    val total: Int,
+)
 
 @HiltViewModel
 class ServerListViewModel @Inject constructor(
@@ -35,9 +42,14 @@ class ServerListViewModel @Inject constructor(
     private val prefsDataStore: PrefsDataStore,
     private val serverQualityRepository: ServerQualityRepository,
     private val baseStationBypassRepository: BaseStationBypassRepository,
+    private val baseStationBypassProfileProbeRepository:
+        BaseStationBypassProfileProbeRepository,
 ) : ViewModel() {
 
     private val _pings = MutableStateFlow<Map<String, Long>>(emptyMap())
+    private val _standardProfilePings = MutableStateFlow<Map<String, Long>>(emptyMap())
+    private val _standardProfilePingsEnabled = MutableStateFlow(false)
+    private val _standardProfilePingsMeasured = MutableStateFlow(false)
     private val refreshMutex = Mutex()
     private val bypassRefreshMutex = Mutex()
 
@@ -49,13 +61,26 @@ class ServerListViewModel @Inject constructor(
         screenActive.value = active
     }
 
-    val servers: StateFlow<List<Server>> = vpnRepository.observeServers()
-        .combine(_pings) { serverList, pingMap ->
+    val servers: StateFlow<List<Server>> = combine(
+        vpnRepository.observeServers(),
+        _pings,
+        _standardProfilePings,
+        _standardProfilePingsEnabled,
+    ) { serverList, tcpPings, profilePings, useProfilePings ->
+            val pingMap = if (useProfilePings) profilePings else tcpPings
             serverList.map { server ->
                 pingMap[server.id]?.let { server.copy(ping = it) } ?: server.copy(ping = 0)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val standardProfilePingsMeasured: StateFlow<Boolean> =
+        _standardProfilePingsMeasured.asStateFlow()
+
+    private val _standardProfileProbeProgress =
+        MutableStateFlow<ServerProbeProgress?>(null)
+    val standardProfileProbeProgress: StateFlow<ServerProbeProgress?> =
+        _standardProfileProbeProgress.asStateFlow()
 
     val selectedServerId: StateFlow<String?> = prefsDataStore.selectedServerId
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
@@ -76,6 +101,7 @@ class ServerListViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _baseStationBypassPings = MutableStateFlow<Map<String, Long>>(emptyMap())
+    private val _baseStationBypassPingsMeasured = MutableStateFlow(false)
 
     val baseStationBypassServers: StateFlow<List<Server>> =
         baseStationBypassRepository.observeServers()
@@ -87,9 +113,12 @@ class ServerListViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val baseStationBypassPingsMeasured: StateFlow<Boolean> =
-        _baseStationBypassPings
-            .map(Map<String, Long>::isNotEmpty)
-            .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+        _baseStationBypassPingsMeasured.asStateFlow()
+
+    private val _baseStationBypassProbeProgress =
+        MutableStateFlow<ServerProbeProgress?>(null)
+    val baseStationBypassProbeProgress: StateFlow<ServerProbeProgress?> =
+        _baseStationBypassProbeProgress.asStateFlow()
 
     private val _baseStationBypassLoading = MutableStateFlow(false)
     val baseStationBypassLoading: StateFlow<Boolean> =
@@ -114,6 +143,10 @@ class ServerListViewModel @Inject constructor(
             while (true) {
                 delay(5000)
                 if (!screenActive.value) continue
+                // Once the user has requested an end-to-end Xray sweep, do
+                // not overwrite its meaning (or waste sockets) with the old
+                // repeating TCP-only list probe.
+                if (_standardProfilePingsEnabled.value) continue
                 val serverList = servers.value
                 if (serverList.isNotEmpty()) {
                     measurePings(serverList)
@@ -138,9 +171,23 @@ class ServerListViewModel @Inject constructor(
                     return@launch
                 }
                 authRepository.syncSubscription(force = force)
-                val result = vpnRepository.refreshServers()
+                val result = vpnRepository.refreshServers(forceRefresh = force)
                 result.onFailure { _error.value = it.message }
-                result.onSuccess { updatePings(it) }
+                result.onSuccess { refreshedServers ->
+                    if (force) {
+                        measureStandardProfiles(
+                            servers = refreshedServers,
+                            force = true,
+                        )
+                        if (isAutomaticStandardSelection()) {
+                            persistBestStandardServer(refreshedServers)
+                        }
+                    } else {
+                        updatePings(refreshedServers)
+                    }
+                }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 _error.value = error.message
             } finally {
@@ -161,6 +208,7 @@ class ServerListViewModel @Inject constructor(
                 _baseStationBypassError.value = false
                 if (measurePings) {
                     _baseStationBypassPings.value = emptyMap()
+                    _baseStationBypassPingsMeasured.value = false
                 }
                 authRepository.syncSubscription(force = force)
                 if (!authRepository.getAuthStateSnapshot().canUseBaseStationBypass()) {
@@ -172,11 +220,10 @@ class ServerListViewModel @Inject constructor(
                     val serversToMeasure = refreshResult.getOrNull()
                         ?: baseStationBypassRepository.getServers()
                     if (serversToMeasure.isNotEmpty()) {
-                        val measuredPings = serverQualityRepository.measurePings(
+                        measureBaseStationBypassProfiles(
                             servers = serversToMeasure,
                             force = true,
                         )
-                        _baseStationBypassPings.value = measuredPings
                         if (isAutomaticBaseStationBypassSelection()) {
                             persistBestBaseStationBypassServer(
                                 servers = serversToMeasure,
@@ -206,8 +253,40 @@ class ServerListViewModel @Inject constructor(
     }
 
     suspend fun selectAutomaticServer(): Boolean {
-        val best = serverQualityRepository.selectBestServer(servers.value, forceProbe = true)
-            ?: return false
+        if (_isLoading.value) {
+            return persistBestStandardServer(servers.value)
+        }
+        if (!refreshMutex.tryLock()) return false
+        return try {
+            _isLoading.value = true
+            _error.value = null
+            val currentServers = servers.value
+            if (currentServers.isEmpty()) return false
+            val hasCompleteProfileResults = _standardProfilePingsMeasured.value &&
+                currentServers.all { (_standardProfilePings.value[it.id] ?: 0L) != 0L }
+            if (!hasCompleteProfileResults) {
+                measureStandardProfiles(
+                    servers = currentServers,
+                    force = true,
+                )
+            }
+            persistBestStandardServer(currentServers)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            _error.value = error.message
+            false
+        } finally {
+            _isLoading.value = false
+            refreshMutex.unlock()
+        }
+    }
+
+    private suspend fun persistBestStandardServer(servers: List<Server>): Boolean {
+        val best = serverQualityRepository.selectBestVerifiedServer(
+            servers = servers,
+            verifiedDelays = _standardProfilePings.value,
+        ) ?: return false
         prefsDataStore.setAutomaticSelectedServer(
             id = stableServerId(best),
             key = serverSelectionKey(best),
@@ -222,6 +301,14 @@ class ServerListViewModel @Inject constructor(
      */
     suspend fun selectAutomaticBaseStationBypassServer(): Boolean {
         if (!authRepository.getAuthStateSnapshot().canUseBaseStationBypass()) return false
+        // The full public-profile sweep reports results progressively. Do not
+        // wait for its mutex when at least one profile has already carried a
+        // real request through Xray.
+        if (_baseStationBypassLoading.value) {
+            val currentServers = baseStationBypassServers.value
+            return currentServers.isNotEmpty() &&
+                persistBestBaseStationBypassServer(currentServers)
+        }
         if (!bypassRefreshMutex.tryLock()) return false
         return try {
             _baseStationBypassLoading.value = true
@@ -229,11 +316,10 @@ class ServerListViewModel @Inject constructor(
             val servers = baseStationBypassRepository.getServers()
             if (servers.isEmpty()) return false
             val currentPings = _baseStationBypassPings.value
-            val hasCurrentPings = currentPings.isNotEmpty() &&
-                servers.all { currentPings.containsKey(it.id) }
+            val hasCurrentPings = _baseStationBypassPingsMeasured.value &&
+                servers.all { (currentPings[it.id] ?: 0L) != 0L }
             if (!hasCurrentPings) {
-                serverQualityRepository.measurePings(servers = servers, force = true)
-                    .also { _baseStationBypassPings.value = it }
+                measureBaseStationBypassProfiles(servers = servers, force = true)
             }
             persistBestBaseStationBypassServer(servers = servers)
         } catch (error: CancellationException) {
@@ -277,19 +363,134 @@ class ServerListViewModel @Inject constructor(
             automaticSelectionSource(prefsDataStore.selectedServerKey.first()) ==
             ServerSource.BASE_STATION_BYPASS
 
+    private suspend fun isAutomaticStandardSelection(): Boolean =
+        prefsDataStore.isAutomaticServerSelection() &&
+            automaticSelectionSource(prefsDataStore.selectedServerKey.first()) ==
+            ServerSource.STANDARD
+
     private suspend fun persistBestBaseStationBypassServer(
         servers: List<Server>,
     ): Boolean {
-        // Reuse the just-populated 15-second TCP cache, but rank profiles with
-        // their independent tunnel success/failure history as well as latency.
-        val best = serverQualityRepository.selectBestServer(
+        // Only a full VLESS/transport/TLS or REALITY probe can make a bypass
+        // profile an automatic candidate. A raw TCP ping is insufficient.
+        val best = serverQualityRepository.selectBestVerifiedServer(
             servers = servers,
-            forceProbe = false,
+            verifiedDelays = _baseStationBypassPings.value,
         ) ?: return false
         prefsDataStore.setAutomaticSelectedServer(
             id = stableServerId(best),
             key = serverSelectionKey(best),
         )
         return true
+    }
+
+    private suspend fun measureBaseStationBypassProfiles(
+        servers: List<Server>,
+        force: Boolean,
+    ): Map<String, Long> {
+        _baseStationBypassPingsMeasured.value = false
+        _baseStationBypassPings.value = servers.associate { it.id to 0L }
+        _baseStationBypassProbeProgress.value = ServerProbeProgress(
+            completed = 0,
+            total = servers
+                .filter { it.source == ServerSource.BASE_STATION_BYPASS && it.isAvailable }
+                .distinctBy(Server::id)
+                .size,
+        )
+        return try {
+            baseStationBypassProfileProbeRepository.measureProfileDelays(
+                servers = servers,
+                force = force,
+                onResult = { serverId, delayMs, completed, total ->
+                    _baseStationBypassPings.update { current ->
+                        current + (serverId to delayMs)
+                    }
+                    _baseStationBypassProbeProgress.update { current ->
+                        ServerProbeProgress(
+                            completed = maxOf(current?.completed ?: 0, completed),
+                            total = total,
+                        )
+                    }
+                },
+            ).also { results ->
+                _baseStationBypassPings.value = results
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            _baseStationBypassPings.update { current ->
+                current.mapValues { (_, delayMs) ->
+                    delayMs.takeIf { it != 0L } ?: -1L
+                }
+            }
+            throw error
+        } finally {
+            _baseStationBypassPingsMeasured.value = true
+            val finishedProgress = _baseStationBypassProbeProgress.value
+            viewModelScope.launch {
+                delay(PROBE_PROGRESS_COMPLETION_HOLD_MS)
+                if (_baseStationBypassProbeProgress.value == finishedProgress) {
+                    _baseStationBypassProbeProgress.value = null
+                }
+            }
+        }
+    }
+
+    private suspend fun measureStandardProfiles(
+        servers: List<Server>,
+        force: Boolean,
+    ): Map<String, Long> {
+        val candidates = servers
+            .filter { it.source == ServerSource.STANDARD && it.isAvailable }
+            .distinctBy(Server::id)
+        _standardProfilePingsEnabled.value = true
+        _standardProfilePingsMeasured.value = false
+        _standardProfilePings.value = candidates.associate { it.id to 0L }
+        _standardProfileProbeProgress.value = ServerProbeProgress(
+            completed = 0,
+            total = candidates.size,
+        )
+        return try {
+            baseStationBypassProfileProbeRepository.measureProfileDelays(
+                servers = candidates,
+                source = ServerSource.STANDARD,
+                force = force,
+                onResult = { serverId, delayMs, completed, total ->
+                    _standardProfilePings.update { current ->
+                        current + (serverId to delayMs)
+                    }
+                    _standardProfileProbeProgress.update { current ->
+                        ServerProbeProgress(
+                            completed = maxOf(current?.completed ?: 0, completed),
+                            total = total,
+                        )
+                    }
+                },
+            ).also { results ->
+                _standardProfilePings.value = results
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            _standardProfilePings.update { current ->
+                current.mapValues { (_, delayMs) ->
+                    delayMs.takeIf { it != 0L } ?: -1L
+                }
+            }
+            throw error
+        } finally {
+            _standardProfilePingsMeasured.value = true
+            val finishedProgress = _standardProfileProbeProgress.value
+            viewModelScope.launch {
+                delay(PROBE_PROGRESS_COMPLETION_HOLD_MS)
+                if (_standardProfileProbeProgress.value == finishedProgress) {
+                    _standardProfileProbeProgress.value = null
+                }
+            }
+        }
+    }
+
+    private companion object {
+        const val PROBE_PROGRESS_COMPLETION_HOLD_MS = 800L
     }
 }

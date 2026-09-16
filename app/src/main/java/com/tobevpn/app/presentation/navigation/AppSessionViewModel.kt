@@ -2,6 +2,7 @@ package com.tobevpn.app.presentation.navigation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.repository.AuthRepository
 import com.tobevpn.app.data.repository.TelegramAuthPollResult
 import com.tobevpn.app.domain.model.AuthState
@@ -23,7 +24,14 @@ import javax.inject.Inject
 class AppSessionViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val connectionManager: VpnConnectionManager,
+    private val prefsDataStore: PrefsDataStore,
 ) : ViewModel() {
+
+    val displayScaleHintPending = prefsDataStore.displayScaleHintPending
+
+    fun consumeDisplayScaleHint() {
+        viewModelScope.launch { prefsDataStore.consumeDisplayScaleHint() }
+    }
 
     init {
         viewModelScope.launch {

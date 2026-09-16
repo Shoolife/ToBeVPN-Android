@@ -36,11 +36,22 @@ class ServerQualityRepository @Inject constructor(
     private val pingDiagnostics = ConcurrentHashMap<String, TimedPingDiagnostic>()
 
     suspend fun measurePing(server: Server, force: Boolean = false): Long {
+        val timeoutMs = prefsDataStore.getServerPingTimeoutSeconds() * MILLIS_PER_SECOND
+        return measurePing(server, force, timeoutMs)
+    }
+
+    private suspend fun measurePing(
+        server: Server,
+        force: Boolean,
+        timeoutMs: Int,
+    ): Long {
         if (!server.isAvailable) return -1L
         val key = serverPingEndpointKey(server)
         val now = System.currentTimeMillis()
         val cached = pingCache[key]
-        if (!force && cached != null && now - cached.measuredAt <= PING_CACHE_TTL_MS) {
+        if (!force && cached != null && cached.timeoutMs == timeoutMs &&
+            now - cached.measuredAt <= PING_CACHE_TTL_MS
+        ) {
             return cached.ping
         }
 
@@ -49,7 +60,7 @@ class ServerQualityRepository @Inject constructor(
             try {
                 val startedAt = System.currentTimeMillis()
                 Socket().use { socket ->
-                    socket.connect(InetSocketAddress(server.address, server.port), PING_TIMEOUT_MS)
+                    socket.connect(InetSocketAddress(server.address, server.port), timeoutMs)
                 }
                 (System.currentTimeMillis() - startedAt).coerceAtLeast(1L)
             } catch (error: Exception) {
@@ -57,7 +68,11 @@ class ServerQualityRepository @Inject constructor(
                 -1L
             }
         }
-        pingCache[key] = TimedPing(ping = ping, measuredAt = now)
+        pingCache[key] = TimedPing(
+            ping = ping,
+            measuredAt = now,
+            timeoutMs = timeoutMs,
+        )
         logPingIfNeeded(
             server = server,
             key = key,
@@ -72,12 +87,13 @@ class ServerQualityRepository @Inject constructor(
         servers: List<Server>,
         force: Boolean = false,
     ): Map<String, Long> = coroutineScope {
+        val timeoutMs = prefsDataStore.getServerPingTimeoutSeconds() * MILLIS_PER_SECOND
         val uniqueEndpoints = servers.distinctBy(::serverPingEndpointKey)
         val probeSlots = Semaphore(MAX_CONCURRENT_PINGS)
         val endpointPings = uniqueEndpoints.map { server ->
             async {
                 probeSlots.withPermit {
-                    serverPingEndpointKey(server) to measurePing(server, force)
+                    serverPingEndpointKey(server) to measurePing(server, force, timeoutMs)
                 }
             }
         }.awaitAll().toMap()
@@ -90,7 +106,8 @@ class ServerQualityRepository @Inject constructor(
             "Server TCP probe batch completed: total=${results.size} " +
                 "unique_endpoints=${uniqueEndpoints.size} " +
                 "reachable=${reachable.size} unreachable=${results.size - reachable.size} " +
-                "min_ms=${reachable.minOrNull() ?: -1L} max_ms=${reachable.maxOrNull() ?: -1L}",
+                "min_ms=${reachable.minOrNull() ?: -1L} max_ms=${reachable.maxOrNull() ?: -1L} " +
+                "timeout_ms=$timeoutMs",
         )
         results
     }
@@ -205,6 +222,52 @@ class ServerQualityRepository @Inject constructor(
                 append(" selected_scope=")
                 append(selectedScope)
             },
+        )
+        return selected
+    }
+
+    /**
+     * Ranks only profiles whose complete Xray outbound has already carried a
+     * probe request. This is used exclusively by the experimental bypass
+     * source; regular servers keep the existing TCP-and-history selection.
+     */
+    suspend fun selectBestVerifiedServer(
+        servers: List<Server>,
+        verifiedDelays: Map<String, Long>,
+        excludedServers: Collection<Server> = emptyList(),
+    ): Server? {
+        val eligible = ServerRecoveryCandidatePolicy.eligibleServers(
+            servers = servers.filter(Server::isAvailable),
+            excludeServerId = null,
+            excludeEndpoint = null,
+            excludedServers = excludedServers,
+        )
+        val records = stateMutex.withLock { loadStateLocked().records }
+        val now = System.currentTimeMillis()
+        val selected = eligible
+            .mapNotNull { server ->
+                val delayMs = verifiedDelays[server.id]?.takeIf { it > 0L }
+                    ?: return@mapNotNull null
+                RankedServer(
+                    server = server.copy(ping = delayMs),
+                    score = qualityScore(
+                        ping = delayMs,
+                        record = records[serverConnectionIdentityKey(server)],
+                        now = now,
+                    ),
+                )
+            }
+            .minWithOrNull(
+                compareBy<RankedServer> { it.score }
+                    .thenBy { it.server.ping }
+                    .thenBy { it.server.name },
+            )
+            ?.server
+        SafeDiagnostics.trace(
+            TAG,
+            "Verified profile selection completed: candidates=${servers.size} " +
+                "eligible=${eligible.size} verified=${eligible.count { (verifiedDelays[it.id] ?: -1L) > 0L }} " +
+                "selected=${selected?.let(::diagnosticServerDescriptor) ?: "NONE"}",
         )
         return selected
     }
@@ -411,6 +474,7 @@ class ServerQualityRepository @Inject constructor(
     private data class TimedPing(
         val ping: Long,
         val measuredAt: Long,
+        val timeoutMs: Int,
     )
 
     private data class TimedPingDiagnostic(
@@ -424,7 +488,7 @@ class ServerQualityRepository @Inject constructor(
     )
 
     private companion object {
-        const val PING_TIMEOUT_MS = 3_000
+        const val MILLIS_PER_SECOND = 1_000
         const val MAX_CONCURRENT_PINGS = 16
         const val PING_CACHE_TTL_MS = 15_000L
         const val PING_DIAGNOSTIC_INTERVAL_MS = 30_000L

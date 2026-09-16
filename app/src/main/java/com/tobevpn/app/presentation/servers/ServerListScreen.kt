@@ -1,9 +1,16 @@
 package com.tobevpn.app.presentation.servers
 
 import android.content.res.Configuration
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -27,6 +34,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -41,6 +49,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -60,6 +69,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -185,6 +195,12 @@ fun ServerListScreen(
         viewModel.baseStationBypassLoading.collectAsStateWithLifecycle()
     val baseStationBypassPingsMeasured by
         viewModel.baseStationBypassPingsMeasured.collectAsStateWithLifecycle()
+    val baseStationBypassProbeProgress by
+        viewModel.baseStationBypassProbeProgress.collectAsStateWithLifecycle()
+    val standardProfilePingsMeasured by
+        viewModel.standardProfilePingsMeasured.collectAsStateWithLifecycle()
+    val standardProfileProbeProgress by
+        viewModel.standardProfileProbeProgress.collectAsStateWithLifecycle()
     val baseStationBypassError by
         viewModel.baseStationBypassError.collectAsStateWithLifecycle()
     val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
@@ -196,6 +212,18 @@ fun ServerListScreen(
     val scope = rememberCoroutineScope()
     val isTv = isTelevisionUi()
     var selectedCategory by rememberSaveable { mutableStateOf(ServerCategory.STANDARD) }
+    var lastBypassProbeProgress by remember {
+        mutableStateOf<ServerProbeProgress?>(null)
+    }
+    var lastStandardProbeProgress by remember {
+        mutableStateOf<ServerProbeProgress?>(null)
+    }
+    LaunchedEffect(baseStationBypassProbeProgress) {
+        baseStationBypassProbeProgress?.let { lastBypassProbeProgress = it }
+    }
+    LaunchedEffect(standardProfileProbeProgress) {
+        standardProfileProbeProgress?.let { lastStandardProbeProgress = it }
+    }
     val showingBypass = !isTv && selectedCategory == ServerCategory.BASE_STATION_BYPASS
     val displayedServers = if (showingBypass) {
         sortBaseStationBypassServersForDisplay(
@@ -203,9 +231,27 @@ fun ServerListScreen(
             pingsMeasured = baseStationBypassPingsMeasured,
         )
     } else {
-        servers
+        sortVerifiedServersForDisplay(
+            servers = servers,
+            pingsMeasured = standardProfilePingsMeasured,
+        )
     }
     val displayedLoading = if (showingBypass) baseStationBypassLoading else isLoading
+    val displayedProfilePingsMeasured = if (showingBypass) {
+        baseStationBypassPingsMeasured
+    } else {
+        standardProfilePingsMeasured
+    }
+    val displayedProbeProgress = if (showingBypass) {
+        baseStationBypassProbeProgress
+    } else {
+        standardProfileProbeProgress
+    }
+    val lastDisplayedProbeProgress = if (showingBypass) {
+        lastBypassProbeProgress
+    } else {
+        lastStandardProbeProgress
+    }
     val automaticSource = automaticSelectionSource(selectedServerKey)
     val automaticSelectionForCurrentTab = automaticServerSelection &&
         automaticSource == if (showingBypass) {
@@ -322,6 +368,55 @@ fun ServerListScreen(
                     onSelected = { selectedCategory = it },
                 )
             }
+            AnimatedVisibility(
+                visible = displayedProbeProgress != null,
+                enter = fadeIn(
+                    animationSpec = tween(
+                        durationMillis = 280,
+                        delayMillis = 40,
+                        easing = FastOutSlowInEasing,
+                    ),
+                ) + expandVertically(
+                    animationSpec = tween(
+                        durationMillis = 360,
+                        easing = FastOutSlowInEasing,
+                    ),
+                    expandFrom = Alignment.Top,
+                ) + scaleIn(
+                    animationSpec = tween(
+                        durationMillis = 360,
+                        easing = FastOutSlowInEasing,
+                    ),
+                    initialScale = 0.96f,
+                    transformOrigin = TransformOrigin(0.5f, 0f),
+                ),
+                exit = fadeOut(
+                    animationSpec = tween(
+                        durationMillis = 240,
+                        easing = FastOutSlowInEasing,
+                    ),
+                ) + shrinkVertically(
+                    animationSpec = tween(
+                        durationMillis = 340,
+                        easing = FastOutSlowInEasing,
+                    ),
+                    shrinkTowards = Alignment.Top,
+                ) + scaleOut(
+                    animationSpec = tween(
+                        durationMillis = 300,
+                        easing = FastOutSlowInEasing,
+                    ),
+                    targetScale = 0.97f,
+                    transformOrigin = TransformOrigin(0.5f, 0f),
+                ),
+            ) {
+                (displayedProbeProgress ?: lastDisplayedProbeProgress)?.let { progress ->
+                    ServerProbeProgressBar(
+                        progress = progress,
+                        metrics = metrics,
+                    )
+                }
+            }
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -394,7 +489,13 @@ fun ServerListScreen(
                     }
                     else -> {
                     val offlineText = stringResource(R.string.server_offline)
-                    val unavailableText = stringResource(R.string.server_unavailable)
+                    val unavailableText = stringResource(
+                        if (showingBypass) {
+                            R.string.server_profile_no_response
+                        } else {
+                            R.string.server_unavailable
+                        },
+                    )
                     val titleStyle = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium)
                     val labelStyle = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall)
                     val minimumServerNameFontSize = fixedLayoutTextStyle(
@@ -515,8 +616,19 @@ fun ServerListScreen(
                                             // in the subtitle.
                                             selected = automaticServerSelection,
                                             description = automaticSelectionDescription,
-                                            enabled = !displayedLoading &&
-                                                displayedServers.any { it.isSelectable },
+                                            enabled = if (displayedProbeProgress != null) {
+                                                // Full-profile checks finish progressively. Let the
+                                                // user pick an already verified automatic candidate
+                                                // without waiting for every failed profile timeout.
+                                                displayedServers.any { it.ping > 0L }
+                                            } else if (displayedProfilePingsMeasured) {
+                                                // Once a full sweep exists, AUTO must never select a
+                                                // profile that only exposed an open TCP port.
+                                                displayedServers.any { it.ping > 0L }
+                                            } else {
+                                                !displayedLoading &&
+                                                    displayedServers.any { it.isSelectable }
+                                            },
                                             metrics = metrics,
                                             isTv = isTv,
                                             onClick = {
@@ -544,13 +656,21 @@ fun ServerListScreen(
                                                 selectedId = selectedServerId,
                                                 selectedKey = selectedServerKey,
                                             ),
-                                            enabled = selectable,
+                                            enabled = selectable && (!showingBypass ||
+                                                !displayedLoading ||
+                                                // Zero is the only unfinished state. A completed
+                                                // positive or negative full-profile check may be
+                                                // selected while the rest of the list is running.
+                                                server.ping != 0L),
                                             showEndpoint = isAdminProfile,
                                             showStatus = true,
                                             showUnmeasuredStatus = showingBypass &&
                                                 !baseStationBypassPingsMeasured &&
                                                 !displayedLoading,
-                                            forceStatusLoading = showingBypass && displayedLoading,
+                                            forceStatusLoading =
+                                                displayedProbeProgress != null &&
+                                                    server.ping == 0L,
+                                            unavailableStatusText = unavailableText,
                                             serverNameFontSize = serverNameFontSize,
                                             metrics = metrics,
                                             isTv = isTv,
@@ -770,6 +890,81 @@ internal fun ServerListScalePreview(
 }
 
 @Composable
+private fun ServerProbeProgressBar(
+    progress: ServerProbeProgress,
+    metrics: ServerListMetrics,
+) {
+    val fraction = if (progress.total > 0) {
+        progress.completed.toFloat() / progress.total.toFloat()
+    } else {
+        0f
+    }.coerceIn(0f, 1f)
+    val animatedFraction by animateFloatAsState(
+        targetValue = fraction,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+        label = "serverProbeProgress",
+    )
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                horizontal = metrics.cardHorizontalPadding,
+                vertical = metrics.cardVerticalPadding,
+            ),
+        shape = RoundedCornerShape(metrics.cardCornerRadius),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.base_station_bypass_probe_progress,
+                    progress.completed,
+                    progress.total,
+                ),
+                modifier = Modifier.fillMaxWidth(),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                fontWeight = FontWeight.Medium,
+                color = if (isSystemInDarkTheme()) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    Color.Black
+                },
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(7.dp)
+                    .clip(RoundedCornerShape(99.dp)),
+            ) {
+                LinearProgressIndicator(
+                    progress = { animatedFraction },
+                    modifier = Modifier.fillMaxSize(),
+                    color = VpnGreen,
+                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
+                )
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .size(4.dp)
+                        .background(VpnGreen, CircleShape),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun BaseStationBypassExperimentalNotice(metrics: ServerListMetrics) {
     val isDark = isSystemInDarkTheme()
     Card(
@@ -906,6 +1101,7 @@ private fun ServerItem(
     showStatus: Boolean = true,
     showUnmeasuredStatus: Boolean = false,
     forceStatusLoading: Boolean = false,
+    unavailableStatusText: String? = null,
     serverNameFontSize: TextUnit,
     metrics: ServerListMetrics,
     isTv: Boolean,
@@ -1035,7 +1231,11 @@ private fun ServerItem(
                     when {
                         forceStatusLoading -> LoadingPingChip(width = statusWidth)
                         showUnmeasuredStatus -> UnmeasuredPingChip(width = statusWidth)
-                        else -> ServerStatusBlock(server = server, width = statusWidth)
+                        else -> ServerStatusBlock(
+                            server = server,
+                            width = statusWidth,
+                            unavailableStatusText = unavailableStatusText,
+                        )
                     }
                 }
             }
@@ -1152,6 +1352,7 @@ private fun ServerEndpointMarker(modifier: Modifier = Modifier) {
 private fun ServerStatusBlock(
     server: Server,
     width: Dp,
+    unavailableStatusText: String? = null,
 ) {
     when {
         !server.isSelectable -> {
@@ -1167,7 +1368,8 @@ private fun ServerStatusBlock(
         }
         server.ping < 0 -> {
             Text(
-                text = stringResource(R.string.server_unavailable),
+                text = unavailableStatusText
+                    ?: stringResource(R.string.server_unavailable),
                 style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
                 fontWeight = FontWeight.SemiBold,
                 color = VpnRed,

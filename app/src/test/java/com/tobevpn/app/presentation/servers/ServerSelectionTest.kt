@@ -137,6 +137,20 @@ class ServerSelectionTest {
         assertEquals(listOf("first", "second"), sorted.map(Server::id))
     }
 
+    @Test
+    fun `measured standard servers put verified profiles first and failures last`() {
+        val failed = server("failed", ServerSource.STANDARD).copy(ping = -1)
+        val slow = server("slow", ServerSource.STANDARD).copy(ping = 96)
+        val fast = server("fast", ServerSource.STANDARD).copy(ping = 31)
+
+        val sorted = sortVerifiedServersForDisplay(
+            servers = listOf(failed, slow, fast),
+            pingsMeasured = true,
+        )
+
+        assertEquals(listOf("fast", "slow", "failed"), sorted.map(Server::id))
+    }
+
     private fun server(id: String, source: ServerSource) = Server(
         id = id,
         name = "Server",

@@ -28,6 +28,28 @@ object VpnConfig {
         }.toString(2)
     }
 
+    /**
+     * Builds the same outbound as the real VPN connection, trimmed for
+     * libv2ray's outbound-delay probe. A successful result therefore proves
+     * that VLESS, the selected transport and TLS/REALITY can carry an HTTP
+     * request; unlike a raw TCP connect it does not merely prove that the port
+     * is open.
+     */
+    fun buildOutboundDelayConfigJson(server: Server): String {
+        val config = JSONObject(buildConfigJson(server))
+        config.put("inbounds", JSONArray())
+        config.optJSONObject("routing")?.put("rules", JSONArray())
+        config.remove("dns")
+        config.remove("stats")
+        config.remove("policy")
+        config.optJSONArray("outbounds")?.let { outbounds ->
+            repeat(outbounds.length()) { index ->
+                outbounds.optJSONObject(index)?.remove("mux")
+            }
+        }
+        return config.toString()
+    }
+
     private fun buildPolicy(): JSONObject {
         return JSONObject().apply {
             put("levels", JSONObject().apply {

@@ -5,6 +5,7 @@ import android.net.VpnService
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.repository.AuthRepository
+import com.tobevpn.app.data.repository.BaseStationBypassProfileProbeRepository
 import com.tobevpn.app.data.repository.BaseStationBypassRepository
 import com.tobevpn.app.data.repository.ServerQualityRepository
 import com.tobevpn.app.data.repository.VpnRepository
@@ -35,6 +36,7 @@ class VpnToggleController @Inject constructor(
     private val prefsDataStore: PrefsDataStore,
     private val serverQualityRepository: ServerQualityRepository,
     private val baseStationBypassRepository: BaseStationBypassRepository,
+    private val profileProbeRepository: BaseStationBypassProfileProbeRepository,
 ) {
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
     val currentServer: StateFlow<Server?> = connectionManager.currentServer
@@ -203,7 +205,15 @@ class VpnToggleController @Inject constructor(
             .orEmpty()
             .filter { it.isAvailable }
         val resolved = if (selection.automatic) {
-            serverQualityRepository.selectBestServer(availableServers, forceProbe = true)
+            val verifiedDelays = profileProbeRepository
+                .getCachedProfileDelays(availableServers)
+            serverQualityRepository.selectBestVerifiedServer(
+                servers = availableServers,
+                verifiedDelays = verifiedDelays,
+            ) ?: serverQualityRepository.selectBestServer(
+                servers = availableServers,
+                forceProbe = true,
+            )
         } else {
             resolveManualServer(
                 availableServers = availableServers,

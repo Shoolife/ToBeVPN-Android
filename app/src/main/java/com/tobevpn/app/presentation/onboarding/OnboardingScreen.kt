@@ -1,7 +1,13 @@
 package com.tobevpn.app.presentation.onboarding
 
+import android.util.DisplayMetrics
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,10 +34,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLocale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -42,6 +51,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.tobevpn.app.R
+import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.isLargeTabletLayout
 import java.text.NumberFormat
 import java.util.Locale
@@ -74,8 +85,16 @@ fun OnboardingScreen(
         freeTrialDuration,
     )
     val useLargeTabletLayout = isLargeTabletLayout()
+    val configuration = LocalConfiguration.current
+    val stableDensity = DisplayMetrics.DENSITY_DEVICE_STABLE
+        .takeIf { it > 0 }
+        ?: configuration.densityDpi
+    val densityRatio = configuration.densityDpi.toFloat() / stableDensity.toFloat()
+    val shouldShowDisplayScaleHint =
+        abs(densityRatio - 1f) >= DISPLAY_SCALE_HINT_THRESHOLD ||
+            abs(configuration.fontScale - 1f) >= DISPLAY_SCALE_HINT_THRESHOLD
     val completeOnboarding = {
-        viewModel.completeOnboarding()
+        viewModel.completeOnboarding(shouldShowDisplayScaleHint)
         onComplete()
     }
 
@@ -106,10 +125,12 @@ private fun PhoneOnboardingContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .padding(horizontal = 32.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
+        Spacer(modifier = Modifier.height(16.dp))
+
         Image(
             painter = painterResource(R.drawable.onboarding_logo),
             contentDescription = null,
@@ -132,17 +153,68 @@ private fun PhoneOnboardingContent(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        Spacer(modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
-        FeatureItem(stringResource(R.string.onboarding_feature_trial, anonTraffic))
-        Spacer(modifier = Modifier.height(12.dp))
-        FeatureItem(signedInTrialText)
-        Spacer(modifier = Modifier.height(12.dp))
-        FeatureItem(stringResource(R.string.onboarding_feature_auth))
-        Spacer(modifier = Modifier.height(12.dp))
-        FeatureItem(stringResource(R.string.onboarding_feature_tools))
+        val featuresScrollState = rememberScrollState()
+        val topFadeAlpha by animateFloatAsState(
+            targetValue = if (featuresScrollState.value > 0) 1f else 0f,
+            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+            label = "onboardingFeaturesTopFade",
+        )
+        val bottomFadeAlpha by animateFloatAsState(
+            targetValue = if (featuresScrollState.value < featuresScrollState.maxValue) 1f else 0f,
+            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+            label = "onboardingFeaturesBottomFade",
+        )
+        Box(
+            modifier = Modifier
+                .weight(1f, fill = false)
+                .fillMaxWidth(),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalFadingEdges(
+                        topAlpha = topFadeAlpha,
+                        bottomAlpha = bottomFadeAlpha,
+                        fadeHeight = 38.dp,
+                    ),
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(featuresScrollState)
+                        .padding(vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    FeatureItem(stringResource(R.string.onboarding_feature_trial, anonTraffic))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    FeatureItem(signedInTrialText)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    FeatureItem(stringResource(R.string.onboarding_feature_auth))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    FeatureItem(stringResource(R.string.onboarding_feature_tools))
+                }
+            }
 
-        Spacer(modifier = Modifier.height(48.dp))
+            VerticalScrollEdgeArrow(
+                alpha = topFadeAlpha,
+                isTop = true,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 2.dp),
+            )
+            VerticalScrollEdgeArrow(
+                alpha = bottomFadeAlpha,
+                isTop = false,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 2.dp),
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         Button(
             onClick = onComplete,
@@ -217,33 +289,84 @@ private fun LargeTabletOnboardingContent(
             Column(
                 modifier = Modifier
                     .widthIn(max = 560.dp)
-                    .fillMaxWidth(),
+                    .fillMaxWidth()
+                    .fillMaxHeight(),
             ) {
-                TabletFeatureItem(
-                    icon = Icons.Default.DataUsage,
-                    text = stringResource(R.string.onboarding_feature_trial, anonTraffic),
-                    isDark = isDark,
+                val featuresScrollState = rememberScrollState()
+                val topFadeAlpha by animateFloatAsState(
+                    targetValue = if (featuresScrollState.value > 0) 1f else 0f,
+                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                    label = "tabletOnboardingFeaturesTopFade",
                 )
-                Spacer(modifier = Modifier.height(24.dp))
-                TabletFeatureItem(
-                    icon = Icons.Default.Devices,
-                    text = signedInTrialText,
-                    isDark = isDark,
+                val bottomFadeAlpha by animateFloatAsState(
+                    targetValue = if (featuresScrollState.value < featuresScrollState.maxValue) 1f else 0f,
+                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                    label = "tabletOnboardingFeaturesBottomFade",
                 )
-                Spacer(modifier = Modifier.height(24.dp))
-                TabletFeatureItem(
-                    icon = Icons.Default.Lock,
-                    text = stringResource(R.string.onboarding_feature_auth),
-                    isDark = isDark,
-                )
-                Spacer(modifier = Modifier.height(24.dp))
-                TabletFeatureItem(
-                    icon = Icons.Default.Speed,
-                    text = stringResource(R.string.onboarding_feature_tools),
-                    isDark = isDark,
-                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .fillMaxWidth(),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalFadingEdges(
+                                topAlpha = topFadeAlpha,
+                                bottomAlpha = bottomFadeAlpha,
+                                fadeHeight = 38.dp,
+                            ),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(featuresScrollState)
+                                .padding(vertical = 16.dp),
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            TabletFeatureItem(
+                                icon = Icons.Default.DataUsage,
+                                text = stringResource(R.string.onboarding_feature_trial, anonTraffic),
+                                isDark = isDark,
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            TabletFeatureItem(
+                                icon = Icons.Default.Devices,
+                                text = signedInTrialText,
+                                isDark = isDark,
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            TabletFeatureItem(
+                                icon = Icons.Default.Lock,
+                                text = stringResource(R.string.onboarding_feature_auth),
+                                isDark = isDark,
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+                            TabletFeatureItem(
+                                icon = Icons.Default.Speed,
+                                text = stringResource(R.string.onboarding_feature_tools),
+                                isDark = isDark,
+                            )
+                        }
+                    }
 
-                Spacer(modifier = Modifier.height(44.dp))
+                    VerticalScrollEdgeArrow(
+                        alpha = topFadeAlpha,
+                        isTop = true,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 2.dp),
+                    )
+                    VerticalScrollEdgeArrow(
+                        alpha = bottomFadeAlpha,
+                        isTop = false,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 2.dp),
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
 
                 Button(
                     onClick = onComplete,
@@ -252,7 +375,7 @@ private fun LargeTabletOnboardingContent(
                         .offset(x = TABLET_FEATURE_TEXT_INSET)
                         .widthIn(max = 380.dp)
                         .fillMaxWidth()
-                        .height(54.dp),
+                        .heightIn(min = 54.dp),
                     shape = RoundedCornerShape(14.dp),
                     colors = onboardingButtonColors(isDark),
                 ) {
@@ -345,4 +468,5 @@ private fun formatTrafficLimit(bytes: Long, unit: String, locale: Locale): Strin
 
 private const val BYTES_IN_GB = 1024.0 * 1024.0 * 1024.0
 private const val SIGNED_IN_TRIAL_TRAFFIC_BYTES = 3_221_225_472L
+private const val DISPLAY_SCALE_HINT_THRESHOLD = 0.10f
 private val TABLET_FEATURE_TEXT_INSET = 54.dp

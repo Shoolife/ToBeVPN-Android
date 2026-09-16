@@ -23,6 +23,7 @@ import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
 import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
+import com.tobevpn.app.domain.model.DEFAULT_SERVER_PING_TIMEOUT_SECONDS
 import com.tobevpn.app.domain.model.ProfileNameDisplay
 import com.tobevpn.app.domain.model.ThemeMode
 import com.tobevpn.app.util.DeepLinkBus
@@ -165,6 +166,17 @@ class SettingsViewModel @Inject constructor(
 
     fun resetDisplayPreferences() {
         viewModelScope.launch { prefsDataStore.resetDisplayPreferences() }
+    }
+
+    val serverPingTimeoutSeconds: StateFlow<Int> = prefsDataStore.serverPingTimeoutSeconds
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            DEFAULT_SERVER_PING_TIMEOUT_SECONDS,
+        )
+
+    fun setServerPingTimeoutSeconds(value: Int) {
+        viewModelScope.launch { prefsDataStore.setServerPingTimeoutSeconds(value) }
     }
 
     fun toggleDiagnosticMode() {
