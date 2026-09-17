@@ -25,6 +25,7 @@ import com.tobevpn.app.presentation.settings.AdvancedScreen
 import com.tobevpn.app.presentation.settings.DisplayScaleTextScreen
 import com.tobevpn.app.presentation.settings.PersonalizationScreen
 import com.tobevpn.app.presentation.settings.SettingsScreen
+import com.tobevpn.app.presentation.settings.SettingsTransferScreen
 import com.tobevpn.app.presentation.settings.SettingsViewModel
 import com.tobevpn.app.presentation.settings.SupportScreen
 import com.tobevpn.app.presentation.speedtest.SpeedTestScreen
@@ -140,6 +141,7 @@ fun AppNavHost(
                 onNavigateToAbout = { navController.navigateSingleTop(AboutRoute) },
                 onNavigateToReferrals = { navController.navigateSingleTop(ReferralsRoute) },
                 onNavigateToPromocodes = { navController.navigateSingleTop(PromocodesRoute) },
+                onNavigateToSettingsTransfer = { navController.navigateSingleTop(SettingsTransferRoute) },
             )
         }
         composable<PersonalizationRoute> { entry ->
@@ -160,6 +162,11 @@ fun AppNavHost(
             DisplayScaleTextScreen(
                 onBack = { navController.popBackStackOrRecover(startDestination) },
                 viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+            )
+        }
+        composable<SettingsTransferRoute> {
+            SettingsTransferScreen(
+                onBack = { navController.popBackStackOrRecover(SettingsRoute) },
             )
         }
         composable<AdvancedRoute> { entry ->

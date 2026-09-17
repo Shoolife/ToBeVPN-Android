@@ -2243,8 +2243,7 @@ class VpnConnectionManager @Inject constructor(
             _sessionTimeSeconds.value = 0L
             // Drain any leftovers before starting accounting for the validated
             // session. Startup probe traffic must not count as user traffic.
-            XRayCore.queryStats("proxy", "uplink")
-            XRayCore.queryStats("proxy", "downlink")
+            XRayCore.queryOutboundTrafficStats("proxy")
             probeDownlinkEvidenceGate.reset()
             usageRepository.setLastConnected(connectionStartTime)
             sessionStartUsageBytes = usageRepository.getUsage().bytesUsed
@@ -2917,8 +2916,9 @@ class VpnConnectionManager @Inject constructor(
         withContext(NonCancellable) {
             statsMutex.withLock {
                 val loopGenerationBeforeQuery = XRayCore.currentLoopGeneration
-                val upBytes = XRayCore.queryStats("proxy", "uplink").coerceAtLeast(0L)
-                val downBytes = XRayCore.queryStats("proxy", "downlink").coerceAtLeast(0L)
+                val trafficStats = XRayCore.queryOutboundTrafficStats("proxy")
+                val upBytes = trafficStats.uplinkBytes
+                val downBytes = trafficStats.downlinkBytes
                 val loopGenerationAfterQuery = XRayCore.currentLoopGeneration
                 val stableLoopGeneration =
                     if (loopGenerationBeforeQuery == loopGenerationAfterQuery) {

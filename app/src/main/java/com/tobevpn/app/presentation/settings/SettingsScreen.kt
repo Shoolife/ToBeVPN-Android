@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.SupportAgent
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -109,6 +110,7 @@ import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.presentation.theme.VpnRed
+import com.tobevpn.app.presentation.theme.SettingsTransferAccent
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,6 +123,7 @@ fun SettingsScreen(
     onNavigateToAbout: () -> Unit,
     onNavigateToReferrals: () -> Unit,
     onNavigateToPromocodes: () -> Unit,
+    onNavigateToSettingsTransfer: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
@@ -237,6 +240,7 @@ fun SettingsScreen(
                             onClick = onNavigateToAbout,
                         )
                     }
+                    SettingsTransferNavigationCard(onClick = onNavigateToSettingsTransfer)
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -254,6 +258,66 @@ fun SettingsScreen(
         },
         onDismiss = { showLogoutConfirm = false },
     )
+}
+
+@Composable
+private fun SettingsTransferNavigationCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(92.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(20.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(44.dp)
+                    .background(SettingsTransferAccent.copy(alpha = 0.18f), RoundedCornerShape(13.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Filled.SettingsBackupRestore,
+                    contentDescription = null,
+                    tint = SettingsTransferAccent,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                SettingsSingleLineText(
+                    text = stringResource(R.string.settings_transfer_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isSystemInDarkTheme()) MaterialTheme.colorScheme.onSurface else Color.Black,
+                )
+                Spacer(Modifier.height(2.dp))
+                SettingsSingleLineText(
+                    text = stringResource(R.string.settings_transfer_settings_description),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Box(
+                modifier = Modifier
+                    .size(30.dp)
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        }
+    }
 }
 
 // Confirm dialog in a real Dialog window (covers the whole screen, top bar

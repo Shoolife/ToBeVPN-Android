@@ -77,12 +77,22 @@ object XRayCore {
     val isRunning: Boolean
         get() = controller?.isRunning == true
 
+    /**
+     * Atomically drains all native outbound counters and returns the counters
+     * for [tag]. AndroidLibXrayLite v26.9.9 removed the per-direction
+     * QueryStats API because two sequential reads could observe different core
+     * generations. Keep the native drain and parsing behind one synchronized
+     * call so uplink and downlink always belong to the same snapshot.
+     */
     @Synchronized
-    fun queryStats(tag: String, direct: String): Long {
+    internal fun queryOutboundTrafficStats(tag: String): XRayOutboundTrafficStats {
         return try {
-            controller?.queryStats(tag, direct) ?: 0
+            parseXRayOutboundTrafficStats(
+                raw = controller?.queryAllOutboundTrafficStats().orEmpty(),
+                tag = tag,
+            )
         } catch (_: Exception) {
-            0
+            XRayOutboundTrafficStats()
         }
     }
 
@@ -137,4 +147,45 @@ object XRayCore {
         }
         return targetDir
     }
+}
+
+internal data class XRayOutboundTrafficStats(
+    val uplinkBytes: Long = 0L,
+    val downlinkBytes: Long = 0L,
+)
+
+/**
+ * Parses AndroidLibXrayLite's compact counter format:
+ * `tag,direction,value;tag,direction,value;`.
+ *
+ * Unknown or malformed records are ignored. Duplicate records are summed
+ * defensively and saturated instead of allowing a signed Long overflow.
+ */
+internal fun parseXRayOutboundTrafficStats(
+    raw: String,
+    tag: String,
+): XRayOutboundTrafficStats {
+    var uplink = 0L
+    var downlink = 0L
+
+    raw.splitToSequence(';').forEach { record ->
+        if (record.isBlank()) return@forEach
+        val parts = record.split(',', limit = 3)
+        if (parts.size != 3 || parts[0] != tag) return@forEach
+        val value = parts[2].toLongOrNull()?.takeIf { it > 0L } ?: return@forEach
+
+        when (parts[1]) {
+            "uplink" -> uplink = saturatingAdd(uplink, value)
+            "downlink" -> downlink = saturatingAdd(downlink, value)
+        }
+    }
+
+    return XRayOutboundTrafficStats(
+        uplinkBytes = uplink,
+        downlinkBytes = downlink,
+    )
+}
+
+private fun saturatingAdd(current: Long, value: Long): Long {
+    return if (current > Long.MAX_VALUE - value) Long.MAX_VALUE else current + value
 }

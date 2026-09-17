@@ -109,6 +109,15 @@ class AppFilterRepository @Inject constructor(
         }
     }
 
+    /** Used by settings import: persist one complete policy before notifying observers. */
+    suspend fun replaceState(state: AppFilterState) {
+        writeMutex.withLock {
+            val normalized = normalizePackages(state.selectedPackages)
+            prefs.setAppFilterState(state.mode.name, normalized)
+            runCatching { dao.replaceAll(normalized) }
+        }
+    }
+
     private suspend fun getSelectedPackagesLocked(): Set<String> {
         val stored = prefs.getAppFilterPackages()
         if (stored != null) return stored

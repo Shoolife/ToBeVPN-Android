@@ -59,6 +59,13 @@ data class ServerSelectionPreferences(
     val automatic: Boolean,
 )
 
+data class PortableDisplayPreferences(
+    val interfaceScale: Float,
+    val fontScale: Float,
+    val boldText: Boolean,
+    val outlinedText: Boolean,
+)
+
 @Singleton
 class PrefsDataStore @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -188,6 +195,8 @@ class PrefsDataStore @Inject constructor(
 
     val themeMode: Flow<String?> = context.dataStore.data.map { it[Keys.THEME_MODE] }
 
+    suspend fun getThemeMode(): String? = context.dataStore.data.first()[Keys.THEME_MODE]
+
     suspend fun setThemeMode(value: String) {
         context.dataStore.edit { it[Keys.THEME_MODE] = value }
     }
@@ -240,6 +249,32 @@ class PrefsDataStore @Inject constructor(
             it.remove(Keys.FONT_SCALE)
             it.remove(Keys.BOLD_TEXT)
             it.remove(Keys.OUTLINED_TEXT)
+        }
+    }
+
+    suspend fun getPortableDisplayPreferences(): PortableDisplayPreferences {
+        val preferences = context.dataStore.data.first()
+        return PortableDisplayPreferences(
+            interfaceScale = normalizeInterfaceScale(
+                (preferences[Keys.INTERFACE_SCALE]
+                    ?: DEFAULT_INTERFACE_SCALE.toDouble()).toFloat(),
+            ),
+            fontScale = normalizeFontScale(
+                (preferences[Keys.FONT_SCALE]
+                    ?: DEFAULT_FONT_SCALE.toDouble()).toFloat(),
+            ),
+            boldText = preferences[Keys.BOLD_TEXT] ?: false,
+            outlinedText = preferences[Keys.OUTLINED_TEXT] ?: false,
+        )
+    }
+
+    /** Applies all display preferences in one emission to avoid a partially scaled UI. */
+    suspend fun setPortableDisplayPreferences(value: PortableDisplayPreferences) {
+        context.dataStore.edit {
+            it[Keys.INTERFACE_SCALE] = normalizeInterfaceScale(value.interfaceScale).toDouble()
+            it[Keys.FONT_SCALE] = normalizeFontScale(value.fontScale).toDouble()
+            it[Keys.BOLD_TEXT] = value.boldText
+            it[Keys.OUTLINED_TEXT] = value.outlinedText
         }
     }
 
@@ -627,6 +662,14 @@ class PrefsDataStore @Inject constructor(
 
     suspend fun setAppFilterPackages(packageNames: Collection<String>) {
         context.dataStore.edit {
+            it[Keys.APP_FILTER_PACKAGES] = encodeAppFilterPackages(packageNames)
+        }
+    }
+
+    /** Keeps the routing mode and package set consistent for collectors. */
+    suspend fun setAppFilterState(mode: String, packageNames: Collection<String>) {
+        context.dataStore.edit {
+            it[Keys.APP_FILTER_MODE] = mode
             it[Keys.APP_FILTER_PACKAGES] = encodeAppFilterPackages(packageNames)
         }
     }
