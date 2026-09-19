@@ -540,10 +540,10 @@
     <string name="whats_new_version">Версия %1$s</string>
     <string name="whats_new_intro">Главные изменения установленной версии</string>
     <string name="whats_new_done">Понятно</string>
-    <string name="whats_new_settings_transfer_title">Экспорт и импорт настроек</string>
-    <string name="whats_new_settings_transfer_desc">Сохраняйте язык, тему, масштаб интерфейса и выбранные для VPN приложения в файл, а затем восстанавливайте только нужные параметры.</string>
-    <string name="whats_new_xray_update_title">Обновлённое VPN-ядро</string>
-    <string name="whats_new_xray_update_desc">Xray-core обновлён до версии 26.9.9. Также улучшен безопасный учёт входящего и исходящего трафика VPN-сессии.</string>
+    <string name="whats_new_fold_layout_title">Удобнее на складных устройствах</string>
+    <string name="whats_new_fold_layout_desc">Главный экран и статистика лучше используют раскрытый экран и подстраиваются при складывании устройства.</string>
+    <string name="whats_new_onboarding_title">Улучшен экран первого запуска</string>
+    <string name="whats_new_onboarding_desc">На планшете элементы расположены ровнее, кнопка «Продолжить» стала компактнее, а переход на главный экран — плавнее.</string>
     <string name="version">Версия</string>
     <string name="xray">XRay</string>
     <string name="language">Язык</string>

@@ -24,6 +24,7 @@ sqlcipher = "4.16.0"
 sqliteKtx = "2.6.2"
 zxing = "3.5.4"
 coil = "3.2.0"
+windowManager = "1.5.1"
 
 [libraries]
 # Compose BOM
@@ -40,6 +41,7 @@ androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = 
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "splashscreen" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+androidx-window = { group = "androidx.window", name = "window", version.ref = "windowManager" }
 
 # Lifecycle
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }

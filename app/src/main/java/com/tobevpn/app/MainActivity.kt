@@ -10,6 +10,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +31,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -35,6 +41,8 @@ import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
 import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
 import com.tobevpn.app.presentation.navigation.AppNavHost
+import com.tobevpn.app.presentation.navigation.MainRoute
+import com.tobevpn.app.presentation.onboarding.OnboardingScreen
 import com.tobevpn.app.presentation.splash.SplashScreen
 import com.tobevpn.app.domain.model.ThemeMode
 import com.tobevpn.app.presentation.theme.ToBeVPNTheme
@@ -63,6 +71,7 @@ class MainActivity : AppCompatActivity() {
     lateinit var vpnToggleController: VpnToggleController
 
     private val quickSettingsConnectRequests = MutableStateFlow(0)
+    private val onboardingPreviewRequests = MutableStateFlow(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val systemSplash = installSplashScreen()
@@ -77,9 +86,11 @@ class MainActivity : AppCompatActivity() {
         dispatchDeepLink(intent)
         dispatchQuickSettingsIntent(intent)
         dispatchQuickSettingsPreferencesIntent(intent)
+        dispatchOnboardingPreviewIntent(intent)
 
         setContent {
             val quickSettingsConnectRequest by quickSettingsConnectRequests.collectAsStateWithLifecycle()
+            val onboardingPreview by onboardingPreviewRequests.collectAsStateWithLifecycle()
             val updateRequired by prefsDataStore.observeUpdateRequired()
                 .collectAsStateWithLifecycle(initialValue = false)
             val notificationPermissionPrompted by prefsDataStore.notificationPermissionPrompted
@@ -154,6 +165,11 @@ class MainActivity : AppCompatActivity() {
                         }.collectAsStateWithLifecycle(initialValue = null)
 
                         val navController = rememberNavController()
+                        val navPreviewAlpha by animateFloatAsState(
+                            targetValue = if (BuildConfig.DEBUG && onboardingPreview) 0f else 1f,
+                            animationSpec = tween(700),
+                            label = "onboardingPreviewNavAlpha",
+                        )
                         Box(modifier = Modifier.fillMaxSize()) {
                             onboardingSeen?.let { seen ->
                                 AppNavHost(
@@ -161,8 +177,32 @@ class MainActivity : AppCompatActivity() {
                                     startFromOnboarding = !seen,
                                     deepLinkBus = deepLinkBus,
                                     quickSettingsConnectRequest = quickSettingsConnectRequest,
-                                    modifier = Modifier.fillMaxSize(),
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer { alpha = navPreviewAlpha },
                                 )
+                            }
+                            if (BuildConfig.DEBUG) {
+                                AnimatedVisibility(
+                                    visible = onboardingPreview,
+                                    modifier = Modifier.fillMaxSize(),
+                                    enter = EnterTransition.None,
+                                    exit = fadeOut(animationSpec = tween(700)),
+                                ) {
+                                    Surface(
+                                        modifier = Modifier.fillMaxSize(),
+                                        color = MaterialTheme.colorScheme.background,
+                                    ) {
+                                        OnboardingScreen(
+                                            preview = true,
+                                            onComplete = {
+                                                navController.navigate(MainRoute) { launchSingleTop = true }
+                                                onboardingPreviewRequests.value = false
+                                                intent?.removeExtra(EXTRA_PREVIEW_ONBOARDING)
+                                            },
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -232,6 +272,7 @@ class MainActivity : AppCompatActivity() {
         dispatchDeepLink(intent)
         dispatchQuickSettingsIntent(intent)
         dispatchQuickSettingsPreferencesIntent(intent)
+        dispatchOnboardingPreviewIntent(intent)
     }
 
     private fun dispatchDeepLink(intent: Intent?) {
@@ -253,10 +294,20 @@ class MainActivity : AppCompatActivity() {
         deepLinkBus.navigateTo(DeepLinkDestination.SERVERS)
     }
 
+    private fun dispatchOnboardingPreviewIntent(intent: Intent?) {
+        if (BuildConfig.DEBUG &&
+            intent?.getBooleanExtra(EXTRA_PREVIEW_ONBOARDING, false) == true
+        ) {
+            onboardingPreviewRequests.value = true
+        }
+    }
+
     companion object {
         private const val TAG = "MainActivity"
         const val ACTION_CONNECT_FROM_QS_TILE = "com.tobevpn.app.action.CONNECT_FROM_QS_TILE"
         const val EXTRA_CONNECT_FROM_QS_TILE = "com.tobevpn.app.extra.CONNECT_FROM_QS_TILE"
+        private const val EXTRA_PREVIEW_ONBOARDING =
+            "com.tobevpn.app.extra.PREVIEW_ONBOARDING"
         private const val ACTION_QS_TILE_PREFERENCES =
             "android.service.quicksettings.action.QS_TILE_PREFERENCES"
     }

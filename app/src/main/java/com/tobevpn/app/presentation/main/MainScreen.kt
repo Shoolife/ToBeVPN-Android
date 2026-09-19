@@ -156,7 +156,9 @@ import com.tobevpn.app.presentation.theme.LocalAppInterfaceScale
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.presentation.theme.VpnRed
+import com.tobevpn.app.presentation.theme.foldPaneWeights
 import com.tobevpn.app.presentation.theme.isLargeTabletLayout
+import com.tobevpn.app.presentation.theme.rememberAppWindowAdaptiveLayout
 import com.tobevpn.app.presentation.theme.responsiveMaxWidth
 import kotlin.math.ceil
 
@@ -194,10 +196,22 @@ fun MainScreen(
     val pageMaxWidth = responsiveMaxWidth(560.dp)
     val tabletDetailsMaxWidth = responsiveMaxWidth(560.dp)
     val tabletReminderMaxWidth = responsiveMaxWidth(520.dp)
-    val useLargeTabletLayout = isLargeTabletLayout()
+    val adaptiveWindowLayout = rememberAppWindowAdaptiveLayout()
+    val useTwoPaneLayout = adaptiveWindowLayout.useExpandedTwoPane
+    val useLargeTabletLayout = isLargeTabletLayout() && !adaptiveWindowLayout.hasVerticalFold
+    var animatedTwoPaneLayout by rememberSaveable {
+        mutableStateOf(useTwoPaneLayout)
+    }
     val isAnonExhausted = authState is AuthState.Anonymous && usageInfo.isExhausted
     val reminderAuth = authState as? AuthState.Authenticated
     val reminderSnooze = subscriptionReminderSnooze
+
+    // Keep the previous layout through an Activity recreation caused by
+    // folding/unfolding, then animate to the layout required by the new window.
+    // On ordinary recomposition this simply follows the current breakpoint.
+    LaunchedEffect(useTwoPaneLayout) {
+        animatedTwoPaneLayout = useTwoPaneLayout
+    }
 
     // Re-sync on every resume (e.g. after payment in Telegram)
     LifecycleResumeEffect(Unit) {
@@ -351,18 +365,70 @@ fun MainScreen(
                 .padding(paddingValues),
             contentAlignment = Alignment.TopCenter,
         ) {
-        if (useLargeTabletLayout) {
+        AnimatedContent(
+            targetState = animatedTwoPaneLayout,
+            modifier = Modifier.fillMaxSize(),
+            transitionSpec = {
+                (fadeIn(
+                    animationSpec = tween(
+                        durationMillis = 280,
+                        delayMillis = 45,
+                        easing = FastOutSlowInEasing,
+                    ),
+                ) + scaleIn(
+                    animationSpec = tween(320, easing = FastOutSlowInEasing),
+                    initialScale = 0.985f,
+                )).togetherWith(
+                    fadeOut(animationSpec = tween(180)) + scaleOut(
+                        animationSpec = tween(220, easing = FastOutSlowInEasing),
+                        targetScale = 0.995f,
+                    ),
+                )
+            },
+            contentAlignment = Alignment.TopCenter,
+            label = "home_adaptive_layout",
+        ) { twoPaneLayout ->
+        val foldableTwoPaneLayout = twoPaneLayout && !useLargeTabletLayout
+        val paneWeights = if (foldableTwoPaneLayout &&
+            adaptiveWindowLayout.hasSeparatingVerticalFold
+        ) {
+            foldPaneWeights(
+                windowWidthDp = adaptiveWindowLayout.widthDp,
+                horizontalPaddingDp = 20f,
+                foldStartFraction = adaptiveWindowLayout.foldStartFraction,
+                foldEndFraction = adaptiveWindowLayout.foldEndFraction,
+            )
+        } else null
+        val leftPaneWeight = when {
+            paneWeights != null -> paneWeights.left
+            foldableTwoPaneLayout -> 0.45f
+            else -> 0.50f
+        }
+        val rightPaneWeight = when {
+            paneWeights != null -> paneWeights.right
+            foldableTwoPaneLayout -> 0.55f
+            else -> 0.50f
+        }
+        if (twoPaneLayout) {
             Row(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 48.dp, vertical = 24.dp),
+                    .padding(
+                        horizontal = if (useLargeTabletLayout) 48.dp else 20.dp,
+                        vertical = 24.dp,
+                    ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(
                     modifier = Modifier
-                        .weight(0.50f)
+                        .weight(leftPaneWeight)
                         .fillMaxHeight()
-                        .offset(x = (-16).dp),
+                        .offset(
+                            x = when {
+                                useLargeTabletLayout -> (-16).dp
+                                else -> 0.dp
+                            },
+                        ),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
@@ -370,7 +436,8 @@ fun MainScreen(
                         connectionState = connectionState,
                         isPreparing = connectionPreparation,
                         blocked = subscriptionUsageBlocked,
-                        enlarged = true,
+                        enlarged = useLargeTabletLayout,
+                        medium = !useLargeTabletLayout,
                         onClick = if (subscriptionUsageBlocked) onBlockedClick else onConnectClick,
                     )
 
@@ -381,7 +448,8 @@ fun MainScreen(
                         isPreparing = connectionPreparation,
                         suppressError = isAnonExhausted || subscriptionUsageBlocked,
                         reminder = appFilterReminder,
-                        enlarged = true,
+                        enlarged = useLargeTabletLayout,
+                        medium = foldableTwoPaneLayout,
                     )
 
                     // The temporary-access notice belongs to the connect
@@ -428,11 +496,19 @@ fun MainScreen(
                     }
                 }
 
+                if (paneWeights != null && paneWeights.hinge > 0f) {
+                    Spacer(
+                        modifier = Modifier
+                            .weight(paneWeights.hinge)
+                            .fillMaxHeight(),
+                    )
+                }
+
                 Box(
                     modifier = Modifier
-                        .weight(0.50f)
+                        .weight(rightPaneWeight)
                         .fillMaxHeight()
-                        .offset(x = (-24).dp),
+                        .offset(x = if (useLargeTabletLayout) (-24).dp else 0.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Column(
@@ -578,6 +654,7 @@ fun MainScreen(
             ) {
                 PaymentSuccessBanner(onDismiss = viewModel::dismissPaymentSuccess)
             }
+        }
         }
         }
         }
@@ -1044,6 +1121,7 @@ private fun ConnectButtonLarge(
     isPreparing: Boolean,
     blocked: Boolean = false,
     enlarged: Boolean = false,
+    medium: Boolean = false,
     onClick: () -> Unit,
 ) {
     val isConnected = connectionState is ConnectionState.Connected
@@ -1075,8 +1153,16 @@ private fun ConnectButtonLarge(
     val rippleIndication = androidx.compose.material3.ripple(
         color = MaterialTheme.colorScheme.onSurface,
     )
-    val buttonSize = if (enlarged) 288.dp else 180.dp
-    val iconSize = if (enlarged) 102.4.dp else 64.dp
+    val buttonSize = when {
+        enlarged -> 288.dp
+        medium -> 264.dp
+        else -> 180.dp
+    }
+    val iconSize = when {
+        enlarged -> 102.4.dp
+        medium -> 94.dp
+        else -> 64.dp
+    }
     Box(
         modifier = Modifier
             .size(buttonSize)
@@ -1111,6 +1197,7 @@ private fun StatusText(
     suppressError: Boolean = false,
     reminder: String? = null,
     enlarged: Boolean = false,
+    medium: Boolean = false,
 ) {
     val disconnected = stringResource(R.string.state_disconnected)
     // Connection errors win over the ambient reminder — once the user has
@@ -1148,6 +1235,11 @@ private fun StatusText(
                 MaterialTheme.typography.displaySmall.copy(
                     fontSize = 35.2.sp,
                     lineHeight = 44.8.sp,
+                )
+            } else if (medium) {
+                MaterialTheme.typography.titleLarge.copy(
+                    fontSize = 26.sp,
+                    lineHeight = 32.sp,
                 )
             } else {
                 MaterialTheme.typography.titleLarge

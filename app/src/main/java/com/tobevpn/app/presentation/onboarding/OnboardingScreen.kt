@@ -62,6 +62,7 @@ import kotlin.math.roundToLong
 @Composable
 fun OnboardingScreen(
     onComplete: () -> Unit,
+    preview: Boolean = false,
     viewModel: OnboardingViewModel = hiltViewModel(),
 ) {
     val isDark = androidx.compose.foundation.isSystemInDarkTheme()
@@ -94,7 +95,9 @@ fun OnboardingScreen(
         abs(densityRatio - 1f) >= DISPLAY_SCALE_HINT_THRESHOLD ||
             abs(configuration.fontScale - 1f) >= DISPLAY_SCALE_HINT_THRESHOLD
     val completeOnboarding = {
-        viewModel.completeOnboarding(shouldShowDisplayScaleHint)
+        if (!preview) {
+            viewModel.completeOnboarding(shouldShowDisplayScaleHint)
+        }
         onComplete()
     }
 
@@ -214,11 +217,13 @@ private fun PhoneOnboardingContent(
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         Button(
             onClick = onComplete,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .widthIn(max = 380.dp)
+                .fillMaxWidth(),
             shape = RoundedCornerShape(14.dp),
             colors = onboardingButtonColors(isDark),
         ) {
@@ -291,6 +296,7 @@ private fun LargeTabletOnboardingContent(
                     .widthIn(max = 560.dp)
                     .fillMaxWidth()
                     .fillMaxHeight(),
+                verticalArrangement = Arrangement.Center,
             ) {
                 val featuresScrollState = rememberScrollState()
                 val topFadeAlpha by animateFloatAsState(
@@ -366,7 +372,7 @@ private fun LargeTabletOnboardingContent(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(32.dp))
 
                 Button(
                     onClick = onComplete,

@@ -67,7 +67,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.dao.TrafficStat
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
-import com.tobevpn.app.presentation.theme.isTabletLayout
+import com.tobevpn.app.presentation.theme.rememberAppWindowAdaptiveLayout
 import com.tobevpn.app.presentation.theme.responsiveMaxWidth
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
@@ -84,10 +84,10 @@ fun StatsScreen(
     viewModel: StatsViewModel = hiltViewModel(),
 ) {
     val pageMaxWidth = responsiveMaxWidth(560.dp)
-    // Charts and rows read better across the whole window, so this page spans
-    // any tablet — not just a landscape one, which would snap back to a narrow
-    // phone-width column the moment the tablet is rotated.
-    val useLargeTabletLayout = isTabletLayout()
+    // Charts and rows read better across the whole window. Include unfolded
+    // foldables here: Pixel Fold reports a 701dp smallest side, just below the
+    // regular 720dp tablet breakpoint, despite exposing a wide inner display.
+    val useLargeTabletLayout = rememberAppWindowAdaptiveLayout().useFullWidthContent
     val period by viewModel.period.collectAsStateWithLifecycle()
     val serverSource by viewModel.serverSource.collectAsStateWithLifecycle()
     val stats by viewModel.stats.collectAsStateWithLifecycle()

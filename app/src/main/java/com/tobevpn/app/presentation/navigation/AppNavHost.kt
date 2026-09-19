@@ -46,7 +46,12 @@ fun AppNavHost(
     val appSessionViewModel = hiltViewModel<AppSessionViewModel>()
     val showDisplayScaleHint by appSessionViewModel.displayScaleHintPending
         .collectAsStateWithLifecycle(initialValue = false)
-    val startDestination: Any = if (startFromOnboarding) OnboardingRoute else MainRoute
+    // DataStore flips onboardingSeen before navigation finishes. Keep the graph's
+    // initial route stable so that its transition is not interrupted, while
+    // startFromOnboarding itself remains live for deep links and quick settings.
+    val startDestination: Any = remember(navController) {
+        if (startFromOnboarding) OnboardingRoute else MainRoute
+    }
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
 
     LaunchedEffect(currentBackStackEntry, startFromOnboarding) {
