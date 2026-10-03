@@ -7,6 +7,7 @@ import com.tobevpn.app.data.repository.AuthRepository
 import com.tobevpn.app.data.repository.BaseStationBypassProfileProbeRepository
 import com.tobevpn.app.data.repository.BaseStationBypassRepository
 import com.tobevpn.app.data.repository.ServerQualityRepository
+import com.tobevpn.app.data.repository.SubscriptionAccessUnavailableException
 import com.tobevpn.app.data.repository.VpnRepository
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.BaseStationBypassAccess
@@ -91,7 +92,10 @@ class ServerListViewModel @Inject constructor(
     val automaticServerSelection: StateFlow<Boolean> = prefsDataStore.automaticServerSelection
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
-    val isAdminProfile: StateFlow<Boolean> = authRepository.observeAuthState()
+    val authState: StateFlow<AuthState> = authRepository.observeAuthState()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, AuthState.Anonymous)
+
+    val isAdminProfile: StateFlow<Boolean> = authState
         .map { state -> (state as? AuthState.Authenticated)?.isAdminProfile == true }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
@@ -133,6 +137,10 @@ class ServerListViewModel @Inject constructor(
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
+    private val _standardAccessUnavailable = MutableStateFlow(false)
+    val standardAccessUnavailable: StateFlow<Boolean> =
+        _standardAccessUnavailable.asStateFlow()
+
     init {
         // Open-screen refresh respects the panel-recommended cadence — we
         // don't want re-entering the list (or coming back from foreground)
@@ -161,6 +169,7 @@ class ServerListViewModel @Inject constructor(
             try {
                 _isLoading.value = true
                 _error.value = null
+                _standardAccessUnavailable.value = false
                 // Anonymous users get a panel user (with 3 GB free trial) on demand.
                 // Without this, opening the server list before MainViewModel has
                 // finished its init leaves shortUuid null and refreshServers fails
@@ -172,8 +181,13 @@ class ServerListViewModel @Inject constructor(
                 }
                 authRepository.syncSubscription(force = force)
                 val result = vpnRepository.refreshServers(forceRefresh = force)
-                result.onFailure { _error.value = it.message }
+                result.onFailure { failure ->
+                    _standardAccessUnavailable.value =
+                        failure is SubscriptionAccessUnavailableException
+                    _error.value = failure.message
+                }
                 result.onSuccess { refreshedServers ->
+                    _standardAccessUnavailable.value = false
                     if (force) {
                         measureStandardProfiles(
                             servers = refreshedServers,

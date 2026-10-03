@@ -1,5 +1,7 @@
 package com.tobevpn.app.presentation.settings
 
+import com.tobevpn.app.billing.LocalExternalPurchasesAllowed
+import com.tobevpn.app.billing.paymentUnavailableMessage
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -96,6 +98,7 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import kotlinx.coroutines.delay
 import java.io.File
@@ -689,15 +692,20 @@ internal fun AccountCard(
                                 )
                                 if (authState.plan == UserPlan.EXPIRED) {
                                     Spacer(modifier = Modifier.height(6.dp))
+                                    val externalPurchasesAllowed = LocalExternalPurchasesAllowed.current
                                     Text(
-                                        text = stringResource(R.string.renew_in_bot),
+                                        text = if (externalPurchasesAllowed) {
+                                            stringResource(R.string.renew_in_bot)
+                                        } else {
+                                            paymentUnavailableMessage()
+                                        },
                                         style = fixedLayoutTextStyle(
                                             MaterialTheme.typography.bodySmall,
                                         ),
                                         color = VpnRed,
                                         textAlign = TextAlign.Center,
-                                        maxLines = 1,
-                                        softWrap = false,
+                                        maxLines = if (externalPurchasesAllowed) 1 else 3,
+                                        softWrap = !externalPurchasesAllowed,
                                         overflow = TextOverflow.Ellipsis,
                                     )
                                 } else if (

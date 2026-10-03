@@ -8,6 +8,7 @@ import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.animation.AnimatedVisibility
@@ -53,6 +54,9 @@ import com.tobevpn.app.util.DeepLinkBus
 import com.tobevpn.app.util.DeepLinkDestination
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.vpn.VpnToggleController
+import com.tobevpn.app.billing.LocalExternalPurchasesAllowed
+import com.tobevpn.app.billing.LocalPlayBillingCountry
+import com.tobevpn.app.billing.PlayBillingCountry
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -69,6 +73,9 @@ class MainActivity : AppCompatActivity() {
 
     @Inject
     lateinit var vpnToggleController: VpnToggleController
+
+    @Inject
+    lateinit var playBillingCountry: PlayBillingCountry
 
     private val quickSettingsConnectRequests = MutableStateFlow(0)
     private val onboardingPreviewRequests = MutableStateFlow(false)
@@ -88,7 +95,12 @@ class MainActivity : AppCompatActivity() {
         dispatchQuickSettingsPreferencesIntent(intent)
         dispatchOnboardingPreviewIntent(intent)
 
+        playBillingCountry.refresh()
+
         setContent {
+            val externalPurchasesAllowed by playBillingCountry.externalPurchasesAllowed
+                .collectAsStateWithLifecycle()
+            val playCountry by playBillingCountry.country.collectAsStateWithLifecycle()
             val quickSettingsConnectRequest by quickSettingsConnectRequests.collectAsStateWithLifecycle()
             val onboardingPreview by onboardingPreviewRequests.collectAsStateWithLifecycle()
             val updateRequired by prefsDataStore.observeUpdateRequired()
@@ -151,6 +163,10 @@ class MainActivity : AppCompatActivity() {
                 boldText = boldText,
                 outlinedText = outlinedText,
             ) {
+                CompositionLocalProvider(
+                    LocalExternalPurchasesAllowed provides externalPurchasesAllowed,
+                    LocalPlayBillingCountry provides playCountry,
+                ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     // Surface establishes the app's background color and
                     // LocalContentColor for screens that don't use Scaffold
@@ -240,6 +256,7 @@ class MainActivity : AppCompatActivity() {
                             onQuit = { finishAffinity() },
                         )
                     }
+                }
                 }
             }
         }

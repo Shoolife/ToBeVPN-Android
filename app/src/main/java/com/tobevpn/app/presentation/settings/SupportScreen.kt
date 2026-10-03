@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.settings
 
+import com.tobevpn.app.billing.LocalExternalPurchasesAllowed
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
@@ -61,6 +62,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
@@ -86,6 +88,11 @@ fun SupportScreen(
     }
 
     // Question → answer string-resource pairs, rendered as an expandable list.
+    val paymentFaqAnswer = if (!LocalExternalPurchasesAllowed.current) {
+        R.string.faq_a_pay_play
+    } else {
+        R.string.faq_a_pay
+    }
     val faq = listOf(
         R.string.faq_q_connect to R.string.faq_a_connect,
         R.string.faq_q_connecting_check to R.string.faq_a_connecting_check,
@@ -93,7 +100,7 @@ fun SupportScreen(
         R.string.faq_q_server to R.string.faq_a_server,
         R.string.faq_q_stats to R.string.faq_a_stats,
         R.string.faq_q_quick_settings to R.string.faq_a_quick_settings,
-        R.string.faq_q_pay to R.string.faq_a_pay,
+        R.string.faq_q_pay to paymentFaqAnswer,
         R.string.faq_q_activate to R.string.faq_a_activate,
         R.string.faq_q_discount to R.string.faq_a_discount,
         R.string.faq_q_devices to R.string.faq_a_devices,

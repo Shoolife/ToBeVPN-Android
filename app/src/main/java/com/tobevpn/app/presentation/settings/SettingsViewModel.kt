@@ -1,5 +1,7 @@
 package com.tobevpn.app.presentation.settings
 
+import com.tobevpn.app.billing.PlayBillingCountry
+import com.tobevpn.app.billing.PlayBillingStatus
 import android.content.ClipData
 import android.content.Context
 import android.content.Intent
@@ -63,6 +65,7 @@ class SettingsViewModel @Inject constructor(
     private val prefsDataStore: PrefsDataStore,
     private val sessionDao: SessionDao,
     private val diagnosticLogManager: DiagnosticLogManager,
+    private val playBillingCountry: PlayBillingCountry,
     deepLinkBus: DeepLinkBus,
     appFilterRepository: AppFilterRepository,
 ) : ViewModel() {
@@ -89,6 +92,11 @@ class SettingsViewModel @Inject constructor(
     val xrayVersion: StateFlow<String?> = _xrayVersion.asStateFlow()
 
     val diagnosticLogState = diagnosticLogManager.state
+
+    /** Google Play country check, shown only in the hidden diagnostics mode. */
+    val playBillingStatus: StateFlow<PlayBillingStatus> = playBillingCountry.status
+
+    fun refreshPlayBillingCountry() = playBillingCountry.refresh()
 
     private val _diagnosticLogHistoryState =
         MutableStateFlow(DiagnosticLogHistoryUiState())

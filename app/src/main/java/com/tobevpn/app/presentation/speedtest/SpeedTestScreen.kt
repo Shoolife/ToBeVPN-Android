@@ -85,6 +85,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
@@ -106,7 +107,6 @@ import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.presentation.theme.VpnRed
 import java.text.SimpleDateFormat
 import java.util.Date
-import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -1052,7 +1052,7 @@ private fun HistoryEntryCard(
     isLatest: Boolean,
     modifier: Modifier = Modifier,
 ) {
-    val locale = Locale.getDefault()
+    val locale = LocalConfiguration.current.locales[0]
     val dateText = remember(entry.timestampMillis, locale) {
         SimpleDateFormat("dd MMM · HH:mm", locale).format(Date(entry.timestampMillis))
     }

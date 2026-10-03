@@ -90,6 +90,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.saveable.rememberSaveable
 import com.tobevpn.app.R
+import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.BaseStationBypassAccess
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.ServerSource
@@ -206,9 +207,12 @@ fun ServerListScreen(
     val selectedServerId by viewModel.selectedServerId.collectAsStateWithLifecycle()
     val selectedServerKey by viewModel.selectedServerKey.collectAsStateWithLifecycle()
     val automaticServerSelection by viewModel.automaticServerSelection.collectAsStateWithLifecycle()
+    val authState by viewModel.authState.collectAsStateWithLifecycle()
     val isAdminProfile by viewModel.isAdminProfile.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val standardAccessUnavailable by
+        viewModel.standardAccessUnavailable.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val isTv = isTelevisionUi()
     var selectedCategory by rememberSaveable { mutableStateOf(ServerCategory.STANDARD) }
@@ -456,6 +460,19 @@ fun ServerListScreen(
                     }
                     displayedLoading && displayedServers.isEmpty() -> {
                         CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.Center),
+                        )
+                    }
+                    !showingBypass &&
+                        standardAccessUnavailable &&
+                        authState is AuthState.Anonymous -> {
+                        BaseStationBypassAccessMessage(
+                            title = stringResource(R.string.temporary_access_ended_title),
+                            description = stringResource(
+                                R.string.temporary_access_ended_description,
+                            ),
+                            action = stringResource(R.string.temporary_access_authorize),
+                            onAction = onNavigateToAuth,
                             modifier = Modifier.align(Alignment.Center),
                         )
                     }

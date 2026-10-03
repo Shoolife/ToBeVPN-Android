@@ -1,5 +1,8 @@
 package com.tobevpn.app.presentation.settings
 
+import java.util.Locale
+import androidx.compose.ui.platform.LocalConfiguration
+import com.tobevpn.app.billing.PlayBillingStatus
 import android.content.Intent
 import android.net.Uri
 import android.text.format.Formatter
@@ -93,6 +96,7 @@ fun AboutScreen(
 ) {
     val xrayVersion by viewModel.xrayVersion.collectAsStateWithLifecycle()
     val diagnosticState by viewModel.diagnosticLogState.collectAsStateWithLifecycle()
+    val playBillingStatus by viewModel.playBillingStatus.collectAsStateWithLifecycle()
     val diagnosticHistoryState by
         viewModel.diagnosticLogHistoryState.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -308,6 +312,11 @@ fun AboutScreen(
                             viewModel.loadDiagnosticLogHistory()
                         },
                         onShowInfo = { showDiagnosticInfo = true },
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    PlayBillingDiagnosticsCard(
+                        status = playBillingStatus,
+                        onRefresh = viewModel::refreshPlayBillingCountry,
                     )
                 }
             }
@@ -526,6 +535,117 @@ private fun DiagnosticLogCard(
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * Hidden-diagnostics view of the Google Play country check, so a support
+ * case can compare what Google Play reports with the account on the phone.
+ */
+@Composable
+private fun PlayBillingDiagnosticsCard(
+    status: PlayBillingStatus,
+    onRefresh: () -> Unit,
+) {
+    val locale = LocalConfiguration.current.locales[0]
+    val notAvailable = stringResource(R.string.play_diag_value_none)
+    val countryText = status.country
+        ?.takeIf { it.isNotBlank() }
+        ?.let { code ->
+            val name = Locale("", code).getDisplayCountry(locale)
+            if (name.isBlank() || name.equals(code, ignoreCase = true)) code else "$code · $name"
+        }
+        ?: notAvailable
+    val checkedText = status.checkedAtMillis
+        ?.let {
+            java.text.DateFormat.getDateTimeInstance(
+                java.text.DateFormat.SHORT,
+                java.text.DateFormat.MEDIUM,
+                locale,
+            ).format(java.util.Date(it))
+        }
+        ?: notAvailable
+    val rows = buildList {
+        add(stringResource(R.string.play_diag_build) to stringResource(
+            if (status.distribution) R.string.play_diag_build_play else R.string.play_diag_build_direct,
+        ))
+        add(stringResource(R.string.play_diag_country) to countryText)
+        add(stringResource(R.string.play_diag_payment) to stringResource(
+            if (status.externalPurchasesAllowed) R.string.play_diag_payment_allowed else R.string.play_diag_payment_blocked,
+        ))
+        add(stringResource(R.string.play_diag_checked) to checkedText)
+        add(stringResource(R.string.play_diag_result) to (status.lastResult ?: notAvailable))
+        add(stringResource(R.string.play_diag_installer) to (status.installer ?: notAvailable))
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.play_diag_title),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            rows.forEach { (label, value) ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text(
+                        text = label,
+                        modifier = Modifier.weight(1f),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(modifier = Modifier.size(12.dp))
+                    Text(
+                        text = value,
+                        modifier = Modifier.weight(1f),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        textAlign = TextAlign.End,
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.play_diag_account_hint),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (status.distribution) {
+                Spacer(modifier = Modifier.height(12.dp))
+                OutlinedButton(
+                    onClick = onRefresh,
+                    enabled = !status.checking,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text(
+                        text = stringResource(
+                            if (status.checking) R.string.play_diag_checking else R.string.play_diag_refresh,
+                        ),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }

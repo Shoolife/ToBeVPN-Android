@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.main
 
+import com.tobevpn.app.billing.PlayBillingCountry
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -8,6 +9,7 @@ import android.net.VpnService
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.gson.Gson
+import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.PendingPurchaseState
 import com.tobevpn.app.data.local.PrefsDataStore
@@ -85,6 +87,7 @@ class MainViewModel @Inject constructor(
     private val serverQualityRepository: ServerQualityRepository,
     private val deepLinkBus: DeepLinkBus,
     private val paymentNotifications: PaymentNotifications,
+    private val playBillingCountry: PlayBillingCountry,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -570,7 +573,12 @@ class MainViewModel @Inject constructor(
     }
 
     fun openPurchaseUrl(context: Context, paymentUrl: String?) {
-        if (subscriptionUsageBlocked.value || paymentUrl.isNullOrBlank()) return
+        if (!playBillingCountry.externalPurchasesAllowed.value ||
+            subscriptionUsageBlocked.value ||
+            paymentUrl.isNullOrBlank()
+        ) {
+            return
+        }
         launchGuarded("Open purchase URL") purchase@{
             if (authRepository.pingHwidOnly()) {
                 clearPurchaseState()

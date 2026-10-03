@@ -117,6 +117,20 @@ class VpnToggleController @Inject constructor(
             SafeDiagnostics.trace(TAG, "Automatic server selection kept the cached choice")
             return
         }
+        // A fresh installation has no persisted choice. Publish a usable
+        // server immediately so Home does not sit on "Choose a server" while
+        // the bounded TCP sweep ranks every endpoint. The final best result is
+        // still persisted below as soon as probing finishes.
+        val selectionMissing = selection.selectedId.isNullOrBlank() &&
+            selection.selectedKey.isNullOrBlank()
+        if (forceSelection && selectionMissing) {
+            immediateAutomaticServer(sourceServers)?.let { immediate ->
+                prefsDataStore.setAutomaticSelectedServer(
+                    id = stableServerId(immediate),
+                    key = serverSelectionKey(immediate),
+                )
+            }
+        }
         val best = serverQualityRepository.selectBestServer(sourceServers) ?: return
         SafeDiagnostics.trace(
             TAG,
@@ -291,3 +305,9 @@ internal fun shouldKeepAutomaticSelectionOnRefresh(
     selectedStillAvailable: Boolean,
 ): Boolean = selectedStillAvailable &&
     (source == ServerSource.BASE_STATION_BYPASS || !forceSelection)
+
+/** Fast, non-probing fallback used only before the first automatic ranking. */
+internal fun immediateAutomaticServer(servers: List<Server>): Server? {
+    val available = servers.filter(Server::isAvailable)
+    return available.firstOrNull(Server::isOnline) ?: available.firstOrNull()
+}

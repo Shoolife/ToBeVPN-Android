@@ -27,6 +27,14 @@ import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * The subscription endpoint returned only its explicit expired/access-denied
+ * sentinel profile. Keeping this distinct from a network/parsing failure lets
+ * the UI explain the next action without treating every empty response as an
+ * exhausted trial.
+ */
+class SubscriptionAccessUnavailableException : IOException("Доступ к серверам закончился")
+
 @Singleton
 class VpnRepository @Inject constructor(
     private val serverDao: ServerDao,
@@ -135,11 +143,18 @@ class VpnRepository @Inject constructor(
         // Drop the panel's "subscription expired" placeholder link so it
         // never appears in the UI or reaches xray.
         if (servers.isEmpty()) {
-            if (parsedServers.none { it.isSentinel }) {
+            val containsAccessSentinel = parsedServers.any { it.isSentinel }
+            if (!containsAccessSentinel) {
                 keepOwnedCacheOnRefreshMiss(shortUuid)?.let { return Result.success(it) }
             }
             clearServerCache()
-            return Result.failure(Exception("Нет доступных серверов"))
+            return Result.failure(
+                if (containsAccessSentinel) {
+                    SubscriptionAccessUnavailableException()
+                } else {
+                    Exception("Нет доступных серверов")
+                },
+            )
         }
 
         val cachedServers = serverDao.getAll()

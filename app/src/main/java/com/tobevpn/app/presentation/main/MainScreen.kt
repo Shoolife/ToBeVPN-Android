@@ -1,5 +1,7 @@
 package com.tobevpn.app.presentation.main
 
+import com.tobevpn.app.billing.LocalExternalPurchasesAllowed
+import com.tobevpn.app.billing.paymentUnavailableMessage
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
@@ -129,6 +131,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import com.tobevpn.app.data.remote.dto.PurchasePlanDto
 import com.tobevpn.app.domain.model.AuthState
@@ -253,9 +256,10 @@ fun MainScreen(
         prevBlocked.value = subscriptionUsageBlocked
     }
 
+    val externalPurchasesEnabled = LocalExternalPurchasesAllowed.current
     val openPurchaseUrl: (String?) -> Unit = { url ->
         val currentActivity = activity
-        if (!url.isNullOrBlank() && currentActivity != null) {
+        if (externalPurchasesEnabled && !url.isNullOrBlank() && currentActivity != null) {
             viewModel.openPurchaseUrl(currentActivity, url)
         }
     }
@@ -687,6 +691,7 @@ fun MainScreen(
             purchasePlansLoaded = purchasePlansLoaded,
             currentLimits = currentLimits,
             initiallySelectCurrentTariff = selectCurrentTariffOnSubscriptionOpen,
+            externalPurchasesEnabled = externalPurchasesEnabled,
             onLoadPurchasePlans = viewModel::loadPurchasePlans,
             onOpenPurchaseUrl = openPurchaseUrl,
             onDismiss = { showSubscriptionSheet = false },
@@ -2099,6 +2104,7 @@ private fun SubscriptionBottomSheet(
     purchasePlansLoaded: Boolean,
     currentLimits: CurrentPlanLimits?,
     initiallySelectCurrentTariff: Boolean,
+    externalPurchasesEnabled: Boolean,
     onLoadPurchasePlans: () -> Unit,
     onOpenPurchaseUrl: (String?) -> Unit,
     onDismiss: () -> Unit,
@@ -2191,7 +2197,9 @@ private fun SubscriptionBottomSheet(
                             .alpha(sheetContentAlpha)
                             .navigationBarsPadding()
                             .padding(horizontal = 24.dp)
-                            .padding(bottom = 32.dp),
+                            .padding(
+                                bottom = if (externalPurchasesEnabled) 20.dp else 8.dp,
+                            ),
                     ) {
             // Header
             Text(
@@ -2368,6 +2376,32 @@ private fun SubscriptionBottomSheet(
             }
             }
 
+            if (authState is AuthState.Anonymous) {
+                // Anonymous users see only their current plan and a sign-in
+                // action: tariffs and prices make sense only for an account.
+                Spacer(modifier = Modifier.height(20.dp))
+                Button(
+                    onClick = {
+                        onDismiss()
+                        onNavigateToAuth()
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    // Match the "Купить" / "Сканировать QR" CTA family.
+                    colors = if (isDarkTheme) {
+                        androidx.compose.material3.ButtonDefaults.buttonColors()
+                    } else {
+                        androidx.compose.material3.ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF3F3F3F),
+                            contentColor = Color.White,
+                        )
+                    },
+                ) {
+                    SubscriptionActionText(stringResource(R.string.subscription_sign_in_action))
+                }
+            } else {
             Spacer(modifier = Modifier.height(20.dp))
             HorizontalDivider()
             Spacer(modifier = Modifier.height(20.dp))
@@ -2544,7 +2578,9 @@ private fun SubscriptionBottomSheet(
                                         title = planTitle(d.days),
                                         priceDisplay = displayedPrice.finalPrice,
                                         description = description,
-                                        botPaymentUrl = d.botPaymentUrl.takeUnless { purchasePlansFromCache },
+                                        botPaymentUrl = d.botPaymentUrl.takeUnless {
+                                            purchasePlansFromCache || !externalPurchasesEnabled
+                                        },
                                         originalPriceDisplay = displayedPrice.originalPrice,
                                         discountPercent = displayedPrice.discountPercent,
                                     )
@@ -2752,7 +2788,8 @@ private fun SubscriptionBottomSheet(
                                         originalPriceDisplay = plan.originalPriceDisplay,
                                         discountPercent = plan.discountPercent,
                                         description = plan.description,
-                                        selected = selectedPlan == plan.key,
+                                        selected = externalPurchasesEnabled && selectedPlan == plan.key,
+                                        enabled = externalPurchasesEnabled,
                                         onClick = { selectedPlan = plan.key },
                                     )
                                     Spacer(modifier = Modifier.height(8.dp))
@@ -2777,49 +2814,28 @@ private fun SubscriptionBottomSheet(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // How to buy hint
-                Text(
-                    text = stringResource(R.string.payment_via_telegram),
-                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = 16.dp),
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                )
-
-                if (authState is AuthState.Anonymous) {
-                    Button(
-                        onClick = {
-                            onDismiss()
-                            onNavigateToAuth()
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        // Match the "Купить" / "Сканировать QR" CTA family.
-                        colors = if (isDarkTheme) {
-                            androidx.compose.material3.ButtonDefaults.buttonColors()
-                        } else {
-                            androidx.compose.material3.ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF3F3F3F),
-                                contentColor = Color.White,
-                            )
-                        },
-                    ) {
-                        SubscriptionActionText(stringResource(R.string.login_action))
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
+                // Where payment is allowed the purchase button sits right under
+                // the list. Otherwise explain why there is no button, naming the
+                // Google Play country.
+                if (!externalPurchasesEnabled) {
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = stringResource(R.string.login_required_for_purchase),
+                        text = paymentUnavailableMessage(),
                         style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
                     )
+                }
+
+                if (!externalPurchasesEnabled) {
+                    // Google Play distributes a consumption-only build. Plans and
+                    // prices remain informational, but this screen must not start
+                    // or deep-link into an external purchase flow.
                 } else {
                     val selectedLabel = periods.firstOrNull { it.key == selectedPlan }
                         ?: periods.first()
@@ -2891,6 +2907,7 @@ private fun SubscriptionBottomSheet(
                     }
                 }
                     }
+            }
                 }
             }
         }
@@ -3352,6 +3369,7 @@ private fun PlanOption(
     discountPercent: Int,
     description: String,
     selected: Boolean,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     // On light theme, selected row uses the brand card fill (same neutral
@@ -3376,6 +3394,7 @@ private fun PlanOption(
     // out into a square.
     Card(
         onClick = onClick,
+        enabled = enabled,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
@@ -3404,23 +3423,25 @@ private fun PlanOption(
             } else {
                 Color.White
             }
-            Box(
-                modifier = Modifier
-                    .size(20.dp)
-                    .clip(CircleShape)
-                    .background(ringColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (selected) {
-                    Box(
-                        modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(dotColor),
-                    )
+            if (enabled) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(ringColor),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (selected) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(dotColor),
+                        )
+                    }
                 }
+                Spacer(modifier = Modifier.width(12.dp))
             }
-            Spacer(modifier = Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,

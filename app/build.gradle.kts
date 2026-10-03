@@ -47,8 +47,8 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = versionCodeOverride ?: 75
-        versionName = "1.0.74"
+        versionCode = versionCodeOverride ?: 80
+        versionName = "1.0.79"
 
         // Direct APK releases can use the GitHub self-updater. Google Play
         // builds override this flag because Play policy requires updates to
@@ -290,6 +290,9 @@ dependencies {
     // ML Kit Barcode Scanner (for linking TV via QR)
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     implementation(libs.zxing.core)
+
+    // Google Play Billing: only to read the Play account country (external payment rules).
+    implementation(libs.play.billing.ktx)
 
     // SQLCipher
     implementation(libs.sqlcipher)
