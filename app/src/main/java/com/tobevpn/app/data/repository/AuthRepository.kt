@@ -6,10 +6,12 @@ import com.tobevpn.app.data.device.DeviceIdProvider
 import com.tobevpn.app.data.device.DeviceFingerprintProvider
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.local.SessionStore
+import android.os.SystemClock
 import com.tobevpn.app.data.local.dao.SessionDao
 import com.tobevpn.app.data.local.entity.SessionEntity
 import com.tobevpn.app.data.remote.BootstrapManager
 import com.tobevpn.app.data.remote.BotApi
+import com.tobevpn.app.data.remote.SubscriptionPingResult
 import com.tobevpn.app.data.remote.SubscriptionPinger
 import com.tobevpn.app.data.remote.dto.AuthRequestDto
 import com.tobevpn.app.data.remote.dto.CurrentPlanDto
@@ -25,9 +27,12 @@ import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.util.SafeDiagnostics
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -70,6 +75,8 @@ data class CurrentSubscriptionPlanInfo(
     val trafficLimitBytes: Long?,
     val deviceLimit: Int?,
     val expiresAtMillis: Long?,
+    /** Null when the plan has no reset (traffic_limit_strategy NO_RESET). */
+    val trafficResetAtMillis: Long?,
     val isActive: Boolean?,
     val isExpired: Boolean?,
     val isTrial: Boolean?,
@@ -97,6 +104,7 @@ class AuthRepository @Inject constructor(
 ) {
     companion object {
         private const val TAG = "AuthRepository"
+        private const val RESET_REFETCH_INTERVAL_MS = 10L * 60L * 1000L
     }
 
     private val _subscriptionResetEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -376,11 +384,13 @@ class AuthRepository @Inject constructor(
             withFreshDeviceSessionRetry {
                 val response = botApi.getCurrentPlan()
                 if (response.success) {
-                    response.data?.toCurrentSubscriptionPlanInfo()
+                    response.data?.toCurrentSubscriptionPlanInfo()?.also { rememberTrafficReset(it) }
                 } else {
                     null
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             SafeDiagnostics.warn(TAG, "Current plan request failed: ${SafeDiagnostics.failureCategory(error)}")
             null
@@ -452,6 +462,7 @@ class AuthRepository @Inject constructor(
             )
         }
         planInfo?.trafficLimitBytes?.let { usageRepository.updateLimits(it, 0) }
+        planInfo?.let { rememberTrafficReset(it) }
 
         val newShortUuid = sessionDao.getSession()?.shortUuid
         if (oldShortUuid != newShortUuid || !newShortUuid.isNullOrBlank()) {
@@ -491,6 +502,7 @@ class AuthRepository @Inject constructor(
 
     private suspend fun applyCurrentPlanHeartbeat(data: CurrentPlanDto?) {
         val planInfo = data?.toCurrentSubscriptionPlanInfo() ?: return
+        rememberTrafficReset(planInfo)
         val sessionBefore = sessionDao.getSession() ?: return
         val nextUrl = planInfo.subscriptionUrl
         val subscriptionUrlChanged = !nextUrl.isNullOrBlank() &&
@@ -545,6 +557,15 @@ class AuthRepository @Inject constructor(
             (text.contains("invalid or expired") && text.contains("access token"))
     }
 
+    /**
+     * Keeps the next traffic reset from a current-plan response (shown under
+     * the traffic bar, in the subscription sheet and in traffic alerts).
+     */
+    private suspend fun rememberTrafficReset(planInfo: CurrentSubscriptionPlanInfo) {
+        if (!planInfo.hasPlanData) return
+        prefsDataStore.setTrafficResetAt(planInfo.trafficResetAtMillis)
+    }
+
     private suspend fun clearLinkedIdentity() {
         val session = sessionDao.getSession() ?: return
         val hadAccountUsage = session.userPlan == "PAID" || session.userPlan == "ADMIN"
@@ -574,6 +595,7 @@ class AuthRepository @Inject constructor(
         }
         prefsDataStore.clearPendingPurchase()
         prefsDataStore.clearSubscriptionSyncTimestamp()
+        prefsDataStore.setTrafficResetAt(null)
         vpnRepository.clearCachedServers()
         baseStationBypassRepository.clearCachedServers()
         bootstrapManager.clear()
@@ -736,6 +758,8 @@ class AuthRepository @Inject constructor(
             ),
             deviceLimit = subscription?.deviceLimit ?: snapshot?.deviceLimit,
             expiresAtMillis = expiresAtMillis,
+            trafficResetAtMillis = epochTimestampToMillis(subscription?.nextTrafficResetAtTs)
+                ?: parsePanelExpireAtMillisOrNull(subscription?.nextTrafficResetAt),
             isActive = isActive,
             isExpired = isExpired,
             isTrial = subscription?.isTrial ?: snapshot?.isTrial,
@@ -1019,10 +1043,18 @@ class AuthRepository @Inject constructor(
             sessionStore.update { current ->
                 current.copy(
                     userPlan = resolvedPlan,
-                    planDisplayName = currentPlanInfo
-                        ?.displayName
-                        ?.takeIf { resolvedPlan != "EXPIRED" },
-                    planExpiresAt = currentPlanInfo?.expiresAtMillis,
+                    // A failed plan request (offline, cancelled) keeps the
+                    // known name and expiry instead of blanking them.
+                    planDisplayName = if (currentPlanInfo == null) {
+                        current.planDisplayName
+                    } else {
+                        currentPlanInfo.displayName?.takeIf { resolvedPlan != "EXPIRED" }
+                    },
+                    planExpiresAt = if (currentPlanInfo == null) {
+                        current.planExpiresAt
+                    } else {
+                        currentPlanInfo.expiresAtMillis
+                    },
                 )
             }
             currentPlanInfo?.trafficLimitBytes?.let { usageRepository.updateLimits(it, 0) }
@@ -1076,7 +1108,9 @@ class AuthRepository @Inject constructor(
      *
      * @param overwriteUsage when true, writes server traffic usage into local usage.
      *                       Pass false during an active VPN session to avoid clobbering
-     *                       the live local counter with a stale panel value.
+     *                       the live local counter with a stale panel value. Only
+     *                       trial/anonymous usage has such a counter: paid usage is
+     *                       server-owned and is always taken from the panel.
      * @param force          when true, bypass the panel-recommended refresh
      *                       cadence (`profile-update-interval`, default 12h).
      *                       Set this for explicit user-initiated refreshes
@@ -1141,6 +1175,8 @@ class AuthRepository @Inject constructor(
                             sessionStore.update { it.copy(email = panelUser.email) }
                         }
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (error: Exception) {
                     SafeDiagnostics.warn(TAG, "Panel user refresh failed: ${SafeDiagnostics.failureCategory(error)}")
                 }
@@ -1150,10 +1186,19 @@ class AuthRepository @Inject constructor(
                 val updated = sessionStore.update { current ->
                     current.copy(
                         userPlan = resolvedPlan,
-                        planDisplayName = currentPlanInfo
-                            ?.displayName
-                            ?.takeIf { resolvedPlan != "EXPIRED" },
-                        planExpiresAt = currentPlanInfo?.expiresAtMillis,
+                        // A failed plan request (offline, cancelled by the
+                        // server list's sync timeout) keeps the known name
+                        // and expiry instead of blanking them on Home.
+                        planDisplayName = if (currentPlanInfo == null) {
+                            current.planDisplayName
+                        } else {
+                            currentPlanInfo.displayName?.takeIf { resolvedPlan != "EXPIRED" }
+                        },
+                        planExpiresAt = if (currentPlanInfo == null) {
+                            current.planExpiresAt
+                        } else {
+                            currentPlanInfo.expiresAtMillis
+                        },
                         subscriptionUrl = currentPlanInfo?.subscriptionUrl ?: current.subscriptionUrl,
                         isAdminProfile = currentPlanInfo?.isAdmin ?: current.isAdminProfile,
                     )
@@ -1202,17 +1247,25 @@ class AuthRepository @Inject constructor(
                 }
                 profile?.intervalMs
             }.onFailure { error ->
+                // A cancelled sync (server list's wait limit) must stop here,
+                // not record a sync that did not happen.
+                if (error is CancellationException) throw error
                 SafeDiagnostics.warn(TAG, "Subscription profile refresh failed: ${SafeDiagnostics.failureCategory(error)}")
             }.getOrNull()
             persistSyncState(intervalMs)
 
-            if (overwriteUsage && profileTrafficUsedBytes != null) {
-                val keepDeviceScopedUsage = session.authState != "AUTHENTICATED" || session.userPlan == "FREE_TRIAL"
+            val keepDeviceScopedUsage = session.authState != "AUTHENTICATED" || session.userPlan == "FREE_TRIAL"
+            // Paid usage has no live local counter, so skipping it while the
+            // VPN was connected froze Home and the 20/10/5% alerts until the
+            // user disconnected.
+            if ((overwriteUsage || !keepDeviceScopedUsage) && profileTrafficUsedBytes != null) {
                 val subscriptionTrafficUsedBytes = profileTrafficUsedBytes
                 val trafficUsedBytes = if (keepDeviceScopedUsage) {
                     try {
                         val resp = botApi.getDeviceTraffic()
                         maxOf(resp.data?.anonTrafficBytes ?: 0, subscriptionTrafficUsedBytes)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
                     } catch (_: Exception) {
                         subscriptionTrafficUsedBytes
                     }
@@ -1228,6 +1281,8 @@ class AuthRepository @Inject constructor(
             if (session.authState == "AUTHENTICATED") {
                 registerCurrentDevice()
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (error: Exception) {
             SafeDiagnostics.warn(TAG, "Subscription sync failed: ${SafeDiagnostics.failureCategory(error)}")
         }
@@ -1266,9 +1321,40 @@ class AuthRepository @Inject constructor(
             ) ?: return wasBlocked
             prefsDataStore.setSubscriptionUsageBlocked(shortUuid, result.isUsageBlocked)
             prefsDataStore.setUpdateRequired(result.isUpdateRequired)
+            applyPingUsage(session, result)
             result.isUsageBlocked
         } catch (_: Exception) {
             wasBlocked
+        }
+    }
+
+    /**
+     * The access check runs every minute while the VPN is connected
+     * (VpnConnectionManager heartbeat) and its response carries the
+     * subscription usage: a paid plan's usage on Home and the 20/10/5%
+     * traffic alerts follow it without an extra request. Trial/anonymous
+     * usage is counted live from the tunnel and is left alone.
+     */
+    private val backgroundScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    // When applyPingUsage last refetched the plan for a passed reset date.
+    @Volatile
+    private var lastResetRefetchAt = 0L
+
+    private suspend fun applyPingUsage(session: SessionEntity, result: SubscriptionPingResult) {
+        if (session.authState != "AUTHENTICATED" || session.userPlan == "FREE_TRIAL") return
+        result.trafficLimitBytes?.let { usageRepository.updateLimits(it, 0) }
+        result.trafficUsedBytes?.let { syncUsageFromServer(it, isAnonymous = false) }
+        // A passed reset date means a new period began: fetch the next one.
+        // The panel can lag behind its own reset, so not on every ping.
+        val resetAt = prefsDataStore.getTrafficResetAt()
+        val now = SystemClock.elapsedRealtime()
+        if (resetAt != null && resetAt <= System.currentTimeMillis() &&
+            (lastResetRefetchAt == 0L || now - lastResetRefetchAt >= RESET_REFETCH_INTERVAL_MS)
+        ) {
+            lastResetRefetchAt = now
+            // In the background: the connect path waits for this ping.
+            backgroundScope.launch { getCurrentSubscriptionPlan() }
         }
     }
 
@@ -1343,6 +1429,7 @@ class AuthRepository @Inject constructor(
         }
         prefsDataStore.clearPendingPurchase()
         prefsDataStore.clearSubscriptionSyncTimestamp()
+        prefsDataStore.setTrafficResetAt(null)
         vpnRepository.clearCachedServers()
         baseStationBypassRepository.clearCachedServers()
         bootstrapManager.clear()

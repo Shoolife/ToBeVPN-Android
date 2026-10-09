@@ -29,6 +29,18 @@ data class Server(
     val source: ServerSource = ServerSource.STANDARD,
 ) {
     /**
+     * Identity of the complete profile, for server check results. [id] is
+     * address:port:sni and repeats: different servers can share one endpoint,
+     * and a result keyed by it could be shown for the wrong server.
+     */
+    val probeKey: String
+        get() = listOf(
+            source.name, address, port, uuid, flow, security, sni, fingerprint,
+            publicKey, shortId, network, path, host, alpn, headerType,
+            serviceName, extra, mode, spx,
+        ).joinToString("|")
+
+    /**
      * True for the placeholder "subscription expired" entry the panel
      * injects into expired users' subscriptions. It looks like a real
      * VLESS link (so the parser accepts it) but its uuid is the all-

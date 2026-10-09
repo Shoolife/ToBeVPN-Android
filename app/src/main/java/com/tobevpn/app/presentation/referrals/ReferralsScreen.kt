@@ -13,7 +13,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +32,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -73,8 +73,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -99,10 +99,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.data.remote.dto.ReferralListItemDto
 import com.tobevpn.app.data.remote.dto.ReferralsDto
+import com.tobevpn.app.presentation.components.BrandLoader
 import com.tobevpn.app.presentation.components.SpinningRefreshIcon
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
-import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.AppAlertDialog
+import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.responsiveMaxWidth
@@ -147,7 +148,10 @@ fun ReferralsScreen(
                     }
                 },
                 actions = {
-                    if (uiState.isAuthenticated) {
+                    // Not while the full-screen loader runs: the page is
+                    // already loading, Refresh has nothing to add there.
+                    val initialLoading = uiState.isInitialLoading && uiState.data == null
+                    if (uiState.isAuthenticated && !initialLoading) {
                         IconButton(
                             onClick = viewModel::refresh,
                             enabled = !uiState.isAssigningReferrer,
@@ -1541,9 +1545,8 @@ private fun ReferralInlineError(
 
 @Composable
 private fun ReferralLoading(modifier: Modifier = Modifier) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(color = referralProgressColor())
-    }
+    // The app's own loader, as the desktop shows while its window rescales.
+    BrandLoader(modifier = modifier)
 }
 
 @Composable

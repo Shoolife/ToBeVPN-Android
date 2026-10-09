@@ -1,8 +1,5 @@
 package com.tobevpn.app.presentation.settings
 
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,18 +11,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,18 +46,18 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -92,7 +89,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.data.repository.CurrentSubscriptionPlanInfo
-import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
 import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
@@ -105,10 +101,14 @@ import com.tobevpn.app.domain.model.ThemeMode
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.domain.model.normalizeFontScale
 import com.tobevpn.app.domain.model.normalizeInterfaceScale
-import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.HorizontalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.endEdgeFade
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.horizontalFadingEdges
+import com.tobevpn.app.presentation.components.startEdgeFade
+import com.tobevpn.app.presentation.components.withSmallerEmoji
 import com.tobevpn.app.presentation.servers.ServerListScalePreview
+import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.LocalAppBaseDensity
 import com.tobevpn.app.presentation.theme.LocalAppFontScale
 import com.tobevpn.app.presentation.theme.LocalAppInterfaceScale
@@ -711,7 +711,7 @@ private fun DisplayPreviewSubscriptionPage(
                         maxLines = 1,
                     )
                     Text(
-                        text = planName,
+                        text = withSmallerEmoji(planName),
                         style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
                         fontWeight = FontWeight.Bold,
                         color = planColor,
@@ -1346,22 +1346,8 @@ private fun SelectionLazyRowWithCues(
     itemContent: @Composable (Int) -> Unit,
 ) {
     val listState = rememberLazyListState()
-    val startFadeAlpha by animateFloatAsState(
-        targetValue = if (listState.canScrollBackward) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = 180,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "PersonalizationSelectionStartFade",
-    )
-    val endFadeAlpha by animateFloatAsState(
-        targetValue = if (listState.canScrollForward) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = 180,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "PersonalizationSelectionEndFade",
-    )
+    val startFadeAlpha = listState.startEdgeFade()
+    val endFadeAlpha = listState.endEdgeFade()
 
     Box(modifier = Modifier.fillMaxWidth()) {
         LazyRow(

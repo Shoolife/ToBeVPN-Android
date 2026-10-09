@@ -11,6 +11,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -23,7 +24,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -85,8 +88,14 @@ import com.tobevpn.app.R
 import com.tobevpn.app.data.remote.dto.PromocodeActivationResultDto
 import com.tobevpn.app.data.remote.dto.PromocodeHistoryItemDto
 import com.tobevpn.app.data.remote.dto.PromocodePlanSnapshotDto
+import com.tobevpn.app.presentation.components.BrandLoader
+import com.tobevpn.app.presentation.components.EDGE_FADE_LENGTH
 import com.tobevpn.app.presentation.components.SpinningRefreshIcon
+import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.startEdgeFade
+import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.BrandSoftCardFill
 import com.tobevpn.app.presentation.theme.VpnBlue
@@ -135,7 +144,10 @@ fun PromocodesScreen(
                     }
                 },
                 actions = {
-                    if (uiState.isAuthenticated) {
+                    // Not while the full-screen loader runs: the page is
+                    // already loading, Refresh has nothing to add there.
+                    val initialLoading = uiState.isInitialLoading && uiState.history == null
+                    if (uiState.isAuthenticated && !initialLoading) {
                         IconButton(
                             onClick = viewModel::refresh,
                             enabled = !uiState.isActivating,
@@ -242,99 +254,162 @@ private fun PromocodeContent(
         }
     }
 
-    Box(
+    // Fixed part of the page: the code field, the current discount and the
+    // history header. Only the applied codes below it scroll.
+    val headerItems: List<@Composable () -> Unit> = buildList {
+        add {
+            PromocodeActivationCard(
+                value = codeInput,
+                isActivating = isActivating,
+                error = activationError,
+                onValueChange = { rawValue ->
+                    codeInput = rawValue
+                        .replace("\n", "")
+                        .replace("\r", "")
+                        .take(MAX_PROMOCODE_LENGTH)
+                    onClearActivationError()
+                },
+                onActivate = {
+                    if (trimmedCode.isNotEmpty()) {
+                        focusManager.clearFocus()
+                        onActivate(trimmedCode)
+                    }
+                },
+            )
+        }
+        if (isRefreshing) {
+            if (effectiveDiscountPercent > 0) {
+                add { PromocodeDiscountLoadingCard(alpha = refreshPlaceholderAlpha) }
+            }
+            add { PromocodeHistoryHeaderLoading(alpha = refreshPlaceholderAlpha) }
+        } else {
+            if (effectiveDiscountPercent > 0) {
+                add { CurrentDiscountCard(discountPercent = effectiveDiscountPercent) }
+            }
+            add { PromocodeHistoryHeader(total = total) }
+        }
+    }
+    val historyItems: LazyListScope.() -> Unit = {
+        if (isRefreshing) {
+            repeat(items.size.coerceIn(2, 3)) { index ->
+                item(key = "promocode-refresh-placeholder-$index") {
+                    PromocodeHistoryLoadingCard(alpha = refreshPlaceholderAlpha)
+                }
+            }
+        } else {
+            if (items.isEmpty()) {
+                item { PromocodeEmptyHistoryCard() }
+            } else {
+                items(
+                    items = items,
+                    key = { item ->
+                        item.activationId
+                            ?: "${item.promocodeId}:${item.code}:${item.activatedAt}"
+                    },
+                ) { item ->
+                    PromocodeHistoryCard(item = item)
+                }
+            }
+
+            if (loadError != null) {
+                item {
+                    PromocodeInlineError(
+                        error = loadError,
+                        onRetry = onRetry,
+                    )
+                }
+            }
+
+            if (items.size < total) {
+                item {
+                    PromocodeLoadMoreButton(
+                        loading = isLoadingMore,
+                        onClick = onLoadMore,
+                    )
+                }
+            }
+        }
+    }
+
+    BoxWithConstraints(
         modifier = modifier,
         contentAlignment = Alignment.TopCenter,
     ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .widthIn(max = pageMaxWidth),
-            contentPadding = PaddingValues(
-                start = 16.dp,
-                end = 16.dp,
-                top = 8.dp,
-                bottom = 24.dp,
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item {
-                PromocodeActivationCard(
-                    value = codeInput,
-                    isActivating = isActivating,
-                    error = activationError,
-                    onValueChange = { rawValue ->
-                        codeInput = rawValue
-                            .replace("\n", "")
-                            .replace("\r", "")
-                            .take(MAX_PROMOCODE_LENGTH)
-                        onClearActivationError()
-                    },
-                    onActivate = {
-                        if (trimmedCode.isNotEmpty()) {
-                            focusManager.clearFocus()
-                            onActivate(trimmedCode)
-                        }
-                    },
-                )
+        // On a short screen (landscape, large interface scale) a fixed header
+        // would leave the list no room: the whole page scrolls there.
+        if (maxHeight >= PINNED_HEADER_MIN_HEIGHT) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = pageMaxWidth),
+            ) {
+                Column(
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    headerItems.forEach { header -> header() }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+                // Like the app's other lists: edges with more content fade
+                // out and show an arrow.
+                // The cues follow the scroll over the fade's height rather than
+                // switching on at the first pixel.
+                val historyListState = rememberLazyListState()
+                val topFadeAlpha = historyListState.startEdgeFade()
+                val bottomFadeAlpha = historyListState.endEdgeFade()
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth(),
+                ) {
+                    LazyColumn(
+                        state = historyListState,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalFadingEdges(
+                                topAlpha = topFadeAlpha,
+                                bottomAlpha = bottomFadeAlpha,
+                                fadeHeight = EDGE_FADE_LENGTH,
+                            ),
+                        contentPadding = PaddingValues(
+                            start = 16.dp,
+                            end = 16.dp,
+                            bottom = 24.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        content = historyItems,
+                    )
+                    VerticalScrollEdgeArrow(
+                        alpha = topFadeAlpha,
+                        isTop = true,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 2.dp),
+                    )
+                    VerticalScrollEdgeArrow(
+                        alpha = bottomFadeAlpha,
+                        isTop = false,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 2.dp),
+                    )
+                }
             }
-
-            if (isRefreshing) {
-                if (effectiveDiscountPercent > 0) {
-                    item {
-                        PromocodeDiscountLoadingCard(alpha = refreshPlaceholderAlpha)
-                    }
-                }
-                item {
-                    PromocodeHistoryHeaderLoading(alpha = refreshPlaceholderAlpha)
-                }
-                repeat(items.size.coerceIn(2, 3)) { index ->
-                    item(key = "promocode-refresh-placeholder-$index") {
-                        PromocodeHistoryLoadingCard(alpha = refreshPlaceholderAlpha)
-                    }
-                }
-            } else {
-                if (effectiveDiscountPercent > 0) {
-                    item {
-                        CurrentDiscountCard(discountPercent = effectiveDiscountPercent)
-                    }
-                }
-
-                item {
-                    PromocodeHistoryHeader(total = total)
-                }
-
-                if (items.isEmpty()) {
-                    item { PromocodeEmptyHistoryCard() }
-                } else {
-                    items(
-                        items = items,
-                        key = { item ->
-                            item.activationId
-                                ?: "${item.promocodeId}:${item.code}:${item.activatedAt}"
-                        },
-                    ) { item ->
-                        PromocodeHistoryCard(item = item)
-                    }
-                }
-
-                if (loadError != null) {
-                    item {
-                        PromocodeInlineError(
-                            error = loadError,
-                            onRetry = onRetry,
-                        )
-                    }
-                }
-
-                if (items.size < total) {
-                    item {
-                        PromocodeLoadMoreButton(
-                            loading = isLoadingMore,
-                            onClick = onLoadMore,
-                        )
-                    }
-                }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = pageMaxWidth),
+                contentPadding = PaddingValues(
+                    start = 16.dp,
+                    end = 16.dp,
+                    top = 8.dp,
+                    bottom = 24.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                headerItems.forEach { header -> item { header() } }
+                historyItems()
             }
         }
     }
@@ -1070,9 +1145,8 @@ private fun PromocodeSuccessDialog(
 
 @Composable
 private fun PromocodeLoading(modifier: Modifier = Modifier) {
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        CircularProgressIndicator(color = PromocodeAccent)
-    }
+    // The app's own loader, as the desktop shows while its window rescales.
+    BrandLoader(modifier = modifier)
 }
 
 @Composable
@@ -1367,3 +1441,6 @@ private val LightPrimaryAction = Color(0xFF3F3F3F)
 private val LightDisabledContent = Color(0xFF777777)
 private val LightOutline = Color(0xFF6D6D6D)
 private const val MAX_PROMOCODE_LENGTH = 128
+
+/** Below this height the code field and header scroll with the list. */
+private val PINNED_HEADER_MIN_HEIGHT = 520.dp

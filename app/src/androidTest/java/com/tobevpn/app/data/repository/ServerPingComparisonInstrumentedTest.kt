@@ -204,7 +204,7 @@ class ServerPingComparisonInstrumentedTest {
             },
         )
         val fullProbeDurationMs = SystemClock.elapsedRealtime() - probeStartedAt
-        assertTrue(first.keys.containsAll(servers.map(Server::id)))
+        assertTrue(first.keys.containsAll(servers.map(Server::probeKey)))
         val cacheStartedAt = SystemClock.elapsedRealtime()
         val cached = repository.measureProfileDelays(servers, force = false)
         val cacheDurationMs = SystemClock.elapsedRealtime() - cacheStartedAt

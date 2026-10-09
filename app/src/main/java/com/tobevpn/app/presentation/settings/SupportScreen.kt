@@ -1,6 +1,5 @@
 package com.tobevpn.app.presentation.settings
 
-import com.tobevpn.app.billing.LocalExternalPurchasesAllowed
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
@@ -64,8 +63,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
+import com.tobevpn.app.billing.LocalExternalPurchasesAllowed
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.startEdgeFade
 import com.tobevpn.app.presentation.components.verticalFadingEdges
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -155,16 +157,8 @@ fun SupportScreen(
             // top/bottom edges fade into the background and show ↑/↓ arrows when
             // there's more to scroll, mirroring the tariff tabs in Subscription.
             val scrollState = rememberScrollState()
-            val topFadeAlpha by animateFloatAsState(
-                targetValue = if (scrollState.value > 0) 1f else 0f,
-                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                label = "faqTopFade",
-            )
-            val bottomFadeAlpha by animateFloatAsState(
-                targetValue = if (scrollState.value < scrollState.maxValue) 1f else 0f,
-                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                label = "faqBottomFade",
-            )
+            val topFadeAlpha = scrollState.startEdgeFade()
+            val bottomFadeAlpha = scrollState.endEdgeFade()
             // Viewport metrics for centring an expanded item. When a card opens,
             // we scroll so its middle lines up with the viewport middle (as far
             // as the ends allow) — the same "pull the touched one to the centre"

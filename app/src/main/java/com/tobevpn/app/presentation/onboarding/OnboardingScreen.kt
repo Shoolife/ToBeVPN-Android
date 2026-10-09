@@ -1,13 +1,8 @@
 package com.tobevpn.app.presentation.onboarding
 
 import android.util.DisplayMetrics
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,7 +17,9 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material.icons.filled.Devices
@@ -48,10 +45,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.endEdgeFade
+import com.tobevpn.app.presentation.components.startEdgeFade
 import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.isLargeTabletLayout
 import java.text.NumberFormat
@@ -159,16 +158,8 @@ private fun PhoneOnboardingContent(
         Spacer(modifier = Modifier.height(32.dp))
 
         val featuresScrollState = rememberScrollState()
-        val topFadeAlpha by animateFloatAsState(
-            targetValue = if (featuresScrollState.value > 0) 1f else 0f,
-            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-            label = "onboardingFeaturesTopFade",
-        )
-        val bottomFadeAlpha by animateFloatAsState(
-            targetValue = if (featuresScrollState.value < featuresScrollState.maxValue) 1f else 0f,
-            animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-            label = "onboardingFeaturesBottomFade",
-        )
+        val topFadeAlpha = featuresScrollState.startEdgeFade()
+        val bottomFadeAlpha = featuresScrollState.endEdgeFade()
         Box(
             modifier = Modifier
                 .weight(1f, fill = false)
@@ -299,16 +290,8 @@ private fun LargeTabletOnboardingContent(
                 verticalArrangement = Arrangement.Center,
             ) {
                 val featuresScrollState = rememberScrollState()
-                val topFadeAlpha by animateFloatAsState(
-                    targetValue = if (featuresScrollState.value > 0) 1f else 0f,
-                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                    label = "tabletOnboardingFeaturesTopFade",
-                )
-                val bottomFadeAlpha by animateFloatAsState(
-                    targetValue = if (featuresScrollState.value < featuresScrollState.maxValue) 1f else 0f,
-                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-                    label = "tabletOnboardingFeaturesBottomFade",
-                )
+                val topFadeAlpha = featuresScrollState.startEdgeFade()
+                val bottomFadeAlpha = featuresScrollState.endEdgeFade()
                 Box(
                     modifier = Modifier
                         .weight(1f, fill = false)

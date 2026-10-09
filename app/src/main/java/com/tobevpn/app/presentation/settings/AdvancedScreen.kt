@@ -93,9 +93,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.Velocity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -108,15 +108,17 @@ import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.MAX_SERVER_PING_TIMEOUT_SECONDS
 import com.tobevpn.app.domain.model.MIN_SERVER_PING_TIMEOUT_SECONDS
-import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT
 import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_HEIGHT_FRACTION
 import com.tobevpn.app.presentation.components.SpinningRefreshIcon
+import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
+import com.tobevpn.app.presentation.components.startEdgeFade
 import com.tobevpn.app.presentation.components.verticalFadingEdges
-import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.AppAlertDialog
+import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.BrandSoftCardFill
 import com.tobevpn.app.presentation.theme.LocalAppBaseDensity
 import com.tobevpn.app.presentation.theme.LocalAppDarkTheme
@@ -592,8 +594,16 @@ private fun ServerPingTimeoutCard(
                 Slider(
                     value = selectedSeconds.toFloat(),
                     onValueChange = { sliderValue = it.roundToInt().toFloat() },
+                    // Read the state here, not the value captured at the
+                    // last recomposition: a quick tap on the track can finish
+                    // before it, and the old value was saved.
                     onValueChangeFinished = {
-                        onValueChangeFinished(selectedSeconds)
+                        onValueChangeFinished(
+                            sliderValue.roundToInt().coerceIn(
+                                MIN_SERVER_PING_TIMEOUT_SECONDS,
+                                MAX_SERVER_PING_TIMEOUT_SECONDS,
+                            ),
+                        )
                     },
                     modifier = Modifier
                         .weight(1f)
@@ -932,23 +942,8 @@ private fun LinkedDevicesBottomSheet(
             )
         }
     }
-    val otherDevicesTopFadeAlpha by animateFloatAsState(
-        targetValue = if (!refreshActive && otherDevicesScrollState.value > 0) 1f else 0f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        label = "otherDevicesTopFade",
-    )
-    val otherDevicesBottomFadeAlpha by animateFloatAsState(
-        targetValue = if (
-            !refreshActive &&
-            otherDevicesScrollState.value < otherDevicesScrollState.maxValue
-        ) {
-            1f
-        } else {
-            0f
-        },
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        label = "otherDevicesBottomFade",
-    )
+    val otherDevicesTopFadeAlpha = otherDevicesScrollState.startEdgeFade(enabled = !refreshActive)
+    val otherDevicesBottomFadeAlpha = otherDevicesScrollState.endEdgeFade(enabled = !refreshActive)
     var sheetContentVisible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         sheetContentVisible = true

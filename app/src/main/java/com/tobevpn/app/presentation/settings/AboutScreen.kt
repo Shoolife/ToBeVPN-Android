@@ -1,15 +1,10 @@
 package com.tobevpn.app.presentation.settings
 
-import java.util.Locale
-import androidx.compose.ui.platform.LocalConfiguration
-import com.tobevpn.app.billing.PlayBillingStatus
 import android.content.Intent
 import android.net.Uri
 import android.text.format.Formatter
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -56,8 +51,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,6 +63,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -78,15 +74,19 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
+import com.tobevpn.app.billing.PlayBillingStatus
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.startEdgeFade
 import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.update.SettingsUpdateCheckRow
 import com.tobevpn.app.util.DiagnosticLogState
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withTimeoutOrNull
-import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -655,22 +655,8 @@ private fun PlayBillingDiagnosticsCard(
 private fun DiagnosticInfoDialog(onDismiss: () -> Unit) {
     val isDark = isSystemInDarkTheme()
     val descriptionScrollState = rememberScrollState()
-    val topFadeAlpha by animateFloatAsState(
-        targetValue = if (descriptionScrollState.value > 0) 1f else 0f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        label = "diagnosticsDescriptionTopFade",
-    )
-    val bottomFadeAlpha by animateFloatAsState(
-        targetValue = if (
-            descriptionScrollState.value < descriptionScrollState.maxValue
-        ) {
-            1f
-        } else {
-            0f
-        },
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        label = "diagnosticsDescriptionBottomFade",
-    )
+    val topFadeAlpha = descriptionScrollState.startEdgeFade()
+    val bottomFadeAlpha = descriptionScrollState.endEdgeFade()
     AppAlertDialog(
         onDismissRequest = onDismiss,
         icon = {

@@ -17,6 +17,7 @@ import com.tobevpn.app.domain.model.baseStationBypassAccess
 import com.tobevpn.app.domain.model.canUseBaseStationBypass
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -28,6 +29,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
 import javax.inject.Inject
 
@@ -52,6 +54,13 @@ class ServerListViewModel @Inject constructor(
     private val _standardProfilePingsEnabled = MutableStateFlow(false)
     private val _standardProfilePingsMeasured = MutableStateFlow(false)
     private val refreshMutex = Mutex()
+    // Whether the refresh holding refreshMutex runs the full check, and
+    // whether a Refresh tap arrived while a plain load was running.
+    private var activeRefreshForced = false
+    private var pendingForcedRefresh = false
+    // The same for the base-station bypass tab.
+    private var activeBypassRefreshMeasures = false
+    private var pendingBypassRefresh = false
     private val bypassRefreshMutex = Mutex()
 
     // Screen visibility — gates the 5s ping loop so it doesn't keep probing
@@ -68,9 +77,11 @@ class ServerListViewModel @Inject constructor(
         _standardProfilePings,
         _standardProfilePingsEnabled,
     ) { serverList, tcpPings, profilePings, useProfilePings ->
-            val pingMap = if (useProfilePings) profilePings else tcpPings
+            // Profile results are keyed by the complete profile, TCP pings
+            // by endpoint.
             serverList.map { server ->
-                pingMap[server.id]?.let { server.copy(ping = it) } ?: server.copy(ping = 0)
+                val ping = if (useProfilePings) profilePings[server.probeKey] else tcpPings[server.id]
+                ping?.let { server.copy(ping = it) } ?: server.copy(ping = 0)
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -111,7 +122,7 @@ class ServerListViewModel @Inject constructor(
         baseStationBypassRepository.observeServers()
             .combine(_baseStationBypassPings) { serverList, pingMap ->
                 serverList.map { server ->
-                    server.copy(ping = pingMap[server.id] ?: 0L)
+                    server.copy(ping = pingMap[server.probeKey] ?: 0L)
                 }
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -141,7 +152,17 @@ class ServerListViewModel @Inject constructor(
     val standardAccessUnavailable: StateFlow<Boolean> =
         _standardAccessUnavailable.asStateFlow()
 
+    // Quiet check of profiles the last full check has no result for.
+    private var missingProfilesJob: Job? = null
+
     init {
+        // The subscription can hand out another host/SNI for the same server
+        // on any refresh, also while or right after a check runs: such a row
+        // has no result for its profile and showed "Unavailable". Check just
+        // those, without a second progress card (desktop does the same).
+        viewModelScope.launch {
+            vpnRepository.observeServers().collect { checkMissingProfiles(it) }
+        }
         // Open-screen refresh respects the panel-recommended cadence — we
         // don't want re-entering the list (or coming back from foreground)
         // to count as an explicit "give me fresh data" request.
@@ -157,7 +178,10 @@ class ServerListViewModel @Inject constructor(
                 if (_standardProfilePingsEnabled.value) continue
                 val serverList = servers.value
                 if (serverList.isNotEmpty()) {
-                    measurePings(serverList)
+                    // Awaited, not launched: with dead servers a batch can
+                    // outlast the 5 s period, and overlapping batches piled
+                    // up sockets and threads.
+                    updatePings(serverList)
                 }
             }
         }
@@ -165,7 +189,14 @@ class ServerListViewModel @Inject constructor(
 
     fun refreshServers(force: Boolean = true) {
         viewModelScope.launch {
-            if (!refreshMutex.tryLock()) return@launch
+            if (!refreshMutex.tryLock()) {
+                // A tap on Refresh while the open-screen load is still running
+                // used to be dropped silently: run the check right after it.
+                // A tap during the check itself needs no second check.
+                if (force && !activeRefreshForced) pendingForcedRefresh = true
+                return@launch
+            }
+            activeRefreshForced = force
             try {
                 _isLoading.value = true
                 _error.value = null
@@ -179,7 +210,15 @@ class ServerListViewModel @Inject constructor(
                     _error.value = ensureResult.exceptionOrNull()?.message
                     return@launch
                 }
-                authRepository.syncSubscription(force = force)
+                // The sync refreshes plan data; the server list below has its
+                // own request, so a slow panel must not hold the check for
+                // long. It is cancelled rather than left running: it also
+                // rewrites the server list, which must not change mid-check
+                // (rows would lose their results). Plan data catches up on the
+                // next sync.
+                withTimeoutOrNull(SUBSCRIPTION_SYNC_WAIT_MS) {
+                    authRepository.syncSubscription(force = force)
+                }
                 val result = vpnRepository.refreshServers(forceRefresh = force)
                 result.onFailure { failure ->
                     _standardAccessUnavailable.value =
@@ -206,7 +245,15 @@ class ServerListViewModel @Inject constructor(
                 _error.value = error.message
             } finally {
                 _isLoading.value = false
+                val runPendingCheck = pendingForcedRefresh
+                pendingForcedRefresh = false
+                activeRefreshForced = false
                 refreshMutex.unlock()
+                if (runPendingCheck) {
+                    refreshServers(force = true)
+                } else {
+                    checkMissingProfilesNow()
+                }
             }
         }
     }
@@ -216,7 +263,13 @@ class ServerListViewModel @Inject constructor(
         measurePings: Boolean = force,
     ) {
         viewModelScope.launch {
-            if (!bypassRefreshMutex.tryLock()) return@launch
+            if (!bypassRefreshMutex.tryLock()) {
+                // As on the standard tab: a Refresh tap during a plain load
+                // runs the check right after it instead of being dropped.
+                if (measurePings && !activeBypassRefreshMeasures) pendingBypassRefresh = true
+                return@launch
+            }
+            activeBypassRefreshMeasures = measurePings
             try {
                 _baseStationBypassLoading.value = true
                 _baseStationBypassError.value = false
@@ -224,7 +277,10 @@ class ServerListViewModel @Inject constructor(
                     _baseStationBypassPings.value = emptyMap()
                     _baseStationBypassPingsMeasured.value = false
                 }
-                authRepository.syncSubscription(force = force)
+                // Bounded like the standard tab's sync (see refreshServers).
+                withTimeoutOrNull(SUBSCRIPTION_SYNC_WAIT_MS) {
+                    authRepository.syncSubscription(force = force)
+                }
                 if (!authRepository.getAuthStateSnapshot().canUseBaseStationBypass()) {
                     return@launch
                 }
@@ -251,14 +307,12 @@ class ServerListViewModel @Inject constructor(
                 _baseStationBypassError.value = true
             } finally {
                 _baseStationBypassLoading.value = false
+                val runPendingCheck = pendingBypassRefresh
+                pendingBypassRefresh = false
+                activeBypassRefreshMeasures = false
                 bypassRefreshMutex.unlock()
+                if (runPendingCheck) refreshBaseStationBypassServers()
             }
-        }
-    }
-
-    private fun measurePings(serverList: List<Server>) {
-        viewModelScope.launch {
-            updatePings(serverList)
         }
     }
 
@@ -277,7 +331,9 @@ class ServerListViewModel @Inject constructor(
             val currentServers = servers.value
             if (currentServers.isEmpty()) return false
             val hasCompleteProfileResults = _standardProfilePingsMeasured.value &&
-                currentServers.all { (_standardProfilePings.value[it.id] ?: 0L) != 0L }
+                currentServers
+                    .filter { it.isAvailable }
+                    .all { (_standardProfilePings.value[it.probeKey] ?: 0L) != 0L }
             if (!hasCompleteProfileResults) {
                 measureStandardProfiles(
                     servers = currentServers,
@@ -293,6 +349,7 @@ class ServerListViewModel @Inject constructor(
         } finally {
             _isLoading.value = false
             refreshMutex.unlock()
+            checkMissingProfilesNow()
         }
     }
 
@@ -331,7 +388,9 @@ class ServerListViewModel @Inject constructor(
             if (servers.isEmpty()) return false
             val currentPings = _baseStationBypassPings.value
             val hasCurrentPings = _baseStationBypassPingsMeasured.value &&
-                servers.all { (currentPings[it.id] ?: 0L) != 0L }
+                servers
+                    .filter { it.isAvailable }
+                    .all { (currentPings[it.probeKey] ?: 0L) != 0L }
             if (!hasCurrentPings) {
                 measureBaseStationBypassProfiles(servers = servers, force = true)
             }
@@ -403,21 +462,21 @@ class ServerListViewModel @Inject constructor(
         force: Boolean,
     ): Map<String, Long> {
         _baseStationBypassPingsMeasured.value = false
-        _baseStationBypassPings.value = servers.associate { it.id to 0L }
+        _baseStationBypassPings.value = servers.associate { it.probeKey to 0L }
         _baseStationBypassProbeProgress.value = ServerProbeProgress(
             completed = 0,
             total = servers
                 .filter { it.source == ServerSource.BASE_STATION_BYPASS && it.isAvailable }
-                .distinctBy(Server::id)
+                .distinctBy(Server::probeKey)
                 .size,
         )
         return try {
             baseStationBypassProfileProbeRepository.measureProfileDelays(
                 servers = servers,
                 force = force,
-                onResult = { serverId, delayMs, completed, total ->
+                onResult = { profileKey, delayMs, completed, total ->
                     _baseStationBypassPings.update { current ->
-                        current + (serverId to delayMs)
+                        current + (profileKey to delayMs)
                     }
                     _baseStationBypassProbeProgress.update { current ->
                         ServerProbeProgress(
@@ -450,16 +509,63 @@ class ServerListViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Server list changes while refreshMutex is held (a check, the open-screen
+     * load) are skipped by the observer; this catches up once it is released.
+     */
+    private fun checkMissingProfilesNow() {
+        viewModelScope.launch {
+            checkMissingProfiles(vpnRepository.observeServers().first())
+        }
+    }
+
+    private fun checkMissingProfiles(serverList: List<Server>) {
+        if (!_standardProfilePingsEnabled.value || !_standardProfilePingsMeasured.value) return
+        // A running check ends by calling this again with the current list.
+        if (refreshMutex.isLocked || missingProfilesJob?.isActive == true) return
+        val known = _standardProfilePings.value
+        val missing = serverList
+            .filter { it.source == ServerSource.STANDARD && it.isAvailable }
+            .filter { it.probeKey !in known }
+            .distinctBy(Server::probeKey)
+        if (missing.isEmpty()) return
+        missingProfilesJob = viewModelScope.launch {
+            _standardProfilePings.update { current ->
+                current + missing.associate { it.probeKey to 0L }
+            }
+            try {
+                baseStationBypassProfileProbeRepository.measureProfileDelays(
+                    servers = missing,
+                    source = ServerSource.STANDARD,
+                    force = false,
+                    onResult = { profileKey, delayMs, _, _ ->
+                        _standardProfilePings.update { current -> current + (profileKey to delayMs) }
+                    },
+                )
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _standardProfilePings.update { current ->
+                    current + missing
+                        .filter { (current[it.probeKey] ?: 0L) == 0L }
+                        .associate { it.probeKey to -1L }
+                }
+            }
+        }
+    }
+
     private suspend fun measureStandardProfiles(
         servers: List<Server>,
         force: Boolean,
     ): Map<String, Long> {
         val candidates = servers
             .filter { it.source == ServerSource.STANDARD && it.isAvailable }
-            .distinctBy(Server::id)
+            .distinctBy(Server::probeKey)
+        // A quiet check still running would write over the new results.
+        missingProfilesJob?.cancel()
         _standardProfilePingsEnabled.value = true
         _standardProfilePingsMeasured.value = false
-        _standardProfilePings.value = candidates.associate { it.id to 0L }
+        _standardProfilePings.value = candidates.associate { it.probeKey to 0L }
         _standardProfileProbeProgress.value = ServerProbeProgress(
             completed = 0,
             total = candidates.size,
@@ -469,9 +575,9 @@ class ServerListViewModel @Inject constructor(
                 servers = candidates,
                 source = ServerSource.STANDARD,
                 force = force,
-                onResult = { serverId, delayMs, completed, total ->
+                onResult = { profileKey, delayMs, completed, total ->
                     _standardProfilePings.update { current ->
-                        current + (serverId to delayMs)
+                        current + (profileKey to delayMs)
                     }
                     _standardProfileProbeProgress.update { current ->
                         ServerProbeProgress(
@@ -506,5 +612,6 @@ class ServerListViewModel @Inject constructor(
 
     private companion object {
         const val PROBE_PROGRESS_COMPLETION_HOLD_MS = 800L
+        const val SUBSCRIPTION_SYNC_WAIT_MS = 4_000L
     }
 }

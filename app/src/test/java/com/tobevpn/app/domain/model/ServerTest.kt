@@ -20,6 +20,17 @@ class ServerTest {
     }
 
     @Test
+    fun `probe key tells apart profiles that share an endpoint id`() {
+        val first = server().copy(path = "/first")
+        val second = server().copy(path = "/second", name = "Other")
+
+        assertTrue(first.id == second.id)
+        assertFalse(first.probeKey == second.probeKey)
+        // The display name does not change the profile.
+        assertTrue(first.probeKey == first.copy(name = "Renamed").probeKey)
+    }
+
+    @Test
     fun `panel offline metadata does not make a real endpoint unselectable`() {
         val server = server(isOnline = false)
 

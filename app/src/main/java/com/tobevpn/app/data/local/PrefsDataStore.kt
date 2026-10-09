@@ -117,6 +117,7 @@ class PrefsDataStore @Inject constructor(
         val TRAFFIC_ALERT_LIMIT_BYTES = longPreferencesKey("traffic_alert_limit_bytes")
         val TRAFFIC_ALERT_LAST_USED_BYTES = longPreferencesKey("traffic_alert_last_used_bytes")
         val TRAFFIC_ALERT_NOTIFIED_MASK = longPreferencesKey("traffic_alert_notified_mask")
+        val TRAFFIC_RESET_AT = longPreferencesKey("traffic_reset_at")
         val SPEED_TEST_HISTORY = stringPreferencesKey("speed_test_history")
         val SERVER_CACHE_OWNER = stringPreferencesKey("server_cache_owner")
         val PURCHASE_PLANS_CACHE_OWNER = stringPreferencesKey("purchase_plans_cache_owner")
@@ -495,6 +496,20 @@ class PrefsDataStore @Inject constructor(
             } else {
                 it.remove(Keys.SUBSCRIPTION_REMINDER_EXPIRES_AT)
             }
+        }
+    }
+
+    /** Next traffic limit reset (current-plan next_traffic_reset_at), if known. */
+    val trafficResetAt: Flow<Long?> = context.dataStore.data
+        .map { it[Keys.TRAFFIC_RESET_AT] }
+        .distinctUntilChanged()
+
+    suspend fun getTrafficResetAt(): Long? = context.dataStore.data.first()[Keys.TRAFFIC_RESET_AT]
+
+    suspend fun setTrafficResetAt(value: Long?) {
+        context.dataStore.edit {
+            if (value == null || value <= 0L) it.remove(Keys.TRAFFIC_RESET_AT)
+            else it[Keys.TRAFFIC_RESET_AT] = value
         }
     }
 

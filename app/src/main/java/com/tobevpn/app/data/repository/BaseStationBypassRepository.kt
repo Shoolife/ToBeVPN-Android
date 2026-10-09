@@ -2,6 +2,7 @@ package com.tobevpn.app.data.repository
 
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.data.local.PrefsDataStore
+import com.tobevpn.app.data.remote.await
 import com.tobevpn.app.data.local.dao.BaseStationBypassServerDao
 import com.tobevpn.app.data.local.entity.BaseStationBypassServerEntity
 import com.tobevpn.app.domain.model.Server
@@ -61,7 +62,7 @@ class BaseStationBypassRepository @Inject constructor(
                     "ToBeVPN/${BuildConfig.VERSION_NAME}/android/${BuildConfig.VERSION_CODE}",
                 )
                 .build()
-            val body = client.newCall(request).execute().use { response ->
+            val body = client.newCall(request).await().use { response ->
                 if (!response.isSuccessful) {
                     throw IOException("Base-station bypass profile returned HTTP_${response.code}")
                 }

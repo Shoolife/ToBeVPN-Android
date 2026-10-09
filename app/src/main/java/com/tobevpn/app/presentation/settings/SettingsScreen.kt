@@ -114,6 +114,7 @@ import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.presentation.theme.VpnRed
 import com.tobevpn.app.presentation.theme.SettingsTransferAccent
+import com.tobevpn.app.presentation.components.withSmallerEmoji
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -855,7 +856,7 @@ private fun PlanPill(text: String, color: Color) {
             .padding(horizontal = 16.dp, vertical = 7.dp),
     ) {
         Text(
-            text = text,
+            text = withSmallerEmoji(text),
             style = fixedLayoutTextStyle(
                 MaterialTheme.typography.titleSmall.copy(
                     lineHeight = TextUnit.Unspecified,

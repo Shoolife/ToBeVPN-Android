@@ -200,6 +200,10 @@ class MainViewModel @Inject constructor(
     val automaticServerSelection: StateFlow<Boolean> = prefsDataStore.automaticServerSelection
         .stateIn(viewModelScope, SharingStarted.Eagerly, true)
 
+    /** Next traffic limit reset from the current plan, shown under the traffic bar. */
+    val trafficResetAt: StateFlow<Long?> = prefsDataStore.trafficResetAt
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     val subscriptionUsageBlocked: StateFlow<Boolean> = authRepository.observeSubscriptionUsageBlocked()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 

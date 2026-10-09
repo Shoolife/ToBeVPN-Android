@@ -1,7 +1,6 @@
 package com.tobevpn.app.presentation.settings
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,9 +9,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -24,8 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CreditCard
-import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.EventRepeat
+import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -62,8 +61,10 @@ import androidx.compose.ui.window.DialogProperties
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.highlightBetaWord
+import com.tobevpn.app.presentation.components.startEdgeFade
 import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.VpnRed
@@ -145,14 +146,14 @@ private val WhatsNewHeroIcon: ImageVector by lazy {
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.Memory,
-        titleRes = R.string.whats_new_xray_core_title,
-        descriptionRes = R.string.whats_new_xray_core_desc,
+        icon = Icons.Filled.EventRepeat,
+        titleRes = R.string.whats_new_traffic_reset_title,
+        descriptionRes = R.string.whats_new_traffic_reset_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.CreditCard,
-        titleRes = R.string.whats_new_subscription_sheet_title,
-        descriptionRes = R.string.whats_new_subscription_sheet_desc,
+        icon = Icons.Filled.NetworkCheck,
+        titleRes = R.string.whats_new_server_check_title,
+        descriptionRes = R.string.whats_new_server_check_desc,
     ),
 )
 
@@ -184,16 +185,8 @@ fun WhatsNewDialog(onDismiss: () -> Unit) {
         label = "whatsNewIn",
     )
     val highlightsScrollState = rememberScrollState()
-    val topFadeAlpha by animateFloatAsState(
-        targetValue = if (highlightsScrollState.value > 0) 1f else 0f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        label = "whatsNewHighlightsTopFade",
-    )
-    val bottomFadeAlpha by animateFloatAsState(
-        targetValue = if (highlightsScrollState.value < highlightsScrollState.maxValue) 1f else 0f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        label = "whatsNewHighlightsBottomFade",
-    )
+    val topFadeAlpha = highlightsScrollState.startEdgeFade()
+    val bottomFadeAlpha = highlightsScrollState.endEdgeFade()
 
     Dialog(
         onDismissRequest = onDismiss,

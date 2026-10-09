@@ -95,6 +95,9 @@ data class CurrentPlanSubscriptionDto(
     @SerializedName("traffic_limit") val trafficLimit: Long? = null,
     @SerializedName("traffic_limit_bytes") val trafficLimitBytes: Long? = null,
     @SerializedName("traffic_limit_strategy") val trafficLimitStrategy: String? = null,
+    // Next traffic limit reset; null for plans that never reset it.
+    @SerializedName("next_traffic_reset_at") val nextTrafficResetAt: String? = null,
+    @SerializedName("next_traffic_reset_at_ts") val nextTrafficResetAtTs: Long? = null,
     @SerializedName("device_limit") val deviceLimit: Int? = null,
     @SerializedName("created_at") val createdAt: String? = null,
     @SerializedName("created_at_ts") val createdAtTs: Long? = null,

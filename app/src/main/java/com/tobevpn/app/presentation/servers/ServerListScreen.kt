@@ -1,6 +1,11 @@
 package com.tobevpn.app.presentation.servers
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.res.Configuration
+import android.os.Build
+import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -27,6 +32,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -40,10 +46,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -60,18 +66,20 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -82,24 +90,25 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.TextUnit
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.runtime.saveable.rememberSaveable
 import com.tobevpn.app.R
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.BaseStationBypassAccess
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.ServerSource
+import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.countryFlagForUi
+import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.highlightBetaWord
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import com.tobevpn.app.presentation.components.serverDisplayName
-import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.startEdgeFade
 import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
@@ -292,16 +301,8 @@ fun ServerListScreen(
     val standardListState = rememberLazyListState()
     val bypassListState = rememberLazyListState()
     val listState = if (showingBypass) bypassListState else standardListState
-    val topFadeAlpha by animateFloatAsState(
-        targetValue = if (listState.canScrollBackward) 1f else 0f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        label = "serverListTopFade",
-    )
-    val bottomFadeAlpha by animateFloatAsState(
-        targetValue = if (listState.canScrollForward) 1f else 0f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
-        label = "serverListBottomFade",
-    )
+    val topFadeAlpha = listState.startEdgeFade()
+    val bottomFadeAlpha = listState.endEdgeFade()
 
     // Pause the 5-second ping loop while the list isn't on screen.
     LaunchedEffect(showingBypass, baseStationBypassAccess) {
@@ -1290,21 +1291,41 @@ private fun ServerEndpointRow(
     ) {
         ServerEndpointMarker(modifier = Modifier.width(metrics.flagColumnWidth))
         Spacer(modifier = Modifier.width(metrics.flagTextGap))
-        Text(
-            text = server.address,
-            modifier = Modifier.weight(1f),
-            style = fixedLayoutTextStyle(
-                MaterialTheme.typography.bodySmall.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp,
-                    letterSpacing = 0.1.sp,
+        val context = LocalContext.current
+        val copiedText = stringResource(R.string.server_address_copied)
+        // A tap on the address copies it (the rest of the card still selects
+        // the server).
+        Box(modifier = Modifier.weight(1f)) {
+            Text(
+                text = server.address,
+                modifier = Modifier
+                    // The tap area's padding must not move the text.
+                    .offset(x = (-4).dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .clickable(onClickLabel = copiedText) {
+                        val clipboard = context.getSystemService(
+                            Context.CLIPBOARD_SERVICE,
+                        ) as ClipboardManager
+                        clipboard.setPrimaryClip(ClipData.newPlainText("Server", server.address))
+                        // Android 13+ confirms the copy itself.
+                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                            Toast.makeText(context, copiedText, Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    .padding(horizontal = 4.dp, vertical = 2.dp),
+                style = fixedLayoutTextStyle(
+                    MaterialTheme.typography.bodySmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 13.sp,
+                        letterSpacing = 0.1.sp,
+                    ),
                 ),
-            ),
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
-        )
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.88f),
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         Spacer(modifier = Modifier.width(10.dp))
         EndpointValueChip(
             text = server.port.toString(),

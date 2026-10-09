@@ -1,5 +1,6 @@
 package com.tobevpn.app.data.repository
 
+import kotlinx.coroutines.CancellationException
 import android.os.SystemClock
 import com.tobevpn.app.data.local.dao.ServerDao
 import com.tobevpn.app.data.local.dao.SessionDao
@@ -100,6 +101,10 @@ class VpnRepository @Inject constructor(
                     )
                 }
             }
+        } catch (cancelled: CancellationException) {
+            // The profile request is cancellable now (OkHttpAwait): leaving
+            // the screen must stop here, not fall back to the cache.
+            throw cancelled
         } catch (e: Exception) {
             SafeDiagnostics.warn(
                 TAG,

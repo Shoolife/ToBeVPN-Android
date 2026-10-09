@@ -1,5 +1,6 @@
 package com.tobevpn.app.data.repository
 
+import com.tobevpn.app.util.awaitBlocking
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -16,13 +17,14 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import libv2ray.Libv2ray
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
@@ -46,7 +48,7 @@ class BaseStationBypassProfileProbeRepository @Inject constructor(
     private val cache = ConcurrentHashMap<CacheKey, TimedResult>()
 
     /**
-     * Returns profile-confirmed delays keyed by server id. A positive value
+     * Returns profile-confirmed delays keyed by [Server.probeKey]. A positive value
      * means an HTTP request travelled through the complete Xray outbound;
      * `-1` means the profile could not be confirmed. Results are emitted as
      * soon as each profile completes so the UI need not wait for the batch.
@@ -56,7 +58,7 @@ class BaseStationBypassProfileProbeRepository @Inject constructor(
         source: ServerSource = ServerSource.BASE_STATION_BYPASS,
         force: Boolean,
         onResult: suspend (
-            serverId: String,
+            profileKey: String,
             delayMs: Long,
             completed: Int,
             total: Int,
@@ -64,7 +66,7 @@ class BaseStationBypassProfileProbeRepository @Inject constructor(
     ): Map<String, Long> = batchMutex.withLock {
         val candidates = servers
             .filter { it.source == source && it.isAvailable }
-            .distinctBy(Server::id)
+            .distinctBy(Server::probeKey)
         if (candidates.isEmpty()) return@withLock emptyMap()
 
         val networkKey = currentPhysicalNetworkKey()
@@ -74,88 +76,57 @@ class BaseStationBypassProfileProbeRepository @Inject constructor(
         val results = ConcurrentHashMap<String, Long>()
         val uncached = mutableListOf<Server>()
         candidates.forEach { server ->
-            val cached = cache[CacheKey(networkKey, server.source, server.id)]
+            val cached = cache[CacheKey(networkKey, server.source, server.probeKey)]
                 ?.takeIf { !force && it.isFresh(now, timeoutMs) }
             if (cached == null) {
                 uncached += server
             } else {
-                results[server.id] = cached.delayMs
-                onResult(server.id, cached.delayMs, results.size, candidates.size)
+                results[server.probeKey] = cached.delayMs
+                onResult(server.probeKey, cached.delayMs, results.size, candidates.size)
             }
         }
 
         if (uncached.isNotEmpty()) {
-            val tcpPings = serverQualityRepository.measurePings(
-                servers = uncached,
-                force = true,
-            )
-            val tcpReachable = mutableListOf<Server>()
-            uncached.forEach { server ->
-                if ((tcpPings[server.id] ?: -1L) < 0L) {
-                    recordResult(
-                        networkKey,
-                        server,
-                        -1L,
-                        timeoutMs,
-                        results,
-                        candidates.size,
-                        onResult,
-                    )
-                } else {
-                    tcpReachable += server
-                }
+            val coreReady = try {
+                withContext(Dispatchers.IO) { XRayCore.init(context) }
+                true
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                SafeDiagnostics.warn(
+                    TAG,
+                    "Base-station bypass probe core init failed: " +
+                        SafeDiagnostics.failureCategory(error),
+                )
+                false
             }
-            val profilesToProbe = tcpReachable.sortedBy {
-                tcpPings[it.id]?.takeIf { ping -> ping > 0L } ?: Long.MAX_VALUE
-            }
-
-            if (profilesToProbe.isNotEmpty()) {
-                val coreReady = try {
-                    withContext(Dispatchers.IO) { XRayCore.init(context) }
-                    true
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (error: Exception) {
-                    SafeDiagnostics.warn(
-                        TAG,
-                        "Base-station bypass probe core init failed: " +
-                            SafeDiagnostics.failureCategory(error),
-                    )
-                    false
-                }
-                if (!coreReady) {
-                    profilesToProbe.forEach { server ->
+            // Each server goes from its TCP ping straight to the full check,
+            // independently of the others: waiting for every TCP ping first
+            // held "0 of N" on screen until the slowest one gave up.
+            val slots = Semaphore(MAX_CONCURRENT_PROFILE_PROBES)
+            coroutineScope {
+                uncached.map { server ->
+                    async(Dispatchers.IO) {
+                        val tcpPing = serverQualityRepository.measurePings(
+                            servers = listOf(server),
+                            force = true,
+                        )[server.id] ?: -1L
+                        val delayMs = if (tcpPing < 0L || !coreReady) {
+                            -1L
+                        } else {
+                            slots.withPermit { measureFullProfile(server, timeoutMs) }
+                        }
                         recordResult(
-                            networkKey,
-                            server,
-                            -1L,
-                            timeoutMs,
-                            results,
-                            candidates.size,
-                            onResult,
+                            networkKey = networkKey,
+                            server = server,
+                            delayMs = delayMs,
+                            timeoutMs = timeoutMs,
+                            results = results,
+                            total = candidates.size,
+                            onResult = onResult,
                         )
                     }
-                } else {
-                    val slots = Semaphore(MAX_CONCURRENT_PROFILE_PROBES)
-                    coroutineScope {
-                        profilesToProbe.map { server ->
-                            async(Dispatchers.IO) {
-                                slots.withPermit {
-                                    val delayMs = measureFullProfile(server, timeoutMs)
-                                    recordResult(
-                                        networkKey = networkKey,
-                                        server = server,
-                                        delayMs = delayMs,
-                                        timeoutMs = timeoutMs,
-                                        results = results,
-                                        total = candidates.size,
-                                        onResult = onResult,
-                                    )
-                                }
-                            }
-                        }.awaitAll()
-                    }
-                }
+                }.awaitAll()
             }
         }
 
@@ -164,15 +135,15 @@ class BaseStationBypassProfileProbeRepository @Inject constructor(
                 TAG,
                 "Base-station bypass profile results discarded after physical network change",
             )
-            candidates.filter { results.containsKey(it.id) }.forEach { server ->
-                cache.remove(CacheKey(networkKey, server.source, server.id))
-                results[server.id] = -1L
-                onResult(server.id, -1L, results.size, candidates.size)
+            candidates.filter { results.containsKey(it.probeKey) }.forEach { server ->
+                cache.remove(CacheKey(networkKey, server.source, server.probeKey))
+                results[server.probeKey] = -1L
+                onResult(server.probeKey, -1L, results.size, candidates.size)
             }
         }
 
         val orderedResults = candidates.mapNotNull { server ->
-            results[server.id]?.let { server.id to it }
+            results[server.probeKey]?.let { server.probeKey to it }
         }.toMap()
         val reachable = orderedResults.values.count { it > 0L }
         val tested = orderedResults.size
@@ -191,9 +162,9 @@ class BaseStationBypassProfileProbeRepository @Inject constructor(
         val now = SystemClock.elapsedRealtime()
         val timeoutMs = prefsDataStore.getServerPingTimeoutSeconds() * MILLIS_PER_SECOND
         return servers.mapNotNull { server ->
-            cache[CacheKey(networkKey, server.source, server.id)]
+            cache[CacheKey(networkKey, server.source, server.probeKey)]
                 ?.takeIf { it.isFresh(now, timeoutMs) }
-                ?.let { server.id to it.delayMs }
+                ?.let { server.probeKey to it.delayMs }
         }
             .toMap()
     }
@@ -212,37 +183,26 @@ class BaseStationBypassProfileProbeRepository @Inject constructor(
         }
 
         // A server must not be marked unavailable merely because one public
-        // connectivity endpoint is filtered. The second target is attempted
-        // only after the first one fails, keeping the common path fast.
-        val measured = withTimeoutOrNull(timeoutMs * PROBE_TARGETS.size) {
-            var result = -1L
-            for (target in PROBE_TARGETS) {
-                val targetResult = withTimeoutOrNull(timeoutMs) {
-                    try {
-                        withContext(Dispatchers.IO) {
-                            Libv2ray.measureOutboundDelay(config, target)
-                        }
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (error: Exception) {
-                        val targetHost = target.substringAfter("://").substringBefore('/')
-                        SafeDiagnostics.trace(
-                            TAG,
-                            "Xray profile target failed: " +
-                                "${diagnosticServerDescriptor(server)} " +
-                                "target=$targetHost " +
-                                SafeDiagnostics.failureCategory(error),
-                        )
-                        -1L
-                    }
-                } ?: -1L
-                if (targetResult > 0L) {
-                    result = targetResult
-                    break
+        // connectivity endpoint is filtered, so both targets are tried. They
+        // run at the same time and the first success wins: a filtered target
+        // often just stays silent until the timeout, and trying them one
+        // after the other made every dead server cost two full timeouts.
+        val measured = coroutineScope {
+            val answers = Channel<Long>(PROBE_TARGETS.size)
+            val attempts = PROBE_TARGETS.map { target ->
+                launch { answers.send(probeTarget(server, config, target, timeoutMs)) }
+            }
+            var best = -1L
+            repeat(PROBE_TARGETS.size) {
+                val answer = answers.receive()
+                if (answer > 0L && best < 0L) {
+                    best = answer
+                    attempts.forEach { it.cancel() }
+                    return@coroutineScope best
                 }
             }
-            result
-        } ?: -1L
+            best
+        }
 
         SafeDiagnostics.trace(
             TAG,
@@ -253,6 +213,31 @@ class BaseStationBypassProfileProbeRepository @Inject constructor(
         return measured
     }
 
+    /** One target through the server's profile; -1 when it fails or times out. */
+    private suspend fun probeTarget(
+        server: Server,
+        config: String,
+        target: String,
+        timeoutMs: Long,
+    ): Long {
+        // The native call cannot be cancelled; awaitBlocking stops waiting at
+        // the configured timeout instead of the library's own (longer) one.
+        val outcome = awaitBlocking(timeoutMs) {
+            Libv2ray.measureOutboundDelay(config, target)
+        } ?: return -1L
+        return outcome.getOrElse { error ->
+            val targetHost = target.substringAfter("://").substringBefore('/')
+            SafeDiagnostics.trace(
+                TAG,
+                "Xray profile target failed: " +
+                    "${diagnosticServerDescriptor(server)} " +
+                    "target=$targetHost " +
+                    SafeDiagnostics.failureCategory(error),
+            )
+            -1L
+        }.takeIf { it > 0L } ?: -1L
+    }
+
     private suspend fun recordResult(
         networkKey: Long,
         server: Server,
@@ -261,20 +246,20 @@ class BaseStationBypassProfileProbeRepository @Inject constructor(
         results: ConcurrentHashMap<String, Long>,
         total: Int,
         onResult: suspend (
-            serverId: String,
+            profileKey: String,
             delayMs: Long,
             completed: Int,
             total: Int,
         ) -> Unit,
     ) {
         val normalized = delayMs.takeIf { it > 0L } ?: -1L
-        cache[CacheKey(networkKey, server.source, server.id)] = TimedResult(
+        cache[CacheKey(networkKey, server.source, server.probeKey)] = TimedResult(
             delayMs = normalized,
             measuredAtMs = SystemClock.elapsedRealtime(),
             timeoutMs = timeoutMs,
         )
-        results[server.id] = normalized
-        onResult(server.id, normalized, results.size, total)
+        results[server.probeKey] = normalized
+        onResult(server.probeKey, normalized, results.size, total)
     }
 
     @Suppress("DEPRECATION")
@@ -321,7 +306,7 @@ class BaseStationBypassProfileProbeRepository @Inject constructor(
     private data class CacheKey(
         val networkKey: Long,
         val source: ServerSource,
-        val serverId: String,
+        val profileKey: String,
     )
 
     private data class TimedResult(

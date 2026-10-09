@@ -1,7 +1,5 @@
 package com.tobevpn.app.presentation.main
 
-import com.tobevpn.app.billing.LocalExternalPurchasesAllowed
-import com.tobevpn.app.billing.paymentUnavailableMessage
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
@@ -10,20 +8,20 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.FlingBehavior
 import androidx.compose.foundation.gestures.ScrollScope
@@ -43,10 +41,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
@@ -56,18 +54,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.LocalOffer
-import androidx.compose.material.icons.outlined.SystemUpdateAlt
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.LocalOffer
+import androidx.compose.material.icons.outlined.SystemUpdateAlt
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -80,16 +78,26 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipAnchorPosition
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -104,6 +112,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -128,31 +137,37 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
+import com.tobevpn.app.billing.LocalExternalPurchasesAllowed
+import com.tobevpn.app.billing.paymentUnavailableMessage
 import com.tobevpn.app.data.remote.dto.PurchasePlanDto
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ConnectionState
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
-import com.tobevpn.app.presentation.components.countryFlagForUi
 import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT
 import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_HEIGHT_FRACTION
+import com.tobevpn.app.presentation.components.SubscriptionExpiryUrgency
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
+import com.tobevpn.app.presentation.components.countryFlagForUi
+import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
-import com.tobevpn.app.presentation.components.SubscriptionExpiryUrgency
-import com.tobevpn.app.presentation.components.subscriptionExpiryMillisLeft
-import com.tobevpn.app.presentation.components.subscriptionExpiryUrgency
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import com.tobevpn.app.presentation.components.serverDisplayName
+import com.tobevpn.app.presentation.components.startEdgeFade
+import com.tobevpn.app.presentation.components.subscriptionExpiryMillisLeft
+import com.tobevpn.app.presentation.components.subscriptionExpiryUrgency
 import com.tobevpn.app.presentation.components.verticalFadingEdges
-import com.tobevpn.app.presentation.theme.AppScaledContent
+import com.tobevpn.app.presentation.components.withSmallerEmoji
 import com.tobevpn.app.presentation.theme.AppAlertDialog
+import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.LocalAppBaseDensity
 import com.tobevpn.app.presentation.theme.LocalAppDarkTheme
 import com.tobevpn.app.presentation.theme.LocalAppInterfaceScale
@@ -163,7 +178,11 @@ import com.tobevpn.app.presentation.theme.foldPaneWeights
 import com.tobevpn.app.presentation.theme.isLargeTabletLayout
 import com.tobevpn.app.presentation.theme.rememberAppWindowAdaptiveLayout
 import com.tobevpn.app.presentation.theme.responsiveMaxWidth
+import com.tobevpn.app.util.trafficResetText
 import kotlin.math.ceil
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -178,6 +197,7 @@ fun MainScreen(
 ) {
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val usageInfo by viewModel.usageInfo.collectAsStateWithLifecycle()
+    val trafficResetAt by viewModel.trafficResetAt.collectAsStateWithLifecycle()
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val currentServer by viewModel.currentServer.collectAsStateWithLifecycle()
     val automaticServerSelection by viewModel.automaticServerSelection.collectAsStateWithLifecycle()
@@ -532,6 +552,7 @@ fun MainScreen(
                                 subscriptionUsageBlocked = subscriptionUsageBlocked,
                                 authState = authState,
                                 usageInfo = usageInfo,
+                                trafficResetAt = trafficResetAt,
                                 currentServer = currentServer,
                                 automaticServerSelection = automaticServerSelection,
                                 sessionBytes = sessionBytes,
@@ -631,6 +652,7 @@ fun MainScreen(
                 subscriptionUsageBlocked = subscriptionUsageBlocked,
                 authState = authState,
                 usageInfo = usageInfo,
+                trafficResetAt = trafficResetAt,
                 currentServer = currentServer,
                 automaticServerSelection = automaticServerSelection,
                 sessionBytes = sessionBytes,
@@ -684,6 +706,7 @@ fun MainScreen(
     if (showSubscriptionSheet) {
         SubscriptionBottomSheet(
             authState = authState,
+            trafficResetAt = trafficResetAt,
             rubToUsdRate = rubToUsdRate,
             purchasePlans = purchasePlans,
             purchasePlansFromCache = purchasePlansFromCache,
@@ -705,6 +728,7 @@ private fun HomeDetailsCards(
     subscriptionUsageBlocked: Boolean,
     authState: AuthState,
     usageInfo: UsageInfo,
+    trafficResetAt: Long?,
     currentServer: Server?,
     automaticServerSelection: Boolean,
     sessionBytes: Long,
@@ -736,25 +760,53 @@ private fun HomeDetailsCards(
 
     Spacer(modifier = Modifier.height(16.dp))
 
-    if (subscriptionUsageBlocked) {
-        BlockedSubscriptionCard(onClick = onBlockedClick)
-    } else when (authState) {
-        is AuthState.Anonymous -> {
-            AnonymousSubscriptionCard(
-                usageInfo = usageInfo,
-                onClick = onOpenSubscription,
-            )
-        }
+    // The traffic summary in either card reads the reset date from here.
+    CompositionLocalProvider(LocalTrafficResetAt provides trafficResetAt) {
+        if (subscriptionUsageBlocked) {
+            BlockedSubscriptionCard(onClick = onBlockedClick)
+        } else when (authState) {
+            is AuthState.Anonymous -> {
+                AnonymousSubscriptionCard(
+                    usageInfo = usageInfo,
+                    onClick = onOpenSubscription,
+                )
+            }
 
-        is AuthState.Authenticated -> {
-            PlanCard(
-                auth = authState,
-                usageInfo = usageInfo,
-                onClick = onOpenSubscription,
-            )
+            is AuthState.Authenticated -> {
+                PlanCard(
+                    auth = authState,
+                    usageInfo = usageInfo,
+                    onClick = onOpenSubscription,
+                )
+            }
         }
     }
 }
+
+/** Weight of the traffic summary next to the plan column (weight 1): 48 / 52. */
+private const val USAGE_SUMMARY_WEIGHT = 0.48f / 0.52f
+
+/** Next traffic limit reset for SubscriptionUsageSummary (HomeDetailsCards). */
+private val LocalTrafficResetAt = compositionLocalOf<Long?> { null }
+
+/**
+ * Wall clock for the reset wording, ticking each minute while a reset date is
+ * known: an open Home otherwise kept "tomorrow" past midnight and the old
+ * time after the reset itself.
+ */
+@Composable
+private fun rememberResetClock(resetAt: Long?): Long {
+    val now by produceState(System.currentTimeMillis(), resetAt) {
+        if (resetAt == null) return@produceState
+        while (true) {
+            delay(MINUTE_MS - System.currentTimeMillis() % MINUTE_MS)
+            value = System.currentTimeMillis()
+        }
+    }
+    return now
+}
+
+private const val MINUTE_MS = 60_000L
 
 @Composable
 private fun SpeedTestCard(onClick: () -> Unit) {
@@ -844,7 +896,12 @@ private fun AnonymousSubscriptionCard(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            SubscriptionUsageSummary(usageInfo = usageInfo)
+            // 48% of the card instead of a fixed width, so the figures and
+            // the reset line grow with the interface scale.
+            SubscriptionUsageSummary(
+                usageInfo = usageInfo,
+                modifier = Modifier.weight(USAGE_SUMMARY_WEIGHT),
+            )
             Icon(
                 Icons.Default.KeyboardArrowRight,
                 contentDescription = null,
@@ -1717,14 +1774,17 @@ private fun SubscriptionUsageSummary(
         TextStyle(fontSize = 11.sp),
     ).fontSize
     val maximumUsageFontSize = fixedLayoutTextStyle(
-        TextStyle(fontSize = 15.sp),
+        TextStyle(fontSize = 13.sp),
     ).fontSize
+    // The bar is as long as the usage figures above it (measured after the
+    // font is fitted), not as wide as the column.
+    var usageTextWidthPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
     Column(
         modifier = modifier
-            .widthIn(
-                min = if (useLargeTabletLayout) 148.dp else 116.dp,
-                max = if (useLargeTabletLayout) 184.dp else 148.dp,
-            )
+            // Sized by the caller's weight; capped so the bar stays compact
+            // on wide cards.
+            .widthIn(max = if (useLargeTabletLayout) 280.dp else 240.dp)
             .padding(start = 12.dp, end = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -1741,17 +1801,73 @@ private fun SubscriptionUsageSummary(
                 minFontSize = minimumUsageFontSize,
                 maxFontSize = maximumUsageFontSize,
             ),
+            onTextLayout = { layout ->
+                if (layout.lineCount > 0) {
+                    usageTextWidthPx = (layout.getLineRight(0) - layout.getLineLeft(0)).roundToInt()
+                }
+            },
         )
         Spacer(modifier = Modifier.height(4.dp))
         LinearProgressIndicator(
             progress = { progress },
             modifier = Modifier
-                .fillMaxWidth()
+                .then(
+                    if (usageTextWidthPx > 0) {
+                        Modifier.width(with(density) { usageTextWidthPx.toDp() })
+                    } else {
+                        Modifier.fillMaxWidth()
+                    },
+                )
                 .height(9.dp)
                 .clip(RoundedCornerShape(99.dp)),
             color = progressColor(progress),
-            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+            // The card's own colour hid the track; a translucent one shows
+            // where the limit ends, as on the desktop.
+            trackColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+            // A solid bar like the desktop one: no Material 3 gap between
+            // fill and track and no stop dot at the end.
+            strokeCap = StrokeCap.Round,
+            gapSize = 0.dp,
+            drawStopIndicator = {},
         )
+        // Under the bar: when the limit renews; in red once it is used up
+        // (desktop HomeScreen).
+        val resetAt = LocalTrafficResetAt.current
+        val reset = trafficResetText(
+            LocalContext.current,
+            resetAt,
+            usageInfo.bytesLimit,
+            now = rememberResetClock(resetAt),
+        )
+        val exhausted = usageInfo.bytesUsed >= usageInfo.bytesLimit
+        val note = when {
+            exhausted && reset != null -> stringResource(R.string.traffic_exhausted_reset, reset.whenText)
+            exhausted -> stringResource(R.string.traffic_exhausted)
+            reset != null -> stringResource(R.string.traffic_reset_short, reset.whenText)
+            else -> null
+        }
+        if (note != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = note,
+                // labelSmall's letter spacing pushed "Сброс трафика 03.11.2026"
+                // onto two lines; the red "used up" note may still wrap.
+                style = fixedLayoutTextStyle(
+                    MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp),
+                ),
+                fontWeight = if (exhausted) FontWeight.SemiBold else FontWeight.Normal,
+                color = if (exhausted) VpnRed else MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                maxLines = if (exhausted) 2 else 1,
+                softWrap = exhausted,
+                overflow = TextOverflow.Ellipsis,
+                // Shrinks to fit the column, like the usage figures above.
+                autoSize = if (exhausted) null else TextAutoSize.StepBased(
+                    minFontSize = minimumUsageFontSize * 0.85f,
+                    maxFontSize = minimumUsageFontSize,
+                ),
+            )
+        }
     }
 }
 
@@ -1812,7 +1928,7 @@ private fun PlanCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = planLabel,
+                    text = withSmallerEmoji(planLabel),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                     fontWeight = FontWeight.Bold,
                     color = planColor,
@@ -1840,7 +1956,12 @@ private fun PlanCard(
                     )
                 }
             }
-            SubscriptionUsageSummary(usageInfo = usageInfo)
+            // 48% of the card instead of a fixed width, so the figures and
+            // the reset line grow with the interface scale.
+            SubscriptionUsageSummary(
+                usageInfo = usageInfo,
+                modifier = Modifier.weight(USAGE_SUMMARY_WEIGHT),
+            )
             Icon(
                 Icons.Default.KeyboardArrowRight,
                 contentDescription = null,
@@ -2097,6 +2218,7 @@ internal fun DirectDownloadUpdateRequiredDialog(onQuit: () -> Unit) {
 @Composable
 private fun SubscriptionBottomSheet(
     authState: AuthState,
+    trafficResetAt: Long?,
     rubToUsdRate: Double?,
     purchasePlans: com.tobevpn.app.data.remote.dto.PurchasePlansDto?,
     purchasePlansFromCache: Boolean,
@@ -2220,6 +2342,19 @@ private fun SubscriptionBottomSheet(
             val unlimitedTrafficText = stringResource(R.string.plan_unlimited_traffic)
             val unknownDevicesText = stringResource(R.string.plan_devices_unknown)
             val trafficLimitBytes = currentLimits?.trafficLimitBytes
+            val resetClock = rememberResetClock(trafficResetAt)
+            val sheetTrafficReset = if (
+                authState is AuthState.Authenticated && authState.plan != UserPlan.EXPIRED
+            ) {
+                trafficResetText(
+                    LocalContext.current,
+                    trafficResetAt,
+                    trafficLimitBytes ?: 0L,
+                    now = resetClock,
+                )
+            } else {
+                null
+            }
             val currentDeviceLimit = currentLimits?.deviceLimit
             val trafficGb: Int? = trafficLimitBytes
                 ?.takeIf { it > 0 }
@@ -2344,6 +2479,14 @@ private fun SubscriptionBottomSheet(
                                 }
                             }
                         }
+                        // Without the limits block (trial) the reset gets its own chip.
+                        if (!showLimits && sheetTrafficReset != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TrafficResetPill(
+                                text = sheetTrafficReset.chip,
+                                hint = stringResource(R.string.traffic_reset_hint),
+                            )
+                        }
                     }
                     if (showLimits) {
                         Spacer(modifier = Modifier.width(16.dp))
@@ -2354,9 +2497,15 @@ private fun SubscriptionBottomSheet(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                             ) {
+                                // The reset date replaces "per month" under the
+                                // limit it renews (desktop SubscriptionSheet).
                                 LimitStat(
                                     value = trafficLimitValue,
                                     label = stringResource(R.string.per_month_short),
+                                    resetPill = sheetTrafficReset?.dateTime,
+                                    resetHint = sheetTrafficReset?.let {
+                                        stringResource(R.string.traffic_reset_hint)
+                                    },
                                 )
                                 Text(
                                     text = "·",
@@ -2669,28 +2818,8 @@ private fun SubscriptionBottomSheet(
                 LaunchedEffect(selectedTariff?.key) {
                     tariffPeriodsScrollState.scrollTo(0)
                 }
-                val tariffPeriodsTopFadeAlpha by animateFloatAsState(
-                    targetValue = if (tariffPeriodsScrollState.value > 0) 1f else 0f,
-                    animationSpec = tween(
-                        durationMillis = 180,
-                        easing = FastOutSlowInEasing,
-                    ),
-                    label = "TariffPeriodsTopFade",
-                )
-                val tariffPeriodsBottomFadeAlpha by animateFloatAsState(
-                    targetValue = if (
-                        tariffPeriodsScrollState.value < tariffPeriodsScrollState.maxValue
-                    ) {
-                        1f
-                    } else {
-                        0f
-                    },
-                    animationSpec = tween(
-                        durationMillis = 180,
-                        easing = FastOutSlowInEasing,
-                    ),
-                    label = "TariffPeriodsBottomFade",
-                )
+                val tariffPeriodsTopFadeAlpha = tariffPeriodsScrollState.startEdgeFade()
+                val tariffPeriodsBottomFadeAlpha = tariffPeriodsScrollState.endEdgeFade()
                 val keepSheetStillAtTariffListBounds = remember(tariffPeriodsScrollState) {
                     object : NestedScrollConnection {
                         private fun consumeBeyondListBounds(deltaY: Float): Float {
@@ -2986,22 +3115,8 @@ private fun TariffTabs(
         val tabStripWidth = with(density) { tabStripWidthPx.toDp() }
         val scrollState = rememberScrollState()
         val scrollable = tabStripWidthPx > maxWidthPx
-        val startFadeAlpha by animateFloatAsState(
-            targetValue = if (scrollable && scrollState.value > 0) 1f else 0f,
-            animationSpec = tween(
-                durationMillis = 180,
-                easing = FastOutSlowInEasing,
-            ),
-            label = "TariffTabsStartFade",
-        )
-        val endFadeAlpha by animateFloatAsState(
-            targetValue = if (scrollable && scrollState.value < scrollState.maxValue) 1f else 0f,
-            animationSpec = tween(
-                durationMillis = 180,
-                easing = FastOutSlowInEasing,
-            ),
-            label = "TariffTabsEndFade",
-        )
+        val startFadeAlpha = scrollState.startEdgeFade(enabled = scrollable)
+        val endFadeAlpha = scrollState.endEdgeFade(enabled = scrollable)
         val selectedSafeIndex = selectedIndex.coerceIn(0, tabCount - 1)
         val selectedOffsetPx = tabWidthsPx.take(selectedSafeIndex).sum()
         val indicatorOffset by animateDpAsState(
@@ -3087,7 +3202,7 @@ private fun TariffTabs(
                                 )
 
                                 Text(
-                                    text = title,
+                                    text = withSmallerEmoji(title),
                                     modifier = Modifier
                                         .width(tabWidths[index])
                                         .clickable(
@@ -3211,7 +3326,7 @@ private fun measureTabTitleWidthPx(
     fontSizeSp: Float,
 ): Int {
     return textMeasurer.measure(
-        text = title,
+        text = withSmallerEmoji(title),
         style = style.copy(
             fontSize = fontSizeSp.sp,
             fontWeight = FontWeight.Bold,
@@ -3224,7 +3339,9 @@ private fun measureTabTitleWidthPx(
 @Composable
 private fun CurrentPlanName(text: String, color: Color) {
     Text(
-        text = text,
+        text = withSmallerEmoji(text),
+        // Room between the plan name and the line under it.
+        modifier = Modifier.padding(bottom = 4.dp),
         style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
         fontWeight = FontWeight.Bold,
         color = color,
@@ -3243,7 +3360,9 @@ private fun CurrentPlanDescription(text: String, maxLines: Int = 1) {
 private fun CurrentPlanDescription(text: AnnotatedString, maxLines: Int = 1) {
     Text(
         text = text,
-        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+        // bodySmall, like the expiry line on the Home plan card: with the
+        // traffic reset pill on the right, bodyMedium wrapped "Активна до …".
+        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         maxLines = maxLines,
         softWrap = maxLines > 1,
@@ -3278,7 +3397,7 @@ private fun textWithAccentedDate(
 @Composable
 private fun SubscriptionActionText(text: String) {
     Text(
-        text = text,
+        text = withSmallerEmoji(text),
         modifier = Modifier.fillMaxWidth(),
         style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
         maxLines = 1,
@@ -3533,7 +3652,12 @@ private fun formatTime(seconds: Long): String {
 }
 
 @Composable
-private fun LimitStat(value: String, label: String) {
+private fun LimitStat(
+    value: String,
+    label: String,
+    resetPill: String? = null,
+    resetHint: String? = null,
+) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text = value,
@@ -3544,13 +3668,84 @@ private fun LimitStat(value: String, label: String) {
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
         )
+        if (resetPill != null) {
+            Spacer(modifier = Modifier.height(2.dp))
+            TrafficResetPill(text = resetPill, hint = resetHint)
+        } else {
+            Text(
+                text = label,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/**
+ * "↻ 03.11 в 05:10": the traffic reset in a pill, icon as tall as the text.
+ * A tap explains it in a tooltip above the pill.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TrafficResetPill(text: String, hint: String? = null) {
+    if (hint == null) {
+        TrafficResetPillContent(text = text, modifier = Modifier)
+        return
+    }
+    val tooltipState = rememberTooltipState(isPersistent = true)
+    val scope = rememberCoroutineScope()
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
+        tooltip = {
+            PlainTooltip(modifier = Modifier.widthIn(max = 260.dp)) {
+                Text(text = hint, style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall))
+            }
+        },
+        state = tooltipState,
+    ) {
+        TrafficResetPillContent(
+            text = text,
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                // No ripple: the tooltip itself is the feedback.
+                .clickable(
+                    interactionSource = null,
+                    indication = null,
+                    onClickLabel = hint,
+                ) { scope.launch { tooltipState.show() } },
+        )
+    }
+}
+
+@Composable
+private fun TrafficResetPillContent(text: String, modifier: Modifier) {
+    // No extra tracking: the pill must not push the plan's expiry line on
+    // the left onto two lines.
+    val style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.sp))
+    val iconSize = with(LocalDensity.current) { style.fontSize.toDp() }
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
+            .padding(horizontal = 6.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.Refresh,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(iconSize),
+        )
         Text(
-            text = label,
-            style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
+            text = text,
+            style = style,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             softWrap = false,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }

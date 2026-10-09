@@ -53,13 +53,14 @@ class TrafficLimitNotifications @Inject constructor(
             context.getSystemService(NotificationManager::class.java).cancel(NOTIFICATION_ID)
         }
         evaluation.thresholdToNotify?.let { threshold ->
-            showNotification(usage, threshold)
+            showNotification(usage, threshold, prefsDataStore.getTrafficResetAt())
         }
     }
 
     private fun showNotification(
         usage: UsageInfo,
         threshold: TrafficRemainingThreshold,
+        trafficResetAt: Long?,
     ) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -86,10 +87,13 @@ class TrafficLimitNotifications @Inject constructor(
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val remaining = usage.bytesRemaining.coerceAtMost(usage.bytesLimit)
-        val description = context.getString(
+        // With a known reset date the user can tell whether to wait or renew.
+        val reset = trafficResetText(context, trafficResetAt, usage.bytesLimit)
+        val remainingText = context.getString(
             R.string.traffic_limit_notification_description,
             formatGib(remaining),
         )
+        val description = if (reset != null) "$remainingText ${reset.full}." else remainingText
         val notification = Notification.Builder(context, CHANNEL_ID)
             .setContentTitle(context.getString(R.string.traffic_limit_notification_title))
             .setContentText(description)
