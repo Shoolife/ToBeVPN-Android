@@ -23,7 +23,8 @@ data class PanelNodeDto(
 // --- Users ---
 
 data class PanelUserDto(
-    val uuid: String,
+    val uuid: String? = null,
+    val id: Long? = null,
     @SerializedName("short_uuid") val shortUuid: String,
     val username: String,
     // Gson bypasses Kotlin constructors, so "non-null" fields silently become
@@ -34,7 +35,7 @@ data class PanelUserDto(
     @SerializedName("traffic_limit_strategy") val trafficLimitStrategy: String? = null,
     @SerializedName("expire_at") val expireAt: String?,
     @SerializedName("telegram_id") val telegramId: Long?,
-    @SerializedName("vless_uuid") val vlessUuid: String,
+    @SerializedName("vless_uuid") val vlessUuid: String? = null,
     @SerializedName("subscription_url") val subscriptionUrl: String,
     @SerializedName("active_internal_squads") val activeInternalSquads: List<PanelSquadRefDto>? = null,
     @SerializedName("user_traffic") val userTraffic: PanelUserTrafficDto?,

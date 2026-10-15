@@ -23,8 +23,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.EventRepeat
-import androidx.compose.material.icons.filled.NetworkCheck
+import androidx.compose.material.icons.filled.Memory
+import androidx.compose.material.icons.filled.Percent
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -146,14 +146,14 @@ private val WhatsNewHeroIcon: ImageVector by lazy {
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.EventRepeat,
-        titleRes = R.string.whats_new_traffic_reset_title,
-        descriptionRes = R.string.whats_new_traffic_reset_desc,
+        icon = Icons.Filled.Percent,
+        titleRes = R.string.whats_new_clear_discounts_title,
+        descriptionRes = R.string.whats_new_clear_discounts_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.NetworkCheck,
-        titleRes = R.string.whats_new_server_check_title,
-        descriptionRes = R.string.whats_new_server_check_desc,
+        icon = Icons.Filled.Memory,
+        titleRes = R.string.whats_new_xray_core_title,
+        descriptionRes = R.string.whats_new_xray_core_desc,
     ),
 )
 

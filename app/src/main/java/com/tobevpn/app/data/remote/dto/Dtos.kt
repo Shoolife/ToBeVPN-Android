@@ -29,6 +29,7 @@ data class SessionTokensDto(
     @SerializedName("device_id") val deviceId: String,
     @SerializedName("telegram_id") val telegramId: Long? = null,
     @SerializedName("panel_user_uuid") val panelUserUuid: String? = null,
+    @SerializedName("panel_user_id") val panelUserId: Long? = null,
     @SerializedName("short_uuid") val shortUuid: String? = null,
     @SerializedName("is_linked") val isLinked: Boolean = false,
 )
@@ -37,6 +38,7 @@ data class SessionTokensDto(
 data class AuthRequestDto(
     @SerializedName("device_id") val deviceId: String? = null,
     @SerializedName("panel_user_uuid") val panelUserUuid: String? = null,
+    @SerializedName("panel_user_id") val panelUserId: Long? = null,
 )
 
 data class AuthRequestResponseDto(
@@ -48,6 +50,7 @@ data class AuthStatusDto(
     @SerializedName("telegram_id") val telegramId: Long? = null,
     @SerializedName("short_uuid") val shortUuid: String? = null,
     @SerializedName("panel_user_uuid") val panelUserUuid: String? = null,
+    @SerializedName("panel_user_id") val panelUserId: Long? = null,
 )
 
 // Device traffic
@@ -160,6 +163,7 @@ data class TvPairStatusDto(
     @SerializedName("telegram_id") val telegramId: Long? = null,
     @SerializedName("short_uuid") val shortUuid: String? = null,
     @SerializedName("panel_user_uuid") val panelUserUuid: String? = null,
+    @SerializedName("panel_user_id") val panelUserId: Long? = null,
 )
 
 data class TvPairConfirmRequestDto(
@@ -213,7 +217,8 @@ data class EnsureUserRequestDto(
 
 data class EnsureUserResponseDto(
     @SerializedName("short_uuid") val shortUuid: String,
-    @SerializedName("panel_user_uuid") val panelUserUuid: String,
+    @SerializedName("panel_user_uuid") val panelUserUuid: String? = null,
+    @SerializedName("panel_user_id") val panelUserId: Long? = null,
     @SerializedName("traffic_limit_bytes") val trafficLimitBytes: Long,
     @SerializedName("traffic_used_bytes") val trafficUsedBytes: Long,
     @SerializedName("anon_traffic_bytes") val anonTrafficBytes: Long? = null,
@@ -224,6 +229,7 @@ data class EnsureUserResponseDto(
 
 // Save email
 data class SaveEmailRequestDto(
-    @SerializedName("panel_user_uuid") val panelUserUuid: String,
+    @SerializedName("panel_user_uuid") val panelUserUuid: String? = null,
+    @SerializedName("panel_user_id") val panelUserId: Long? = null,
     val email: String,
 )

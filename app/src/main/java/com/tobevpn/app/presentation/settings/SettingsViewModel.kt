@@ -120,6 +120,10 @@ class SettingsViewModel @Inject constructor(
     private val _language = MutableStateFlow(LocaleManager.current())
     val language: StateFlow<String> = _language.asStateFlow()
 
+    /** Next traffic limit reset, for the subscription card in the scale preview. */
+    val trafficResetAt: StateFlow<Long?> = prefsDataStore.trafficResetAt
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     val profileNameDisplay: StateFlow<ProfileNameDisplay> = prefsDataStore.profileNameDisplay
         .map { ProfileNameDisplay.fromName(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProfileNameDisplay.DEFAULT)

@@ -52,6 +52,8 @@ data class PurchasePriceDto(
     val currency: String,
     // Decimal string, e.g. "15.00"
     val amount: String,
+    // Saving for the term against the shortest term's price scaled to its days.
+    @SerializedName("discount_percent") val discountPercent: Int = 0,
 )
 
 data class PurchasePaymentMethodDto(

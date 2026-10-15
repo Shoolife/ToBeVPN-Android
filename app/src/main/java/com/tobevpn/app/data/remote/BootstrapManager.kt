@@ -7,6 +7,7 @@ import com.tobevpn.app.data.local.entity.SessionEntity
 import com.tobevpn.app.data.remote.dto.BootstrapRequestDto
 import com.tobevpn.app.data.remote.dto.RefreshRequestDto
 import com.tobevpn.app.data.remote.dto.SessionTokensDto
+import com.tobevpn.app.data.remote.dto.mergePanelUserUuid
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicReference
@@ -167,7 +168,10 @@ class BootstrapManager @Inject constructor(
                     authState = "AUTHENTICATED",
                     isLinked = true,
                     telegramId = stored.telegramId,
-                    panelUserUuid = stored.panelUserUuid ?: session.panelUserUuid,
+                    panelUserUuid = mergePanelUserUuid(
+                        session.panelUserUuid, session.shortUuid,
+                        stored.panelUserUuid, stored.shortUuid,
+                    ),
                     shortUuid = stored.shortUuid ?: session.shortUuid,
                     pendingAuthToken = null,
                 )
@@ -195,7 +199,10 @@ class BootstrapManager @Inject constructor(
                     authState = "ANONYMOUS",
                     isLinked = false,
                     telegramId = null,
-                    panelUserUuid = stored.panelUserUuid ?: session.panelUserUuid,
+                    panelUserUuid = mergePanelUserUuid(
+                        session.panelUserUuid, session.shortUuid,
+                        stored.panelUserUuid, stored.shortUuid,
+                    ),
                     shortUuid = stored.shortUuid ?: session.shortUuid,
                 )
             }

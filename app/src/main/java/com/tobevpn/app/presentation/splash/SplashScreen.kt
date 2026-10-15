@@ -12,6 +12,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -38,16 +39,17 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.min
 import androidx.compose.ui.unit.sp
 import com.tobevpn.app.R
 import com.tobevpn.app.presentation.components.drawBrandGlow
 import com.tobevpn.app.presentation.components.drawBrandIcon
+import kotlin.math.sqrt
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.sqrt
 
 // Startup animation, matching the desktop client (SplashScreen.tsx/.css):
 // the app icon's own shield appears and settles, its chevrons slide in, then
@@ -75,6 +77,8 @@ private const val CHEVRON_FADE_MS = 600
 private const val TEXT_DELAY_MS = 900L
 private const val TEXT_MS = 700
 private const val HOLD_MS = 2400L
+private val PHONE_SHORT_SIDE = 420.dp
+private const val MAX_SCALE = 1.4f
 private const val EXIT_MS = 450
 
 
@@ -133,7 +137,7 @@ fun SplashScreen(onFinished: () -> Unit) {
         }
     }
 
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             // Read in the layer, not in composition: no recomposition per frame.
@@ -141,8 +145,11 @@ fun SplashScreen(onFinished: () -> Unit) {
             .background(backgroundColor),
         contentAlignment = Alignment.Center,
     ) {
+        // Phone sizes up to a ~420 dp short side; tablets and unfolded
+        // foldables grow the icon and the name with the screen.
+        val k = (min(maxWidth, maxHeight) / PHONE_SHORT_SIDE).coerceIn(1f, MAX_SCALE)
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(modifier = Modifier.size(240.dp), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.size(240.dp * k), contentAlignment = Alignment.Center) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     drawBrandGlow(glowColor, glowPulse)
                 }
@@ -159,7 +166,7 @@ fun SplashScreen(onFinished: () -> Unit) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(20.dp))
+            Spacer(modifier = Modifier.height(20.dp * k))
 
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -172,16 +179,16 @@ fun SplashScreen(onFinished: () -> Unit) {
                 // splash and the sign-in titles.
                 Text(
                     text = "ToBeVPN",
-                    fontSize = 44.sp,
-                    lineHeight = 50.sp,
+                    fontSize = 44.sp * k,
+                    lineHeight = 50.sp * k,
                     fontWeight = FontWeight.Bold,
                     color = titleColor,
                 )
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(6.dp * k))
                 Text(
                     text = stringResource(R.string.splash_tagline),
-                    fontSize = 17.sp,
-                    lineHeight = 23.sp,
+                    fontSize = 17.sp * k,
+                    lineHeight = 23.sp * k,
                     fontWeight = FontWeight.Normal,
                     color = taglineColor,
                     textAlign = TextAlign.Center,

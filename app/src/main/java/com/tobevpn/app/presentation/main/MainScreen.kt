@@ -2337,24 +2337,9 @@ private fun SubscriptionBottomSheet(
             // Current plan info
             val quotaMonth = stringResource(R.string.plan_quota_month)
             val unknownPlanData = stringResource(R.string.plan_unknown_name)
-            val unknownDeviceCount = stringResource(R.string.plan_unknown_device_count)
-            val unknownQuotaDescription = "$quotaMonth \u00B7 ${stringResource(R.string.plan_devices_unknown)}"
             val unlimitedTrafficText = stringResource(R.string.plan_unlimited_traffic)
             val unknownDevicesText = stringResource(R.string.plan_devices_unknown)
             val trafficLimitBytes = currentLimits?.trafficLimitBytes
-            val resetClock = rememberResetClock(trafficResetAt)
-            val sheetTrafficReset = if (
-                authState is AuthState.Authenticated && authState.plan != UserPlan.EXPIRED
-            ) {
-                trafficResetText(
-                    LocalContext.current,
-                    trafficResetAt,
-                    trafficLimitBytes ?: 0L,
-                    now = resetClock,
-                )
-            } else {
-                null
-            }
             val currentDeviceLimit = currentLimits?.deviceLimit
             val trafficGb: Int? = trafficLimitBytes
                 ?.takeIf { it > 0 }
@@ -2365,165 +2350,13 @@ private fun SubscriptionBottomSheet(
             val limitsLoading = showLimits &&
                 currentLimits == null &&
                 (purchasePlansLoading || !purchasePlansLoaded)
-            val trafficLimitValue = when {
-                trafficGb != null -> "$trafficGb ${stringResource(R.string.unit_gb)}"
-                trafficLimitBytes == null -> unknownPlanData
-                trafficLimitBytes <= 0 -> "\u221E"
-                else -> unknownPlanData
-            }
-            val deviceLimitValue = when {
-                deviceLimit != null -> deviceLimit.toString()
-                currentDeviceLimit == null -> unknownDeviceCount
-                currentDeviceLimit <= 0 -> "\u221E"
-                else -> unknownDeviceCount
-            }
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                colors = if (isDarkTheme) {
-                    CardDefaults.cardColors()
-                } else {
-                    CardDefaults.cardColors(
-                        containerColor = com.tobevpn.app.presentation.theme.BrandCardFill,
-                    )
-                },
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(R.string.current_plan),
-                            style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        when (authState) {
-                            is AuthState.Anonymous -> {
-                                CurrentPlanName(
-                                    text = stringResource(R.string.plan_free),
-                                    color = VpnOrange,
-                                )
-                                CurrentPlanDescription(
-                                    text = stringResource(R.string.plan_limited_traffic),
-                                )
-                            }
-                            is AuthState.Authenticated -> {
-                                val serverPlanName = authState.planDisplayName?.takeIf {
-                                    it.isNotBlank() && authState.plan != UserPlan.EXPIRED
-                                }
-                                when (authState.plan) {
-                                    UserPlan.ADMIN,
-                                    UserPlan.PAID -> {
-                                        CurrentPlanName(
-                                            text = serverPlanName ?: stringResource(R.string.plan_unknown_name),
-                                            color = VpnGreen,
-                                        )
-                                        val description = when {
-                                            authState.planExpiresAt != null -> {
-                                                val expiresDate = formatDate(authState.planExpiresAt)
-                                                val description = stringResource(
-                                                    R.string.plan_active_until,
-                                                    expiresDate,
-                                                )
-                                                textWithAccentedDate(
-                                                    text = description,
-                                                    date = expiresDate,
-                                                    dateColor = subscriptionExpiryDateColor(
-                                                        authState.planExpiresAt,
-                                                    ),
-                                                )
-                                            }
-                                            limitsLoading -> AnnotatedString(
-                                                stringResource(R.string.loading_data),
-                                            )
-                                            trafficLimitBytes == null || currentDeviceLimit == null ->
-                                                AnnotatedString(unknownQuotaDescription)
-                                            trafficLimitBytes <= 0 && currentDeviceLimit <= 0 ->
-                                                AnnotatedString(
-                                                    stringResource(R.string.plan_unlimited_access),
-                                                )
-                                            else -> AnnotatedString(
-                                                stringResource(R.string.plan_active),
-                                            )
-                                        }
-                                        CurrentPlanDescription(
-                                            text = description,
-                                            maxLines = 2,
-                                        )
-                                    }
-                                    UserPlan.EXPIRED -> {
-                                        CurrentPlanName(
-                                            text = stringResource(R.string.plan_expired),
-                                            color = VpnRed,
-                                        )
-                                        CurrentPlanDescription(
-                                            text = stringResource(R.string.plan_renew_full),
-                                        )
-                                    }
-                                    UserPlan.FREE_TRIAL -> {
-                                        CurrentPlanName(
-                                            text = serverPlanName ?: stringResource(R.string.plan_free),
-                                            color = VpnOrange,
-                                        )
-                                        CurrentPlanDescription(
-                                            text = stringResource(R.string.plan_limited_traffic),
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        // Without the limits block (trial) the reset gets its own chip.
-                        if (!showLimits && sheetTrafficReset != null) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            TrafficResetPill(
-                                text = sheetTrafficReset.chip,
-                                hint = stringResource(R.string.traffic_reset_hint),
-                            )
-                        }
-                    }
-                    if (showLimits) {
-                        Spacer(modifier = Modifier.width(16.dp))
-                        if (limitsLoading) {
-                            LoadingInline(text = stringResource(R.string.loading_data))
-                        } else {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            ) {
-                                // The reset date replaces "per month" under the
-                                // limit it renews (desktop SubscriptionSheet).
-                                LimitStat(
-                                    value = trafficLimitValue,
-                                    label = stringResource(R.string.per_month_short),
-                                    resetPill = sheetTrafficReset?.dateTime,
-                                    resetHint = sheetTrafficReset?.let {
-                                        stringResource(R.string.traffic_reset_hint)
-                                    },
-                                )
-                                Text(
-                                    text = "·",
-                                    style = fixedLayoutTextStyle(
-                                        TextStyle(fontSize = 22.sp),
-                                    ),
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                                LimitStat(
-                                    value = deviceLimitValue,
-                                    label = stringResource(R.string.devices_label),
-                                )
-                            }
-                    }
-                }
-            }
-            }
+            SubscriptionCurrentPlanCard(
+                authState = authState,
+                trafficLimitBytes = trafficLimitBytes,
+                deviceLimit = currentDeviceLimit,
+                limitsLoading = limitsLoading,
+                trafficResetAt = trafficResetAt,
+            )
 
             if (authState is AuthState.Anonymous) {
                 // Anonymous users see only their current plan and a sign-in
@@ -2649,6 +2482,7 @@ private fun SubscriptionBottomSheet(
             // value is used only when payment_methods[] is unavailable.
             fun formatDurationPrice(
                 duration: com.tobevpn.app.data.remote.dto.PurchaseDurationDto,
+                planDurations: List<com.tobevpn.app.data.remote.dto.PurchaseDurationDto>,
             ): DurationPriceDisplay {
                 if (purchasePlansFromCache) {
                     return DurationPriceDisplay(finalPrice = unknownPlanData)
@@ -2658,7 +2492,7 @@ private fun SubscriptionBottomSheet(
                 } else {
                     listOf("USD", "RUB", "XTR")
                 }
-                val resolved = resolvePurchasePrice(duration, preferredCurrencies)
+                val resolved = resolvePurchasePrice(duration, preferredCurrencies, planDurations)
                     ?: return DurationPriceDisplay(finalPrice = unknownPlanData)
                 val hasDiscount = resolved.hasDiscount
                 return DurationPriceDisplay(
@@ -2721,7 +2555,10 @@ private fun SubscriptionBottomSheet(
                                 .filter { it.days > 0 }
                                 .sortedBy { it.orderIndex }
                                 .map { d ->
-                                    val displayedPrice = formatDurationPrice(d)
+                                    val displayedPrice = formatDurationPrice(
+                                        d,
+                                        sourcePlan.durations.orEmpty(),
+                                    )
                                     PlanInfo(
                                         key = "${sourcePlan.id}:${planKey(d.days)}",
                                         title = planTitle(d.days),
@@ -3334,6 +3171,204 @@ private fun measureTabTitleWidthPx(
         maxLines = 1,
         softWrap = false,
     ).size.width
+}
+
+/**
+ * The "Current plan" card of the subscription sheet. The display scale
+ * preview shows this same card, so the two can never drift apart.
+ */
+@Composable
+internal fun SubscriptionCurrentPlanCard(
+    authState: AuthState,
+    trafficLimitBytes: Long?,
+    deviceLimit: Int?,
+    limitsLoading: Boolean = false,
+    trafficResetAt: Long?,
+) {
+    val isDarkTheme = LocalAppDarkTheme.current
+    val currentDeviceLimit = deviceLimit
+    val quotaMonth = stringResource(R.string.plan_quota_month)
+    val unknownPlanData = stringResource(R.string.plan_unknown_name)
+    val unknownDeviceCount = stringResource(R.string.plan_unknown_device_count)
+    val unknownQuotaDescription = "$quotaMonth \u00B7 ${stringResource(R.string.plan_devices_unknown)}"
+    val resetClock = rememberResetClock(trafficResetAt)
+    val sheetTrafficReset = if (
+        authState is AuthState.Authenticated && authState.plan != UserPlan.EXPIRED
+    ) {
+        trafficResetText(
+            LocalContext.current,
+            trafficResetAt,
+            trafficLimitBytes ?: 0L,
+            now = resetClock,
+        )
+    } else {
+        null
+    }
+    val trafficGb: Int? = trafficLimitBytes
+        ?.takeIf { it > 0 }
+        ?.let { (it / (1024L * 1024L * 1024L)).toInt() }
+    val positiveDeviceLimit: Int? = currentDeviceLimit?.takeIf { it > 0 }
+    val showLimits = authState is AuthState.Authenticated &&
+        (authState.plan == UserPlan.PAID || authState.plan == UserPlan.ADMIN)
+    val trafficLimitValue = when {
+        trafficGb != null -> "$trafficGb ${stringResource(R.string.unit_gb)}"
+        trafficLimitBytes == null -> unknownPlanData
+        trafficLimitBytes <= 0 -> "\u221E"
+        else -> unknownPlanData
+    }
+    val deviceLimitValue = when {
+        positiveDeviceLimit != null -> positiveDeviceLimit.toString()
+        currentDeviceLimit == null -> unknownDeviceCount
+        currentDeviceLimit <= 0 -> "\u221E"
+        else -> unknownDeviceCount
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = if (isDarkTheme) {
+            CardDefaults.cardColors()
+        } else {
+            CardDefaults.cardColors(
+                containerColor = com.tobevpn.app.presentation.theme.BrandCardFill,
+            )
+        },
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.current_plan),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                when (authState) {
+                    is AuthState.Anonymous -> {
+                        CurrentPlanName(
+                            text = stringResource(R.string.plan_free),
+                            color = VpnOrange,
+                        )
+                        CurrentPlanDescription(
+                            text = stringResource(R.string.plan_limited_traffic),
+                        )
+                    }
+                    is AuthState.Authenticated -> {
+                        val serverPlanName = authState.planDisplayName?.takeIf {
+                            it.isNotBlank() && authState.plan != UserPlan.EXPIRED
+                        }
+                        when (authState.plan) {
+                            UserPlan.ADMIN,
+                            UserPlan.PAID -> {
+                                CurrentPlanName(
+                                    text = serverPlanName ?: stringResource(R.string.plan_unknown_name),
+                                    color = VpnGreen,
+                                )
+                                val description = when {
+                                    authState.planExpiresAt != null -> {
+                                        val expiresDate = formatDate(authState.planExpiresAt)
+                                        val description = stringResource(
+                                            R.string.plan_active_until,
+                                            expiresDate,
+                                        )
+                                        textWithAccentedDate(
+                                            text = description,
+                                            date = expiresDate,
+                                            dateColor = subscriptionExpiryDateColor(
+                                                authState.planExpiresAt,
+                                            ),
+                                        )
+                                    }
+                                    limitsLoading -> AnnotatedString(
+                                        stringResource(R.string.loading_data),
+                                    )
+                                    trafficLimitBytes == null || currentDeviceLimit == null ->
+                                        AnnotatedString(unknownQuotaDescription)
+                                    trafficLimitBytes <= 0 && currentDeviceLimit <= 0 ->
+                                        AnnotatedString(
+                                            stringResource(R.string.plan_unlimited_access),
+                                        )
+                                    else -> AnnotatedString(
+                                        stringResource(R.string.plan_active),
+                                    )
+                                }
+                                CurrentPlanDescription(
+                                    text = description,
+                                    maxLines = 2,
+                                )
+                            }
+                            UserPlan.EXPIRED -> {
+                                CurrentPlanName(
+                                    text = stringResource(R.string.plan_expired),
+                                    color = VpnRed,
+                                )
+                                CurrentPlanDescription(
+                                    text = stringResource(R.string.plan_renew_full),
+                                )
+                            }
+                            UserPlan.FREE_TRIAL -> {
+                                CurrentPlanName(
+                                    text = serverPlanName ?: stringResource(R.string.plan_free),
+                                    color = VpnOrange,
+                                )
+                                CurrentPlanDescription(
+                                    text = stringResource(R.string.plan_limited_traffic),
+                                )
+                            }
+                        }
+                    }
+                }
+                // Without the limits block (trial) the reset gets its own chip.
+                if (!showLimits && sheetTrafficReset != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    TrafficResetPill(
+                        text = sheetTrafficReset.chip,
+                        hint = stringResource(R.string.traffic_reset_hint),
+                    )
+                }
+            }
+            if (showLimits) {
+                Spacer(modifier = Modifier.width(16.dp))
+                if (limitsLoading) {
+                    LoadingInline(text = stringResource(R.string.loading_data))
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        // The reset date replaces "per month" under the
+                        // limit it renews (desktop SubscriptionSheet).
+                        LimitStat(
+                            value = trafficLimitValue,
+                            label = stringResource(R.string.per_month_short),
+                            resetPill = sheetTrafficReset?.dateTime,
+                            resetHint = sheetTrafficReset?.let {
+                                stringResource(R.string.traffic_reset_hint)
+                            },
+                        )
+                        Text(
+                            text = "·",
+                            style = fixedLayoutTextStyle(
+                                TextStyle(fontSize = 22.sp),
+                            ),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        LimitStat(
+                            value = deviceLimitValue,
+                            label = stringResource(R.string.devices_label),
+                        )
+                    }
+            }
+        }
+    }
+    }
 }
 
 @Composable

@@ -555,10 +555,10 @@
     <string name="whats_new_version">Version %1$s</string>
     <string name="whats_new_intro">Highlights in the installed version</string>
     <string name="whats_new_done">Got it</string>
-    <string name="whats_new_traffic_reset_title">Traffic reset date</string>
-    <string name="whats_new_traffic_reset_desc">Home shows when your traffic limit resets under the traffic bar, and the subscription sheet shows the exact date and time.</string>
-    <string name="whats_new_server_check_title">Faster server check</string>
-    <string name="whats_new_server_check_desc">Server checks are faster and no longer hang, and a tap on a server address copies it.</string>
+    <string name="whats_new_clear_discounts_title">Clear discounts</string>
+    <string name="whats_new_clear_discounts_desc">The subscription sheet strikes through the full price of a term, and the percentage shows the real saving, for longer terms and with a promo code.</string>
+    <string name="whats_new_xray_core_title">Xray core 26.10.10</string>
+    <string name="whats_new_xray_core_desc">The connection core is updated with fixes and stability improvements from the new Xray release.</string>
     <string name="version">Version</string>
     <string name="xray">XRay</string>
     <string name="language">Language</string>

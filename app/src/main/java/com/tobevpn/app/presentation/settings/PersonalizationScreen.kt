@@ -26,7 +26,6 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -106,7 +105,7 @@ import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.horizontalFadingEdges
 import com.tobevpn.app.presentation.components.startEdgeFade
-import com.tobevpn.app.presentation.components.withSmallerEmoji
+import com.tobevpn.app.presentation.main.SubscriptionCurrentPlanCard
 import com.tobevpn.app.presentation.servers.ServerListScalePreview
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.LocalAppBaseDensity
@@ -115,8 +114,6 @@ import com.tobevpn.app.presentation.theme.LocalAppInterfaceScale
 import com.tobevpn.app.presentation.theme.LocalAppLayoutFontScaleMultiplier
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
-import com.tobevpn.app.presentation.theme.VpnOrange
-import com.tobevpn.app.presentation.theme.VpnRed
 import com.tobevpn.app.util.LocaleManager
 import kotlin.math.absoluteValue
 import kotlinx.coroutines.launch
@@ -315,6 +312,7 @@ fun DisplayScaleTextScreen(
     val outlinedText by viewModel.outlinedText.collectAsStateWithLifecycle()
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val currentSubscriptionPlan by viewModel.currentSubscriptionPlan.collectAsStateWithLifecycle()
+    val trafficResetAt by viewModel.trafficResetAt.collectAsStateWithLifecycle()
     val profileNameDisplay by viewModel.profileNameDisplay.collectAsStateWithLifecycle()
     val avatarLoading by viewModel.avatarLoading.collectAsStateWithLifecycle()
     var previewInterfaceScale by remember {
@@ -365,6 +363,7 @@ fun DisplayScaleTextScreen(
             DisplaySettingsPreview(
                 authState = authState,
                 currentSubscriptionPlan = currentSubscriptionPlan,
+                trafficResetAt = trafficResetAt,
                 profileNameDisplay = profileNameDisplay,
                 avatarLoading = avatarLoading,
                 interfaceScale = previewInterfaceScale,
@@ -447,6 +446,7 @@ private fun ResetDisplaySettingsButton(
 private fun DisplaySettingsPreview(
     authState: AuthState,
     currentSubscriptionPlan: CurrentSubscriptionPlanInfo?,
+    trafficResetAt: Long?,
     profileNameDisplay: ProfileNameDisplay,
     avatarLoading: Boolean,
     interfaceScale: Float,
@@ -516,6 +516,7 @@ private fun DisplaySettingsPreview(
                             else -> DisplayPreviewSubscriptionPage(
                                 authState = authState,
                                 currentSubscriptionPlan = currentSubscriptionPlan,
+                                trafficResetAt = trafficResetAt,
                             )
                         }
                     }
@@ -642,149 +643,18 @@ private fun DisplayPreviewServersPage() {
 private fun DisplayPreviewSubscriptionPage(
     authState: AuthState,
     currentSubscriptionPlan: CurrentSubscriptionPlanInfo?,
+    trafficResetAt: Long?,
 ) {
-    val authenticated = authState as? AuthState.Authenticated
-    val planName = currentSubscriptionPlan?.displayName
-        ?.takeIf { it.isNotBlank() }
-        ?: authenticated?.planDisplayName?.takeIf { it.isNotBlank() }
-        ?: when (authenticated?.plan) {
-            UserPlan.ADMIN -> stringResource(R.string.plan_admin)
-            UserPlan.PAID -> stringResource(R.string.plan_standard)
-            UserPlan.EXPIRED -> stringResource(R.string.plan_expired)
-            UserPlan.FREE_TRIAL, null -> stringResource(R.string.plan_free)
-        }
-    val expired = currentSubscriptionPlan?.isExpired == true ||
-        authenticated?.plan == UserPlan.EXPIRED
-    val trial = currentSubscriptionPlan?.isTrial == true ||
-        authenticated?.plan == UserPlan.FREE_TRIAL ||
-        authState is AuthState.Anonymous
-    val planColor = when {
-        expired -> VpnRed
-        trial -> VpnOrange
-        else -> VpnGreen
-    }
-    val expiresAt = currentSubscriptionPlan?.expiresAtMillis
-        ?: authenticated?.planExpiresAt
-    val planDescription = when {
-        expired -> stringResource(R.string.plan_renew_full)
-        expiresAt != null -> stringResource(R.string.plan_active_until, formatDate(expiresAt))
-        trial -> stringResource(R.string.plan_limited_traffic)
-        else -> stringResource(R.string.plan_active)
-    }
-    val trafficLimitBytes = currentSubscriptionPlan?.trafficLimitBytes
-    val deviceLimit = currentSubscriptionPlan?.deviceLimit
-    val unlimited = currentSubscriptionPlan?.isUnlimited == true
-    val trafficLimitValue = when {
-        unlimited -> "∞"
-        trafficLimitBytes == null -> "—"
-        trafficLimitBytes <= 0L -> "∞"
-        else -> "${trafficLimitBytes / BYTES_PER_GIB} ${stringResource(R.string.unit_gb)}"
-    }
-    val deviceLimitValue = when {
-        unlimited -> "∞"
-        deviceLimit == null -> "—"
-        deviceLimit <= 0 -> "∞"
-        else -> deviceLimit.toString()
-    }
-
+    // The very card of the subscription sheet, so the preview stays current.
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center,
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1.12f)) {
-                    Text(
-                        text = stringResource(R.string.current_plan),
-                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                    )
-                    Text(
-                        text = withSmallerEmoji(planName),
-                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
-                        fontWeight = FontWeight.Bold,
-                        color = planColor,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                        autoSize = TextAutoSize.StepBased(
-                            minFontSize = 13.sp,
-                            maxFontSize = 22.sp,
-                        ),
-                    )
-                    Text(
-                        text = planDescription,
-                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        softWrap = false,
-                        overflow = TextOverflow.Ellipsis,
-                        autoSize = TextAutoSize.StepBased(
-                            minFontSize = 11.sp,
-                            maxFontSize = 16.sp,
-                        ),
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Row(
-                    modifier = Modifier.weight(0.88f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    DisplayPreviewLimit(
-                        value = trafficLimitValue,
-                        label = stringResource(R.string.per_month_short),
-                    )
-                    Text(
-                        text = "·",
-                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    DisplayPreviewLimit(
-                        value = deviceLimitValue,
-                        label = stringResource(R.string.devices_label),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DisplayPreviewLimit(
-    value: String,
-    label: String,
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(
-            text = value,
-            style = fixedLayoutTextStyle(
-                MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp),
-            ),
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-            maxLines = 1,
-        )
-        Text(
-            text = label,
-            style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        SubscriptionCurrentPlanCard(
+            authState = authState,
+            trafficLimitBytes = currentSubscriptionPlan?.trafficLimitBytes,
+            deviceLimit = currentSubscriptionPlan?.deviceLimit,
+            trafficResetAt = trafficResetAt,
         )
     }
 }
@@ -1403,7 +1273,6 @@ private fun SelectionCard(
 // Soft violet for the Theme block — no brand colour maps to "appearance".
 private val AccentViolet = Color(0xFF8B7CF6)
 private const val DISPLAY_PREVIEW_PAGE_COUNT = 3
-private const val BYTES_PER_GIB = 1024L * 1024L * 1024L
 
 // A block header: a small tinted icon badge next to the title, matching the
 // look of the category tiles on the main Settings screen.

@@ -20,6 +20,8 @@ import com.tobevpn.app.data.remote.dto.DeviceUnlinkRequestDto
 import com.tobevpn.app.data.remote.dto.DeviceUnlinkResponseDto
 import com.tobevpn.app.data.remote.dto.EnsureUserRequestDto
 import com.tobevpn.app.data.remote.dto.SaveEmailRequestDto
+import com.tobevpn.app.data.remote.dto.matchesPreferredPanelUser
+import com.tobevpn.app.data.remote.dto.mergePanelUserUuid
 import com.tobevpn.app.data.remote.dto.TvPairCreateResponseDto
 import com.tobevpn.app.data.remote.dto.TvPairCreateRequestDto
 import com.tobevpn.app.domain.model.AuthState
@@ -807,7 +809,10 @@ class AuthRepository @Inject constructor(
                 { planRank(it) },
                 { if (it.trafficLimitStrategy?.uppercase(Locale.ROOT) == "MONTH") 1 else 0 },
                 {
-                    if (it.uuid == preferredPanelUserUuid || it.shortUuid == preferredShortUuid) {
+                    if (matchesPreferredPanelUser(
+                            it.uuid, it.shortUuid, preferredPanelUserUuid, preferredShortUuid,
+                        )
+                    ) {
                         1
                     } else {
                         0
@@ -1008,7 +1013,9 @@ class AuthRepository @Inject constructor(
                 authState = "AUTHENTICATED",
                 telegramId = telegramId,
                 shortUuid = shortUuid ?: current.shortUuid,
-                panelUserUuid = panelUserUuid ?: current.panelUserUuid,
+                panelUserUuid = mergePanelUserUuid(
+                    current.panelUserUuid, current.shortUuid, panelUserUuid, shortUuid,
+                ),
                 isLinked = true,
                 pendingAuthToken = if (clearPendingAuthToken) null else current.pendingAuthToken,
             )
@@ -1360,10 +1367,9 @@ class AuthRepository @Inject constructor(
 
     suspend fun saveEmail(email: String): Result<Unit> {
         return try {
-            val session = sessionDao.getSession() ?: return Result.failure(Exception("No session"))
-            val panelUserUuid = session.panelUserUuid ?: return Result.failure(Exception("No panel user"))
+            sessionDao.getSession() ?: return Result.failure(Exception("No session"))
             val response = botApi.saveEmail(
-                SaveEmailRequestDto(panelUserUuid = panelUserUuid, email = email)
+                SaveEmailRequestDto(email = email)
             )
             if (response.success) {
                 prefsDataStore.setEmailPromptShown()

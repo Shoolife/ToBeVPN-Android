@@ -569,10 +569,10 @@
     <string name="whats_new_version">Версия %1$s</string>
     <string name="whats_new_intro">Главные изменения установленной версии</string>
     <string name="whats_new_done">Понятно</string>
-    <string name="whats_new_traffic_reset_title">Дата сброса трафика</string>
-    <string name="whats_new_traffic_reset_desc">На главном экране под полосой трафика видно, когда сбросится лимит, а в окне подписки — точные дата и время сброса.</string>
-    <string name="whats_new_server_check_title">Быстрая проверка серверов</string>
-    <string name="whats_new_server_check_desc">Проверка серверов стала быстрее и больше не зависает, а адрес сервера можно скопировать нажатием.</string>
+    <string name="whats_new_clear_discounts_title">Понятные скидки</string>
+    <string name="whats_new_clear_discounts_desc">В окне подписки зачёркнута полная цена срока, а процент показывает реальную экономию — и за длинный срок, и с промокодом.</string>
+    <string name="whats_new_xray_core_title">Ядро Xray 26.10.10</string>
+    <string name="whats_new_xray_core_desc">Обновлено ядро подключения: исправления и улучшения стабильности из нового выпуска Xray.</string>
     <string name="version">Версия</string>
     <string name="xray">XRay</string>
     <string name="language">Язык</string>
