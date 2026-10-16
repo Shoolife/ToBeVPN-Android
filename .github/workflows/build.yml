@@ -74,6 +74,8 @@ jobs:
           # with an unusable subscription refresh path.
           FALLBACK_BOT_DOMAIN: ${{ secrets.FALLBACK_BOT_DOMAIN }}
           FALLBACK_SUBS_DOMAIN: ${{ secrets.FALLBACK_SUBS_DOMAIN }}
+          BASE_STATION_BYPASS_URL: ${{ secrets.BASE_STATION_BYPASS_URL }}
+          BASE_STATION_BYPASS_FALLBACK_URL: ${{ secrets.BASE_STATION_BYPASS_FALLBACK_URL }}
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Build Google Play AAB (no splits)
@@ -85,6 +87,8 @@ jobs:
           SUBSCRIPTION_URL: ${{ secrets.SUBSCRIPTION_URL }}
           FALLBACK_BOT_DOMAIN: ${{ secrets.FALLBACK_BOT_DOMAIN }}
           FALLBACK_SUBS_DOMAIN: ${{ secrets.FALLBACK_SUBS_DOMAIN }}
+          BASE_STATION_BYPASS_URL: ${{ secrets.BASE_STATION_BYPASS_URL }}
+          BASE_STATION_BYPASS_FALLBACK_URL: ${{ secrets.BASE_STATION_BYPASS_FALLBACK_URL }}
         run: ./gradlew bundlePlayRelease -PdisableAbiSplits --no-daemon
 
       - name: Locate and rename artifacts

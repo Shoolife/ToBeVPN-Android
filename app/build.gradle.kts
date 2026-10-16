@@ -47,8 +47,8 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = versionCodeOverride ?: 82
-        versionName = "1.0.81"
+        versionCode = versionCodeOverride ?: 83
+        versionName = "1.0.82"
 
         // Direct APK releases can use the GitHub self-updater. Google Play
         // builds override this flag because Play policy requires updates to
@@ -99,18 +99,28 @@ android {
         buildConfigField("String", "FALLBACK_SUBS_DOMAIN", "\"$fallbackSubsDomain\"")
         buildConfigField("String", "SUBSCRIPTION_BASE_URL", "\"$subscriptionUrl\"")
 
-        // Public beta profile used by the mobile-only base-station bypass tab.
-        // It is intentionally configurable for CI/operators, but the current
-        // public endpoint is a usable default because client-side access gates
-        // cannot make a public URL secret in the application binary.
+        // Profile for the mobile-only base-station bypass tab: a primary URL
+        // and a fallback tried when the primary fails. Like the other
+        // endpoints they are never hardcoded and come from the environment
+        // (CI secrets) or local.properties.
         val baseStationBypassUrl = System.getenv("BASE_STATION_BYPASS_URL")
             ?.takeIf { it.isNotBlank() }
             ?: localProperties.getProperty("base.station.bypass.url")
-            ?: "https://functions.yandexcloud.net/d4evsj6lntd0e82tot67"
+            ?: ""
+        val baseStationBypassFallbackUrl = System.getenv("BASE_STATION_BYPASS_FALLBACK_URL")
+            ?.takeIf { it.isNotBlank() }
+            ?: localProperties.getProperty("base.station.bypass.fallback.url")
+            ?: ""
+        requireConfiguredReleaseFallback("BASE_STATION_BYPASS_URL", baseStationBypassUrl)
+        requireConfiguredReleaseFallback(
+            "BASE_STATION_BYPASS_FALLBACK_URL",
+            baseStationBypassFallbackUrl,
+        )
+        buildConfigField("String", "BASE_STATION_BYPASS_URL", "\"$baseStationBypassUrl\"")
         buildConfigField(
             "String",
-            "BASE_STATION_BYPASS_URL",
-            "\"$baseStationBypassUrl\"",
+            "BASE_STATION_BYPASS_FALLBACK_URL",
+            "\"$baseStationBypassFallbackUrl\"",
         )
     }
 

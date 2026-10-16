@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CellTower
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Percent
@@ -145,6 +146,11 @@ private val WhatsNewHeroIcon: ImageVector by lazy {
 // release archive here, mirroring the desktop "What's new" dialog. Update this
 // list with each release.
 private val currentHighlights = listOf(
+    WhatsNewHighlight(
+        icon = Icons.Filled.CellTower,
+        titleRes = R.string.whats_new_bs_fallback_title,
+        descriptionRes = R.string.whats_new_bs_fallback_desc,
+    ),
     WhatsNewHighlight(
         icon = Icons.Filled.Percent,
         titleRes = R.string.whats_new_clear_discounts_title,

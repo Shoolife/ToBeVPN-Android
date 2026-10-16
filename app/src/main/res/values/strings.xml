@@ -559,6 +559,8 @@
     <string name="whats_new_clear_discounts_desc">The subscription sheet strikes through the full price of a term, and the percentage shows the real saving, for longer terms and with a promo code.</string>
     <string name="whats_new_xray_core_title">Xray core 26.10.10</string>
     <string name="whats_new_xray_core_desc">The connection core is updated with fixes and stability improvements from the new Xray release.</string>
+    <string name="whats_new_bs_fallback_title">More reliable base station bypass</string>
+    <string name="whats_new_bs_fallback_desc">If the main source of the base station bypass server list is unavailable, the app loads the list from a backup source.</string>
     <string name="version">Version</string>
     <string name="xray">XRay</string>
     <string name="language">Language</string>

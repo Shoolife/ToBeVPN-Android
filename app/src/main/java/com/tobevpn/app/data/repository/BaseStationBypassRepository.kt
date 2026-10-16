@@ -54,29 +54,7 @@ class BaseStationBypassRepository @Inject constructor(
 
     suspend fun refreshServers(): Result<List<Server>> = withContext(Dispatchers.IO) {
         try {
-            val request = Request.Builder()
-                .url(BuildConfig.BASE_STATION_BYPASS_URL)
-                .get()
-                .header(
-                    "User-Agent",
-                    "ToBeVPN/${BuildConfig.VERSION_NAME}/android/${BuildConfig.VERSION_CODE}",
-                )
-                .build()
-            val body = client.newCall(request).await().use { response ->
-                if (!response.isSuccessful) {
-                    throw IOException("Base-station bypass profile returned HTTP_${response.code}")
-                }
-                response.body.readLimitedUtf8(MAX_PROFILE_BYTES)
-            }
-            val parsedProfile = BaseStationBypassProfileParser.parseWithFilterSummary(body)
-            val servers = parsedProfile.servers
-            SafeDiagnostics.info(
-                TAG,
-                "Base-station bypass profile filter: ${parsedProfile.filterSummary}",
-            )
-            if (servers.isEmpty()) {
-                throw IOException("Base-station bypass profile contains no usable servers")
-            }
+            val servers = fetchProfileServers()
             serverDao.replaceAll(servers.mapIndexed { index, server -> server.toEntity(index) })
             SafeDiagnostics.info(
                 TAG,
@@ -92,6 +70,65 @@ class BaseStationBypassRepository @Inject constructor(
                     SafeDiagnostics.failureCategory(error),
             )
             Result.failure(error)
+        }
+    }
+
+    /**
+     * Loads the profile from the primary URL and, when it fails or has no
+     * usable servers, from the fallback. Both come from the build
+     * configuration; a blank one is skipped.
+     */
+    private suspend fun fetchProfileServers(): List<Server> {
+        val urls = listOf(
+            BuildConfig.BASE_STATION_BYPASS_URL,
+            BuildConfig.BASE_STATION_BYPASS_FALLBACK_URL,
+        ).filter(String::isNotBlank).distinct()
+        if (urls.isEmpty()) {
+            throw IOException("Base-station bypass profile URL is not configured")
+        }
+        var lastError: Exception? = null
+        for ((index, url) in urls.withIndex()) {
+            try {
+                val parsedProfile = BaseStationBypassProfileParser
+                    .parseWithFilterSummary(downloadProfile(url))
+                SafeDiagnostics.info(
+                    TAG,
+                    "Base-station bypass profile filter: ${parsedProfile.filterSummary}",
+                )
+                if (parsedProfile.servers.isEmpty()) {
+                    throw IOException("Base-station bypass profile contains no usable servers")
+                }
+                return parsedProfile.servers
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                lastError = error
+                if (index < urls.lastIndex) {
+                    SafeDiagnostics.warn(
+                        TAG,
+                        "Base-station bypass primary profile failed, trying fallback: " +
+                            SafeDiagnostics.failureCategory(error),
+                    )
+                }
+            }
+        }
+        throw lastError ?: IOException("Base-station bypass profile unavailable")
+    }
+
+    private suspend fun downloadProfile(url: String): String {
+        val request = Request.Builder()
+            .url(url)
+            .get()
+            .header(
+                "User-Agent",
+                "ToBeVPN/${BuildConfig.VERSION_NAME}/android/${BuildConfig.VERSION_CODE}",
+            )
+            .build()
+        return client.newCall(request).await().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("Base-station bypass profile returned HTTP_${response.code}")
+            }
+            response.body.readLimitedUtf8(MAX_PROFILE_BYTES)
         }
     }
 

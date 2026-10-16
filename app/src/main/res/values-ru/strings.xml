@@ -573,6 +573,8 @@
     <string name="whats_new_clear_discounts_desc">В окне подписки зачёркнута полная цена срока, а процент показывает реальную экономию — и за длинный срок, и с промокодом.</string>
     <string name="whats_new_xray_core_title">Ядро Xray 26.10.10</string>
     <string name="whats_new_xray_core_desc">Обновлено ядро подключения: исправления и улучшения стабильности из нового выпуска Xray.</string>
+    <string name="whats_new_bs_fallback_title">Надёжнее «Обход БС»</string>
+    <string name="whats_new_bs_fallback_desc">Если основной источник списка серверов вкладки «Обход БС» недоступен, приложение загрузит список из резервного.</string>
     <string name="version">Версия</string>
     <string name="xray">XRay</string>
     <string name="language">Язык</string>
