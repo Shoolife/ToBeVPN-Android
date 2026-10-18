@@ -64,6 +64,18 @@ class VlessUrlParserTest {
     }
 
     @Test
+    fun `treats json null extra as absent options`() {
+        listOf("null", "%6E%75%6C%6C", "%20null%20").forEach { extra ->
+            val server = VlessUrlParser.parse(
+                "vless://user@node.example:443?type=xhttp&extra=$extra#Node",
+            )
+
+            requireNotNull(server)
+            assertEquals("", server.extra)
+        }
+    }
+
+    @Test
     fun `normalizes fingerprint for xray lookup`() {
         val server = VlessUrlParser.parse(
             "vless://user@node.example:443?security=reality&fp=%20Android%20#Node",
