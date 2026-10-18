@@ -41,6 +41,19 @@ class BaseStationBypassProfileParserTest {
     }
 
     @Test
+    fun `xhttp null extra is accepted with the same identity as omitted extra`() {
+        val link = "vless://same-user@node.example:443?type=xhttp&security=tls"
+        val withNullExtra = BaseStationBypassProfileParser.parse(
+            "$link&extra=null#Node",
+        ).single()
+        val withoutExtra = BaseStationBypassProfileParser.parse("$link#Node").single()
+
+        assertEquals("", withNullExtra.extra)
+        assertEquals(withoutExtra.id, withNullExtra.id)
+        assertEquals(withoutExtra.probeKey, withNullExtra.probeKey)
+    }
+
+    @Test
     fun `stable id changes with vpn configuration and does not expose uuid`() {
         val first = BaseStationBypassProfileParser.parse(
             "vless://private-user-one@node.example:443?type=tcp#Node",
@@ -124,6 +137,8 @@ class BaseStationBypassProfileParserTest {
                 "vless://tcp-header@six.example:443?type=tcp&headerType=srtp#TCP SRTP",
                 "vless://xhttp-mode@seven.example:443?type=xhttp&mode=invalid#XHTTP mode",
                 "vless://xhttp-extra@eight.example:443?type=xhttp&extra=not-json#XHTTP extra",
+                "vless://xhttp-array@array.example:443?type=xhttp&extra=%5B%5D#XHTTP array",
+                "vless://xhttp-string@string.example:443?type=xhttp&extra=%22null%22#XHTTP string",
                 "vless://reality-http@nine.example:443?type=tcp&security=reality" +
                     "&headerType=http#Reality HTTP",
             ).joinToString("\n"),

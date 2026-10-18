@@ -69,7 +69,9 @@ object VlessUrlParser {
                     ?.lowercase(Locale.ROOT)
                     ?: "",
                 serviceName = params["serviceName"] ?: "",
-                extra = params["extra"] ?: "",
+                extra = params["extra"]
+                    ?.takeUnless { it.trim() == "null" }
+                    .orEmpty(),
                 mode = params["mode"]
                     ?.trim()
                     ?.lowercase(Locale.ROOT)
