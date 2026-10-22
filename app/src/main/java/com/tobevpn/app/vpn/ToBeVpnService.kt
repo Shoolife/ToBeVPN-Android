@@ -67,6 +67,14 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     private var waitingForNetworkResume = false
     @Volatile
     private var activeConnectionGeneration = -1
+    // Newest start request handed to onStartCommand. Cleanup stops the
+    // service with it, so a start queued after it keeps the service alive.
+    @Volatile
+    private var latestStartId = 0
+    // What the foreground notification shows now; re-entering foreground on
+    // a stale start reuses it instead of overwriting a live session's text.
+    @Volatile
+    private var currentNotification: Notification? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -82,6 +90,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             "VPN service command received: action=${intent?.action ?: "NULL"} " +
                 "flags=$flags start_id=$startId",
         )
+        latestStartId = startId
         when (intent?.action) {
             ACTION_START -> {
                 val config = intent.getStringExtra(EXTRA_SERVER_CONFIG)
@@ -94,15 +103,19 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
                     // flight). Skipping it kills the app with
                     // ForegroundServiceDidNotStartInTimeException. Enter foreground
                     // once, then immediately drop it — unless a live tunnel from a
-                    // previous start is running, in which case we're already
-                    // foreground and must not tear it down.
+                    // previous start is running: that one keeps its foreground
+                    // and its notification, re-posted unchanged so this start
+                    // request is answered too.
                     val hasActiveSession = vpnInterface != null || XRayCore.isRunning
-                    if (!hasActiveSession) {
-                        startForeground(
-                            NOTIFICATION_ID,
-                            createNotification(getString(R.string.state_disconnected)),
+                    if (hasActiveSession) {
+                        enterForeground(
+                            currentNotification
+                                ?: createNotification(getString(R.string.state_disconnected)),
                         )
+                    } else {
+                        enterForeground(createNotification(getString(R.string.state_disconnected)))
                         stopForeground(STOP_FOREGROUND_REMOVE)
+                        currentNotification = null
                         stopSelf(startId)
                     }
                     return START_NOT_STICKY
@@ -169,8 +182,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         serverDiagnostic: String,
     ) {
         val serverLocation = serverLocationLabel(serverName, serverCountry)
-        startForeground(
-            NOTIFICATION_ID,
+        enterForeground(
             createNotification(getString(R.string.vpn_notification_connecting_to, serverLocation)),
         )
 
@@ -395,12 +407,19 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         try {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } catch (_: Exception) { }
+        currentNotification = null
         try {
             getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
         } catch (_: Exception) { }
         // Release the current service start request immediately. A later
-        // ACTION_STOP request is stopped in onStartCommand as well.
-        stopSelf()
+        // ACTION_STOP request is stopped in onStartCommand as well. Not a bare
+        // stopSelf(): that also drops a start request still waiting in the
+        // queue (a reconnect, or a cleanup posted ahead of it), and a
+        // startForegroundService() call whose service is destroyed before
+        // startForeground() crashes the app with
+        // ForegroundServiceDidNotStartInTimeException. With the newest
+        // delivered id the system keeps the service for that request.
+        stopSelf(latestStartId)
         SafeDiagnostics.info(TAG, "VPN service cleanup completed")
     }
 
@@ -941,8 +960,15 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
     }
 
     private fun updateNotification(text: String) {
+        val notification = createNotification(text)
+        currentNotification = notification
         val nm = getSystemService(NotificationManager::class.java)
-        nm.notify(NOTIFICATION_ID, createNotification(text))
+        nm.notify(NOTIFICATION_ID, notification)
+    }
+
+    private fun enterForeground(notification: Notification) {
+        currentNotification = notification
+        startForeground(NOTIFICATION_ID, notification)
     }
 
     private fun serverLocationLabel(serverName: String, serverCountry: String): String {
