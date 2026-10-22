@@ -27,6 +27,12 @@ data class ServerEntity(
     @ColumnInfo(defaultValue = "''") val extra: String = "",
     val mode: String = "",
     val spx: String = "",
+    // v21: Hysteria2 profiles. Protocol is the ServerProtocol enum name.
+    @ColumnInfo(defaultValue = "'VLESS'") val protocol: String = "VLESS",
+    @ColumnInfo(defaultValue = "''") val obfsPassword: String = "",
+    @ColumnInfo(defaultValue = "''") val pinSha256: String = "",
+    @ColumnInfo(defaultValue = "''") val portHopping: String = "",
+    @ColumnInfo(defaultValue = "''") val echConfigList: String = "",
     val country: String = "",
     val isOnline: Boolean = true,
     val sortOrder: Int = 0,

@@ -2,23 +2,14 @@ package com.tobevpn.app.data.repository
 
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.data.local.PrefsDataStore
-import com.tobevpn.app.data.remote.await
 import com.tobevpn.app.data.local.dao.BaseStationBypassServerDao
 import com.tobevpn.app.data.local.entity.BaseStationBypassServerEntity
+import com.tobevpn.app.data.remote.await
+import com.tobevpn.app.domain.model.FingerprintOverride
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.vpn.VlessUrlParser
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.ResponseBody
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.security.MessageDigest
@@ -27,6 +18,17 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.ResponseBody
 
 private const val BASE_STATION_BYPASS_ID_PREFIX = "bs:"
 
@@ -41,16 +43,27 @@ class BaseStationBypassRepository @Inject constructor(
         .callTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    fun observeServers(): Flow<List<Server>> = serverDao.observeAll().map { entities ->
-        entities
-            .map(BaseStationBypassServerEntity::toDomain)
-            .filter(BaseStationBypassProfileParser::isSupportedProfile)
+    // The stored profile keeps its own fingerprint; a manual override is laid
+    // over it on the way out, so the tunnel config, the server check and the
+    // recovery all see the same value - and clearing it restores the profile.
+    fun observeServers(): Flow<List<Server>> = combine(
+        serverDao.observeAll(),
+        prefsDataStore.observeBaseStationBypassFingerprint(),
+    ) { entities, fingerprint ->
+        FingerprintOverride.apply(
+            entities
+                .map(BaseStationBypassServerEntity::toDomain)
+                .filter(BaseStationBypassProfileParser::isSupportedProfile),
+            fingerprint,
+        )
     }
 
-    suspend fun getServers(): List<Server> =
+    suspend fun getServers(): List<Server> = FingerprintOverride.apply(
         serverDao.getAll()
             .map(BaseStationBypassServerEntity::toDomain)
-            .filter(BaseStationBypassProfileParser::isSupportedProfile)
+            .filter(BaseStationBypassProfileParser::isSupportedProfile),
+        prefsDataStore.getBaseStationBypassFingerprint(),
+    )
 
     suspend fun refreshServers(): Result<List<Server>> = withContext(Dispatchers.IO) {
         try {
@@ -60,7 +73,9 @@ class BaseStationBypassRepository @Inject constructor(
                 TAG,
                 "Base-station bypass profile refreshed: count=${servers.size}",
             )
-            Result.success(servers)
+            Result.success(
+                FingerprintOverride.apply(servers, prefsDataStore.getBaseStationBypassFingerprint()),
+            )
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {

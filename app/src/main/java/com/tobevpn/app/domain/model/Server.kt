@@ -7,6 +7,11 @@ data class Server(
     val name: String,
     val address: String,
     val port: Int,
+    /**
+     * The profile's credential: the VLESS user id, or the Hysteria2 auth
+     * password. One field keeps sentinel detection, the XUDP base key and
+     * config comparison protocol-neutral.
+     */
     val uuid: String,
     val flow: String = "",
     val security: String = "reality",
@@ -23,6 +28,15 @@ data class Server(
     val extra: String = "",
     val mode: String = "",
     val spx: String = "",
+    val protocol: ServerProtocol = ServerProtocol.VLESS,
+    /** Hysteria2 salamander obfuscation password; empty = no obfuscation. */
+    val obfsPassword: String = "",
+    /** Hysteria2 pinned certificate SHA-256 (hex); empty = verify by name. */
+    val pinSha256: String = "",
+    /** Hysteria2 port-hopping range ("20000-50000"); empty = single port. */
+    val portHopping: String = "",
+    /** TLS Encrypted Client Hello config list (base64), from the link's ech=. */
+    val echConfigList: String = "",
     val country: String = "",
     val ping: Long = -1,
     val isOnline: Boolean = true,
@@ -37,7 +51,8 @@ data class Server(
         get() = listOf(
             source.name, address, port, uuid, flow, security, sni, fingerprint,
             publicKey, shortId, network, path, host, alpn, headerType,
-            serviceName, extra, mode, spx,
+            serviceName, extra, mode, spx, protocol.name, obfsPassword,
+            pinSha256, portHopping, echConfigList,
         ).joinToString("|")
 
     /**
@@ -124,7 +139,12 @@ data class Server(
             serviceName == other.serviceName &&
             extra == other.extra &&
             mode == other.mode &&
-            spx == other.spx
+            spx == other.spx &&
+            protocol == other.protocol &&
+            obfsPassword == other.obfsPassword &&
+            pinSha256 == other.pinSha256 &&
+            portHopping == other.portHopping &&
+            echConfigList == other.echConfigList
 
     private companion object {
         const val DEFAULT_FINGERPRINT = "chrome"
@@ -138,6 +158,12 @@ data class Server(
             "helloios_11_1",
         )
     }
+}
+
+/** Proxy protocol of a profile, as shown to admins in the server list. */
+enum class ServerProtocol(val displayName: String) {
+    VLESS("VLESS"),
+    HYSTERIA2("Hysteria2"),
 }
 
 enum class ServerSource {

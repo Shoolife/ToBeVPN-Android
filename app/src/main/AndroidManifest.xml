@@ -157,6 +157,13 @@
                 android:value="true" />
         </service>
 
-    </application>
+            <!-- Fallback QR scanner (zxing-android-embedded). The library pins it to
+             landscape; follow the device instead, the phone is held upright. -->
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            android:screenOrientation="fullSensor"
+            tools:replace="android:screenOrientation" />
+
+</application>
 
 </manifest>

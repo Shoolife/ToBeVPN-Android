@@ -27,7 +27,7 @@ import com.tobevpn.app.data.local.entity.UsageEntity
         PendingPromocodeActivationEntity::class,
         BaseStationBypassServerEntity::class,
     ],
-    version = 20,
+    version = 21,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {

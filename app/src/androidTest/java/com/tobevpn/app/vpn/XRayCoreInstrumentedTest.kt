@@ -21,7 +21,7 @@ class XRayCoreInstrumentedTest {
 
         assertTrue(
             "Unexpected native core version: $version",
-            version.contains("Lib v40") && version.contains("Xray-core v26.10.10"),
+            version.contains("Lib v40") && version.contains("Xray-core v26.10.21"),
         )
     }
 

@@ -316,6 +316,14 @@ class MainViewModel @Inject constructor(
                     val vpnConfigChanged = previousServer == null || !server.hasSameVpnConfig(previousServer)
                     val selectionChanged = previousSnapshot != null &&
                         !snapshot.hasSameSelection(previousSnapshot)
+                    // The user replaced the bypass fingerprint (the sheet next
+                    // to Refresh): same server, new ClientHello. Unlike a
+                    // plain list refresh this is an explicit choice, and a
+                    // live tunnel would keep the old one until a reconnect.
+                    val fingerprintChanged = previousServer != null &&
+                        server.source == ServerSource.BASE_STATION_BYPASS &&
+                        server.id == previousServer.id &&
+                        server.fingerprint != previousServer.fingerprint
                     lastSnapshot = snapshot
                     if (vpnConfigChanged || selectionChanged) {
                         _serverPing.value = serverQualityRepository.measurePing(server, force = true)
@@ -331,7 +339,7 @@ class MainViewModel @Inject constructor(
                     // EXPIRED plan in general so we don't pretend the user
                     // can roam between servers when nothing is going to
                     // tunnel anyway.
-                    if (selectionChanged && !server.isSentinel && !isExpired()) {
+                    if ((selectionChanged || fingerprintChanged) && !server.isSentinel && !isExpired()) {
                         val state = connectionState.value
                         val managedServer = connectionManager.currentServer.value
                         if (_connectionPreparation.value) {

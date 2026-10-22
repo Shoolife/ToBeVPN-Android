@@ -14,17 +14,18 @@ import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
 import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
 import com.tobevpn.app.domain.model.DEFAULT_SERVER_PING_TIMEOUT_SECONDS
+import com.tobevpn.app.domain.model.FingerprintOverride
 import com.tobevpn.app.domain.model.normalizeFontScale
 import com.tobevpn.app.domain.model.normalizeInterfaceScale
 import com.tobevpn.app.domain.model.normalizeServerPingTimeoutSeconds
 import dagger.hilt.android.qualifiers.ApplicationContext
+import java.security.MessageDigest
+import javax.inject.Inject
+import javax.inject.Singleton
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import java.security.MessageDigest
-import javax.inject.Inject
-import javax.inject.Singleton
 
 private val Context.dataStore by preferencesDataStore(
     name = "tobevpn_prefs",
@@ -123,6 +124,14 @@ class PrefsDataStore @Inject constructor(
         val PURCHASE_PLANS_CACHE_OWNER = stringPreferencesKey("purchase_plans_cache_owner")
         val PURCHASE_PLANS_CACHE_JSON = stringPreferencesKey("purchase_plans_cache_json")
         val BLOCKED_SUBSCRIPTION_OWNER = stringPreferencesKey("blocked_subscription_owner")
+        // POST /api/device/referrer answered 429: the server's error limit for
+        // this Telegram ID is exhausted until this moment (wall clock, ms).
+        // Owner is the hashed Telegram ID - the limit belongs to the account.
+        val REFERRER_LIMIT_UNTIL = longPreferencesKey("referrer_limit_until")
+        val REFERRER_LIMIT_OWNER = stringPreferencesKey("referrer_limit_owner")
+        // Manual uTLS fingerprint for base-station bypass servers; absent or
+        // empty = each profile's own (see FingerprintOverride).
+        val BS_FINGERPRINT_OVERRIDE = stringPreferencesKey("bs_fingerprint_override")
         // Scope the persisted block to the installed build. After an update,
         // a block recorded by the previous version must not lock the new
         // version before it can read the current minimum-version header.
@@ -651,6 +660,37 @@ class PrefsDataStore @Inject constructor(
 
     suspend fun isUpdateRequired(): Boolean {
         return context.dataStore.data.first()[Keys.UPDATE_REQUIRED] == true
+    }
+
+    fun observeBaseStationBypassFingerprint(): Flow<String> =
+        context.dataStore.data.map {
+            FingerprintOverride.normalize(it[Keys.BS_FINGERPRINT_OVERRIDE])
+        }.distinctUntilChanged()
+
+    suspend fun getBaseStationBypassFingerprint(): String =
+        FingerprintOverride.normalize(context.dataStore.data.first()[Keys.BS_FINGERPRINT_OVERRIDE])
+
+    suspend fun setBaseStationBypassFingerprint(value: String) {
+        val normalized = FingerprintOverride.normalize(value)
+        context.dataStore.edit {
+            if (normalized.isEmpty()) it.remove(Keys.BS_FINGERPRINT_OVERRIDE)
+            else it[Keys.BS_FINGERPRINT_OVERRIDE] = normalized
+        }
+    }
+
+    suspend fun setReferrerLimitUntil(telegramId: Long, untilMillis: Long) {
+        val owner = cacheOwnerHash(telegramId.toString())
+        context.dataStore.edit {
+            it[Keys.REFERRER_LIMIT_UNTIL] = untilMillis
+            it[Keys.REFERRER_LIMIT_OWNER] = owner
+        }
+    }
+
+    /** End of the referrer error-limit window for this account, or null. */
+    suspend fun getReferrerLimitUntil(telegramId: Long): Long? {
+        val prefs = context.dataStore.data.first()
+        if (prefs[Keys.REFERRER_LIMIT_OWNER] != cacheOwnerHash(telegramId.toString())) return null
+        return prefs[Keys.REFERRER_LIMIT_UNTIL]?.takeIf { it > System.currentTimeMillis() }
     }
 
     private fun cacheOwnerHash(value: String): String {

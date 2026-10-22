@@ -1,6 +1,7 @@
 package com.tobevpn.app.data.repository
 
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.domain.model.ServerProtocol
 import com.tobevpn.app.domain.model.ServerSource
 
 /**
@@ -96,4 +97,7 @@ internal fun serverConnectionIdentityKey(server: Server): String =
 
 /** TCP reachability is host-scoped and may safely be shared between profiles. */
 internal fun serverPingEndpointKey(server: Server): String =
-    "${server.address}:${server.port}:${server.sni}"
+    // Hysteria2 is QUIC over UDP: its reachability says nothing about a TCP
+    // server on the same host:port, so the two must not share a result.
+    (if (server.protocol == ServerProtocol.HYSTERIA2) "hy2:" else "") +
+        "${server.address}:${server.port}:${server.sni}"

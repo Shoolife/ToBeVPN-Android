@@ -11,11 +11,13 @@ import com.tobevpn.app.data.repository.SubscriptionAccessUnavailableException
 import com.tobevpn.app.data.repository.VpnRepository
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.BaseStationBypassAccess
+import com.tobevpn.app.domain.model.FingerprintOverride
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.domain.model.baseStationBypassAccess
 import com.tobevpn.app.domain.model.canUseBaseStationBypass
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -29,9 +31,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
-import javax.inject.Inject
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class ServerProbeProgress(
     val completed: Int,
@@ -105,6 +106,22 @@ class ServerListViewModel @Inject constructor(
 
     val authState: StateFlow<AuthState> = authRepository.observeAuthState()
         .stateIn(viewModelScope, SharingStarted.Eagerly, AuthState.Anonymous)
+
+    /** Manual fingerprint for the bypass tab; "" = each profile's own. */
+    val baseStationBypassFingerprint: StateFlow<String> = prefsDataStore
+        .observeBaseStationBypassFingerprint()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), FingerprintOverride.FROM_PROFILE)
+
+    fun setBaseStationBypassFingerprint(value: String) {
+        viewModelScope.launch {
+            if (FingerprintOverride.normalize(value) == prefsDataStore.getBaseStationBypassFingerprint()) {
+                return@launch
+            }
+            prefsDataStore.setBaseStationBypassFingerprint(value)
+            // Earlier results were measured with the old fingerprint.
+            refreshBaseStationBypassServers(force = true)
+        }
+    }
 
     val isAdminProfile: StateFlow<Boolean> = authState
         .map { state -> (state as? AuthState.Authenticated)?.isAdminProfile == true }

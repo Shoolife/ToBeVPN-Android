@@ -72,6 +72,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -111,6 +112,7 @@ import java.text.DateFormat
 import java.time.Instant
 import java.time.OffsetDateTime
 import java.util.Date
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -204,6 +206,7 @@ fun ReferralsScreen(
                 data = requireNotNull(uiState.data),
                 error = uiState.error,
                 referrerAssignmentError = uiState.referrerAssignmentError,
+                referrerLimitedUntil = uiState.referrerLimitedUntil,
                 isRefreshing = uiState.isRefreshing,
                 isLoadingMore = uiState.isLoadingMore,
                 isAssigningReferrer = uiState.isAssigningReferrer,
@@ -224,6 +227,7 @@ private fun ReferralContent(
     data: ReferralsDto,
     error: ReferralLoadError?,
     referrerAssignmentError: ReferrerAssignmentError?,
+    referrerLimitedUntil: Long?,
     isRefreshing: Boolean,
     isLoadingMore: Boolean,
     isAssigningReferrer: Boolean,
@@ -295,6 +299,7 @@ private fun ReferralContent(
                     ReferrerInputCard(
                         value = referrerIdInput,
                         error = referrerAssignmentError,
+                        limitedUntil = referrerLimitedUntil,
                         isSubmitting = isAssigningReferrer,
                         onValueChange = { rawValue ->
                             referrerIdInput = rawValue
@@ -1005,10 +1010,27 @@ private fun ReferralSummaryLoadingCard(alpha: Float) {
 private fun ReferrerInputCard(
     value: String,
     error: ReferrerAssignmentError?,
+    limitedUntil: Long?,
     isSubmitting: Boolean,
     onValueChange: (String) -> Unit,
     onRequestSubmit: (Long) -> Unit,
 ) {
+    // Seconds left in the server's error-limit window, ticking down so the
+    // form unlocks by itself when the window ends.
+    val limitSecondsLeft by produceState(
+        initialValue = remainingLimitSeconds(limitedUntil),
+        key1 = limitedUntil,
+    ) {
+        // this.value: the card's own `value` parameter is the typed ID.
+        while (true) {
+            this.value = remainingLimitSeconds(limitedUntil)
+            if (this.value <= 0L) break
+            delay(1_000L)
+        }
+    }
+    val isLimited = limitSecondsLeft > 0L
+    // A LIMITED error outliving its window is no longer true.
+    val shownError = error.takeUnless { it == ReferrerAssignmentError.LIMITED && !isLimited }
     val primaryTextColor = if (isSystemInDarkTheme()) {
         MaterialTheme.colorScheme.onSurface
     } else {
@@ -1077,7 +1099,7 @@ private fun ReferrerInputCard(
                     )
                 },
                 singleLine = true,
-                isError = hasLocalError || error != null,
+                isError = hasLocalError || shownError != null || isLimited,
                 supportingText = when {
                     hasLocalError -> {
                         {
@@ -1088,10 +1110,22 @@ private fun ReferrerInputCard(
                         }
                     }
 
-                    error != null -> {
+                    isLimited -> {
                         {
                             Text(
-                                text = referrerAssignmentErrorText(error),
+                                text = stringResource(
+                                    R.string.referrals_referrer_error_limited,
+                                    formatLimitWait(limitSecondsLeft),
+                                ),
+                                style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                            )
+                        }
+                    }
+
+                    shownError != null -> {
+                        {
+                            Text(
+                                text = referrerAssignmentErrorText(shownError),
                                 style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                             )
                         }
@@ -1110,7 +1144,7 @@ private fun ReferrerInputCard(
             Spacer(modifier = Modifier.height(12.dp))
             Button(
                 onClick = { referrerId?.let(onRequestSubmit) },
-                enabled = referrerId != null && !isSubmitting,
+                enabled = referrerId != null && !isSubmitting && !isLimited,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),
@@ -1796,6 +1830,26 @@ private fun referrerAssignmentErrorText(error: ReferrerAssignmentError): String 
     ReferrerAssignmentError.UNAVAILABLE ->
         stringResource(R.string.referrals_referrer_error_unavailable)
 
+    ReferrerAssignmentError.LIMITED ->
+        stringResource(R.string.referrals_referrer_error_limited_short)
+
     ReferrerAssignmentError.UNKNOWN ->
         stringResource(R.string.referrals_referrer_error_unknown)
+}
+
+private fun remainingLimitSeconds(limitedUntil: Long?): Long =
+    limitedUntil?.let { ((it - System.currentTimeMillis()) + 999L) / 1_000L }?.coerceAtLeast(0L) ?: 0L
+
+// "1 ч 05 мин", "12 мин", "менее минуты" - rounded up, so the form never
+// claims the wait is over before the server would accept the request.
+@Composable
+private fun formatLimitWait(seconds: Long): String {
+    val minutes = (seconds + 59L) / 60L
+    val hours = minutes / 60L
+    val rest = minutes % 60L
+    return when {
+        seconds < 60L -> stringResource(R.string.referrals_referrer_wait_under_minute)
+        hours > 0L -> stringResource(R.string.referrals_referrer_wait_hours, hours, rest)
+        else -> stringResource(R.string.referrals_referrer_wait_minutes, minutes)
+    }
 }

@@ -45,6 +45,44 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration20To21AddsHysteria2ColumnsAndKeepsServersVless() {
+        helper.createDatabase(TEST_DATABASE, 20).use { database ->
+            insertVersion19Server(database, STANDARD_TABLE, "standard-id")
+            insertVersion19Server(database, BYPASS_TABLE, "bs:legacy-id")
+        }
+
+        // Validates the migrated schema against 21.json: columns, types,
+        // NOT NULL and defaults must match the entity exactly.
+        helper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            21,
+            true,
+            DatabaseModule.MIGRATION_20_21,
+        ).use { database ->
+            database.query(
+                "SELECT id, uuid, protocol, obfsPassword, pinSha256, portHopping, echConfigList " +
+                    "FROM $STANDARD_TABLE",
+            ).use { cursor ->
+                assertEquals(1, cursor.count)
+                cursor.moveToFirst()
+                assertEquals("standard-id", cursor.getString(cursor.getColumnIndexOrThrow("id")))
+                assertEquals(
+                    "550e8400-e29b-41d4-a716-446655440000",
+                    cursor.getString(cursor.getColumnIndexOrThrow("uuid")),
+                )
+                assertEquals("VLESS", cursor.getString(cursor.getColumnIndexOrThrow("protocol")))
+                listOf("obfsPassword", "pinSha256", "portHopping", "echConfigList").forEach { column ->
+                    assertEquals("", cursor.getString(cursor.getColumnIndexOrThrow(column)))
+                }
+            }
+            // The bypass cache is untouched and keeps its server.
+            database.query("SELECT id FROM $BYPASS_TABLE").use { cursor ->
+                assertEquals(1, cursor.count)
+            }
+        }
+    }
+
     private fun insertVersion19Server(
         database: SupportSQLiteDatabase,
         table: String,

@@ -24,6 +24,7 @@ import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.util.diagnosticServerDescriptor
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -179,10 +180,27 @@ class VpnToggleController @Inject constructor(
         }
 
         authRepository.ensurePanelUser()
-        authRepository.syncSubscription(
-            overwriteUsage = true,
-            force = true,
-        )
+        // The bot is not needed to connect: servers and the access check come
+        // from the subscription server, and VpnConnectionManager re-checks the
+        // block and minimum-version flags itself. Waiting for the sync without
+        // a limit tied the connection to the bot: with the bot down, every
+        // request waited out the primary and fallback timeouts (plus a token
+        // refresh), and the button sat on "Connecting" for minutes while the
+        // desktop client, which never waits, connected at once. Same bound as
+        // the server list.
+        val synced = withTimeoutOrNull(CONNECT_SYNC_WAIT_MS) {
+            authRepository.syncSubscription(
+                overwriteUsage = true,
+                force = true,
+            )
+        } != null
+        if (!synced) {
+            SafeDiagnostics.warn(
+                TAG,
+                "Connection preparation continues without subscription sync: " +
+                    "TIMEOUT_${CONNECT_SYNC_WAIT_MS}MS",
+            )
+        }
         if (prefsDataStore.isUpdateRequired()) {
             SafeDiagnostics.warn(TAG, "Connection preparation blocked: UPDATE_REQUIRED")
             return null
@@ -296,6 +314,7 @@ class VpnToggleController @Inject constructor(
 
     private companion object {
         const val TAG = "VpnToggleController"
+        const val CONNECT_SYNC_WAIT_MS = 4_000L
     }
 }
 

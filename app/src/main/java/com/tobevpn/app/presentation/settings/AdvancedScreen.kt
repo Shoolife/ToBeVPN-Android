@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateDpAsState
@@ -98,9 +99,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import com.tobevpn.app.R
 import com.tobevpn.app.data.remote.dto.LinkedDeviceDto
 import com.tobevpn.app.domain.model.AppFilterMode
@@ -128,8 +132,12 @@ import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.util.DeviceQrScanAction
 import com.tobevpn.app.util.DeviceQrScanParser
+import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.util.TelegramLinks
 import kotlin.math.roundToInt
+
+
+private const val TAG = "AdvancedScreen"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -150,12 +158,48 @@ fun AdvancedScreen(
     val authOpenTelegramErrorText = stringResource(R.string.auth_error_open_telegram)
     val unsupportedQrText = stringResource(R.string.devices_unsupported_qr)
     val scannerUnavailableText = stringResource(R.string.devices_scanner_unavailable)
+    val fallbackScanPrompt = stringResource(R.string.devices_scan_prompt)
     var showDevicesSheet by remember { mutableStateOf(false) }
     var showPairingCodeInput by remember { mutableStateOf(false) }
 
     val linkedDevicesCount = linkedDevicesState.currentCount ?: linkedDevicesState.devices.size
     val canLinkMoreDevices = linkedDevicesState.maxDevices == 0 ||
         linkedDevicesCount < linkedDevicesState.maxDevices
+
+    val handleScannedQr: (String) -> Unit = { scanned ->
+        when (val action = DeviceQrScanParser.parse(scanned.trim())) {
+            is DeviceQrScanAction.OpenTelegramAuth -> {
+                if (!TelegramLinks.openStartLink(context, action.link)) {
+                    viewModel.setTvPairError(authOpenTelegramErrorText)
+                }
+            }
+
+            is DeviceQrScanAction.LegacyPairingCode -> {
+                viewModel.requestTvPairConfirmation(action.code)
+            }
+
+            DeviceQrScanAction.Unsupported -> {
+                viewModel.setTvPairError(unsupportedQrText)
+            }
+        }
+    }
+    // Built-in ZXing camera scanner: works without Google Play services.
+    val fallbackScanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.let(handleScannedQr)
+    }
+    val startFallbackScan: () -> Unit = {
+        try {
+            fallbackScanLauncher.launch(
+                ScanOptions()
+                    .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                    .setPrompt(fallbackScanPrompt)
+                    .setBeepEnabled(false)
+                    .setOrientationLocked(false),
+            )
+        } catch (_: Exception) {
+            viewModel.setTvPairError(scannerUnavailableText)
+        }
+    }
 
     val startDeviceQrScan: () -> Unit = startPairing@{
         if (!canLinkMoreDevices) {
@@ -169,26 +213,31 @@ fun AdvancedScreen(
             val scanner = GmsBarcodeScanning.getClient(context, options)
             scanner.startScan()
                 .addOnSuccessListener { barcode ->
-                    val raw = barcode.rawValue?.trim().orEmpty()
-                    when (val action = DeviceQrScanParser.parse(raw)) {
-                        is DeviceQrScanAction.OpenTelegramAuth -> {
-                            if (!TelegramLinks.openStartLink(context, action.link)) {
-                                viewModel.setTvPairError(authOpenTelegramErrorText)
-                            }
-                        }
-
-                        is DeviceQrScanAction.LegacyPairingCode -> {
-                            viewModel.requestTvPairConfirmation(action.code)
-                        }
-
-                        DeviceQrScanAction.Unsupported -> {
-                            viewModel.setTvPairError(unsupportedQrText)
-                        }
-                    }
+                    handleScannedQr(barcode.rawValue.orEmpty())
                 }
-                .addOnFailureListener { /* user cancelled or module missing */ }
-        } catch (_: Exception) {
-            viewModel.setTvPairError(scannerUnavailableText)
+                .addOnFailureListener { error ->
+                    // A cancel is the user closing the scanner. Anything else -
+                    // most often the scanner module missing or not yet
+                    // downloaded in Play services - used to end here silently,
+                    // so the camera simply never opened (vivo V2061). Fall
+                    // back to the built-in scanner instead.
+                    if ((error as? MlKitException)?.errorCode == MlKitException.CANCELLED) {
+                        return@addOnFailureListener
+                    }
+                    SafeDiagnostics.warn(
+                        TAG,
+                        "Play services QR scanner unavailable, using built-in: " +
+                            SafeDiagnostics.failureSummary(error),
+                    )
+                    startFallbackScan()
+                }
+        } catch (error: Exception) {
+            SafeDiagnostics.warn(
+                TAG,
+                "Play services QR scanner failed to start, using built-in: " +
+                    SafeDiagnostics.failureSummary(error),
+            )
+            startFallbackScan()
         }
     }
 

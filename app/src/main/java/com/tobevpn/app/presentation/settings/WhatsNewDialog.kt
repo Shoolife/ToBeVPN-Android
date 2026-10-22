@@ -22,10 +22,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CellTower
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.Percent
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Route
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -147,14 +149,24 @@ private val WhatsNewHeroIcon: ImageVector by lazy {
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.CellTower,
-        titleRes = R.string.whats_new_bs_fallback_title,
-        descriptionRes = R.string.whats_new_bs_fallback_desc,
+        icon = Icons.Filled.Route,
+        titleRes = R.string.whats_new_hysteria2_title,
+        descriptionRes = R.string.whats_new_hysteria2_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.Percent,
-        titleRes = R.string.whats_new_clear_discounts_title,
-        descriptionRes = R.string.whats_new_clear_discounts_desc,
+        icon = Icons.Filled.Fingerprint,
+        titleRes = R.string.whats_new_fingerprint_title,
+        descriptionRes = R.string.whats_new_fingerprint_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.Bolt,
+        titleRes = R.string.whats_new_fast_connect_title,
+        descriptionRes = R.string.whats_new_fast_connect_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.QrCodeScanner,
+        titleRes = R.string.whats_new_qr_scanner_title,
+        descriptionRes = R.string.whats_new_qr_scanner_desc,
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.Memory,

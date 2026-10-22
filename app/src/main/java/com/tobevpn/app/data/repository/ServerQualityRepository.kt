@@ -1,19 +1,15 @@
 package com.tobevpn.app.data.repository
 
-import com.tobevpn.app.util.awaitBlocking
+import android.content.Context
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.domain.model.ServerProtocol
 import com.tobevpn.app.util.SafeDiagnostics
+import com.tobevpn.app.util.awaitBlocking
 import com.tobevpn.app.util.diagnosticServerDescriptor
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.sync.withPermit
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
+import com.tobevpn.app.vpn.VpnConfig
+import com.tobevpn.app.vpn.XRayCore
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.IOException
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -23,10 +19,21 @@ import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.min
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import libv2ray.Libv2ray
 
 @Singleton
 class ServerQualityRepository @Inject constructor(
     private val prefsDataStore: PrefsDataStore,
+    @ApplicationContext private val context: Context,
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -60,8 +67,12 @@ class ServerQualityRepository @Inject constructor(
         var failureCategory: String? = null
         // The DNS lookup inside InetSocketAddress has no timeout of its own:
         // bound the whole call, not just the connect.
-        val outcome = awaitBlocking(timeoutMs.toLong() + DNS_LOOKUP_GRACE_MS) {
-            connectFirstReachable(server.address, server.port, timeoutMs)
+        val outcome = if (server.protocol == ServerProtocol.HYSTERIA2) {
+            measureThroughCore(server, timeoutMs)
+        } else {
+            awaitBlocking(timeoutMs.toLong() + DNS_LOOKUP_GRACE_MS) {
+                connectFirstReachable(server.address, server.port, timeoutMs)
+            }
         }
         val ping = when {
             outcome == null -> {
@@ -87,6 +98,23 @@ class ServerQualityRepository @Inject constructor(
             now = now,
         )
         return ping
+    }
+
+    /**
+     * Hysteria2 runs over UDP (QUIC), so a TCP connect proves nothing - the
+     * port is usually closed for TCP and the server would always look dead.
+     * Its "ping" is a real request through the bundled Xray instead: the same
+     * outbound the tunnel uses, one HTTP 204 through the server.
+     */
+    private suspend fun measureThroughCore(server: Server, timeoutMs: Int): Result<Long>? {
+        val config = runCatching { VpnConfig.buildOutboundDelayConfigJson(server) }
+            .getOrElse { return Result.failure(it) }
+        return awaitBlocking(timeoutMs.toLong() + DNS_LOOKUP_GRACE_MS) {
+            XRayCore.init(context)
+            Libv2ray.measureOutboundDelay(config, CORE_PROBE_TARGET)
+                .takeIf { it > 0L }
+                ?: throw IOException("Core probe failed")
+        }
     }
 
     /**
@@ -528,6 +556,7 @@ class ServerQualityRepository @Inject constructor(
     private companion object {
         /** Extra time for the DNS lookup before a TCP ping gives up. */
         const val DNS_LOOKUP_GRACE_MS = 1_500L
+        const val CORE_PROBE_TARGET = "https://www.gstatic.com/generate_204"
         /** Shortest connect attempt per resolved address (Go's dialSerial uses 2 s). */
         const val MIN_ADDRESS_ATTEMPT_MS = 2_000L
         const val MILLIS_PER_SECOND = 1_000

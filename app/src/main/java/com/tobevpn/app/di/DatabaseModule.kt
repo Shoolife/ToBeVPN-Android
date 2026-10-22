@@ -54,6 +54,7 @@ object DatabaseModule {
                 MIGRATION_17_18,
                 MIGRATION_18_19,
                 MIGRATION_19_20,
+                MIGRATION_20_21,
             )
             .fallbackToDestructiveMigration(dropAllTables = false)
             // TRUNCATE journal (no WAL) — committed writes land in the
@@ -217,6 +218,18 @@ object DatabaseModule {
                 db.execSQL("ALTER TABLE $table ADD COLUMN serviceName TEXT NOT NULL DEFAULT ''")
                 db.execSQL("ALTER TABLE $table ADD COLUMN extra TEXT NOT NULL DEFAULT ''")
             }
+        }
+    }
+
+    // v20 -> v21: Hysteria2 profiles in the standard server cache. The
+    // base-station bypass profile stays VLESS-only, so its table is untouched.
+    internal val MIGRATION_20_21 = object : Migration(20, 21) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE servers ADD COLUMN protocol TEXT NOT NULL DEFAULT 'VLESS'")
+            db.execSQL("ALTER TABLE servers ADD COLUMN obfsPassword TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE servers ADD COLUMN pinSha256 TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE servers ADD COLUMN portHopping TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE servers ADD COLUMN echConfigList TEXT NOT NULL DEFAULT ''")
         }
     }
 

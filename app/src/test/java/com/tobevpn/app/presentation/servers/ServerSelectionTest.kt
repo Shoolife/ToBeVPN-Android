@@ -1,6 +1,7 @@
 package com.tobevpn.app.presentation.servers
 
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.domain.model.ServerProtocol
 import com.tobevpn.app.domain.model.ServerSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -93,6 +94,14 @@ class ServerSelectionTest {
         )
 
         assertNotEquals(serverListItemKey(first), serverListItemKey(second))
+    }
+
+    @Test
+    fun `hysteria2 and vless on the same host and port get distinct list keys`() {
+        val vless = server(id = "standard", source = ServerSource.STANDARD)
+        val hysteria = vless.copy(protocol = ServerProtocol.HYSTERIA2)
+
+        assertNotEquals(serverListItemKey(vless), serverListItemKey(hysteria))
     }
 
     @Test

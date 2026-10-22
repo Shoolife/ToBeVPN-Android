@@ -82,7 +82,7 @@ object VlessUrlParser {
         }
     }
 
-    private fun parseHostPort(hostPort: String): Pair<String, Int>? {
+    internal fun parseHostPort(hostPort: String): Pair<String, Int>? {
         if (hostPort.isBlank()) return null
         // IPv6 literal: [2001:db8::1]:443
         if (hostPort.startsWith("[")) {
@@ -125,7 +125,7 @@ object VlessUrlParser {
      * space, which corrupts literal '+' characters in fragments and paths —
      * protect them before delegating.
      */
-    private fun percentDecode(value: String): String {
+    internal fun percentDecode(value: String): String {
         return try {
             URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")
         } catch (_: Exception) {
@@ -133,7 +133,7 @@ object VlessUrlParser {
         }
     }
 
-    private fun parseQueryParams(query: String): Map<String, String> {
+    internal fun parseQueryParams(query: String): Map<String, String> {
         if (query.isBlank()) return emptyMap()
         return query.split("&").mapNotNull { param ->
             val parts = param.split("=", limit = 2)

@@ -1,7 +1,7 @@
 # Auditable metadata for the native dependency stored beside libv2ray.aar.
 # The workflow verifies both the AAR checksum and the Xray commit in Go buildinfo.
-android_lib_xray_lite=v26.10.10
-xray_core=v26.10.10
-xray_core_commit=701af60772cda123492f86e383e1fdba066614a9
-aar_sha256=15db760bfbc24c0492ee997784b48a7b5e1bc5032950d617cd252fc2195f7ac7
-source_url=https://github.com/2dust/AndroidLibXrayLite/releases/tag/v26.10.10
+android_lib_xray_lite=v26.10.21
+xray_core=v26.10.21
+xray_core_commit=1b1647cd9ddf0abc34b981d4611fc03bcac1ca74
+aar_sha256=e56ec3b06485fe7b37af26948673951edf719c50d6bbc618b8539045952adde4
+source_url=https://github.com/2dust/AndroidLibXrayLite/releases/tag/v26.10.21

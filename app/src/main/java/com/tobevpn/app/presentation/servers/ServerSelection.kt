@@ -126,5 +126,6 @@ internal fun serverListItemKey(server: Server): String = when (server.source) {
         server.sni,
         server.publicKey,
         server.shortId,
+        server.protocol.name,
     ).joinToString("|")
 }

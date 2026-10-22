@@ -47,8 +47,8 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = versionCodeOverride ?: 83
-        versionName = "1.0.82"
+        versionCode = versionCodeOverride ?: 84
+        versionName = "1.0.83"
 
         // Direct APK releases can use the GitHub self-updater. Google Play
         // builds override this flag because Play policy requires updates to
@@ -300,6 +300,9 @@ dependencies {
     // ML Kit Barcode Scanner (for linking TV via QR)
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     implementation(libs.zxing.core)
+    // Fallback camera scanner for devices where the Play services scanner
+    // module is missing or cannot be downloaded (seen on vivo V2061).
+    implementation(libs.zxing.android.embedded)
 
     // Google Play Billing: only to read the Play account country (external payment rules).
     implementation(libs.play.billing.ktx)
@@ -310,6 +313,8 @@ dependencies {
 
     // Testing
     testImplementation(libs.junit)
+    // Real org.json for JVM tests of the Xray config builder (Android ships a stub).
+    testImplementation("org.json:json:20250517")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

@@ -3,6 +3,7 @@ package com.tobevpn.app.presentation.referrals
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.remote.BotApi
 import com.tobevpn.app.data.remote.dto.ReferralListItemDto
 import com.tobevpn.app.data.remote.dto.ReferralUserDto
@@ -13,6 +14,8 @@ import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.util.SafeDiagnostics
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -28,6 +31,7 @@ import retrofit2.HttpException
 @HiltViewModel
 class ReferralsViewModel @Inject constructor(
     private val botApi: BotApi,
+    private val prefsDataStore: PrefsDataStore,
     authRepository: AuthRepository,
 ) : ViewModel() {
 
@@ -36,20 +40,27 @@ class ReferralsViewModel @Inject constructor(
 
     private var requestJob: Job? = null
     private var assignReferrerJob: Job? = null
+    private var telegramId: Long? = null
 
     init {
         viewModelScope.launch {
             authRepository.observeAuthState()
-                .map { it is AuthState.Authenticated }
+                .map { (it as? AuthState.Authenticated)?.telegramId }
                 .distinctUntilChanged()
-                .collect { authenticated ->
+                .collect { authenticatedTelegramId ->
                     requestJob?.cancel()
                     assignReferrerJob?.cancel()
-                    if (authenticated) {
+                    telegramId = authenticatedTelegramId
+                    if (authenticatedTelegramId != null) {
+                        // The server's error limit outlives the screen, the
+                        // app process and token refreshes; restore it so a
+                        // reopened screen does not send into a known 429.
                         _uiState.value = ReferralsUiState(
                             isAuthResolved = true,
                             isAuthenticated = true,
                             isInitialLoading = true,
+                            referrerLimitedUntil = prefsDataStore
+                                .getReferrerLimitUntil(authenticatedTelegramId),
                         )
                         requestPage(reset = true)
                     } else {
@@ -104,7 +115,8 @@ class ReferralsViewModel @Inject constructor(
             state.isRefreshing ||
             state.isLoadingMore ||
             state.isAssigningReferrer ||
-            assignReferrerJob?.isActive == true
+            assignReferrerJob?.isActive == true ||
+            state.isReferrerLimited(System.currentTimeMillis())
         ) {
             return
         }
@@ -140,11 +152,28 @@ class ReferralsViewModel @Inject constructor(
                     TAG,
                     "Referrer assignment failed: ${SafeDiagnostics.failureCategory(error)}",
                 )
+                val limitedUntil = (error as? HttpException)
+                    ?.takeIf { it.code() == HTTP_TOO_MANY_REQUESTS }
+                    ?.let { limited ->
+                        val now = System.currentTimeMillis()
+                        val waitSeconds = parseRetryAfterSeconds(
+                            limited.response()?.headers()?.get("Retry-After"),
+                            now,
+                        ) ?: DEFAULT_LIMIT_WAIT_SECONDS
+                        (now + waitSeconds * 1_000L).also { until ->
+                            telegramId?.let { id -> prefsDataStore.setReferrerLimitUntil(id, until) }
+                        }
+                    }
                 val current = _uiState.value
                 if (current.isAuthenticated) {
                     _uiState.value = current.copy(
                         isAssigningReferrer = false,
-                        referrerAssignmentError = error.toReferrerAssignmentError(),
+                        referrerAssignmentError = if (limitedUntil != null) {
+                            ReferrerAssignmentError.LIMITED
+                        } else {
+                            error.toReferrerAssignmentError()
+                        },
+                        referrerLimitedUntil = limitedUntil ?: current.referrerLimitedUntil,
                     )
                 }
             }
@@ -153,7 +182,11 @@ class ReferralsViewModel @Inject constructor(
 
     fun clearReferrerAssignmentError() {
         val state = _uiState.value
-        if (state.referrerAssignmentError != null) {
+        // The limit message stays while the window lasts: editing the ID does
+        // not lift the server's block.
+        if (state.referrerAssignmentError != null &&
+            state.referrerAssignmentError != ReferrerAssignmentError.LIMITED
+        ) {
             _uiState.value = state.copy(referrerAssignmentError = null)
         }
     }
@@ -229,6 +262,10 @@ class ReferralsViewModel @Inject constructor(
         const val TAG = "ReferralsViewModel"
         const val PAGE_SIZE = 20
         const val MIN_REFRESH_FEEDBACK_MS = 900L
+        const val HTTP_TOO_MANY_REQUESTS = 429
+        // Retry-After missing or unreadable: the server's window is at most
+        // 24 h, an hour is a safe pause that still lets the user retry today.
+        const val DEFAULT_LIMIT_WAIT_SECONDS = 3_600L
     }
 
     private suspend fun awaitMinimumRefreshFeedback(startedAt: Long?) {
@@ -249,7 +286,12 @@ data class ReferralsUiState(
     val data: ReferralsDto? = null,
     val error: ReferralLoadError? = null,
     val referrerAssignmentError: ReferrerAssignmentError? = null,
-)
+    // End of the server's referrer error-limit window (wall clock, ms).
+    val referrerLimitedUntil: Long? = null,
+) {
+    fun isReferrerLimited(nowMillis: Long): Boolean =
+        referrerLimitedUntil != null && nowMillis < referrerLimitedUntil
+}
 
 enum class ReferralLoadError {
     NETWORK,
@@ -262,6 +304,7 @@ enum class ReferrerAssignmentError {
     NOT_FOUND,
     CONFLICT,
     UNAVAILABLE,
+    LIMITED,
     UNKNOWN,
 }
 
@@ -309,3 +352,17 @@ internal fun mergeReferralPages(
 
 private fun ReferralListItemDto.stableReferralKey(): Triple<Long?, String?, String?> =
     Triple(telegramId, createdAt, displayName)
+
+/**
+ * Seconds to wait from a Retry-After header: either delta-seconds (what the
+ * referrer endpoint sends) or an HTTP date. Null when absent or unreadable.
+ */
+internal fun parseRetryAfterSeconds(value: String?, nowMillis: Long): Long? {
+    val text = value?.trim().orEmpty()
+    if (text.isEmpty()) return null
+    text.toLongOrNull()?.let { return it.coerceAtLeast(0L) }
+    val date = runCatching {
+        SimpleDateFormat("EEE, dd MMM yyyy HH:mm:ss zzz", Locale.US).parse(text)
+    }.getOrNull() ?: return null
+    return ((date.time - nowMillis) / 1_000L).coerceAtLeast(0L)
+}

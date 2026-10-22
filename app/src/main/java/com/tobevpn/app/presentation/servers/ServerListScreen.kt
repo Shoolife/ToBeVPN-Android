@@ -45,7 +45,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.outlined.Fingerprint
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Route
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -100,6 +102,7 @@ import com.tobevpn.app.R
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.BaseStationBypassAccess
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.domain.model.ServerProtocol
 import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.countryFlagForUi
@@ -113,6 +116,7 @@ import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.presentation.theme.VpnRed
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 private val ServerFlagColumnWidth = 40.dp
@@ -218,6 +222,7 @@ fun ServerListScreen(
     val automaticServerSelection by viewModel.automaticServerSelection.collectAsStateWithLifecycle()
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val isAdminProfile by viewModel.isAdminProfile.collectAsStateWithLifecycle()
+    val bypassFingerprint by viewModel.baseStationBypassFingerprint.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val standardAccessUnavailable by
@@ -341,6 +346,17 @@ fun ServerListScreen(
                     }
                 },
                 actions = {
+                    if (showingBypass &&
+                        baseStationBypassAccess == BaseStationBypassAccess.ALLOWED
+                    ) {
+                        FingerprintMenuButton(
+                            value = bypassFingerprint,
+                            tint = refreshIconColor,
+                            onSelect = viewModel::setBaseStationBypassFingerprint,
+                        )
+                        // A little air between the two actions.
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
                     IconButton(
                         onClick = {
                             if (showingBypass) {
@@ -982,6 +998,34 @@ private fun ServerProbeProgressBar(
     }
 }
 
+/**
+ * Manual uTLS fingerprint for every bypass server, next to Refresh: profiles
+ * bring their own, but one fingerprint alone can be filtered, so the user may
+ * swap it in [FingerprintSheet].
+ */
+@Composable
+private fun FingerprintMenuButton(
+    value: String,
+    tint: Color,
+    onSelect: (String) -> Unit,
+) {
+    var sheetOpen by rememberSaveable { mutableStateOf(false) }
+    IconButton(onClick = { sheetOpen = true }) {
+        Icon(
+            imageVector = Icons.Outlined.Fingerprint,
+            contentDescription = stringResource(R.string.fingerprint_title),
+            tint = tint,
+        )
+    }
+    if (sheetOpen) {
+        FingerprintSheet(
+            value = value,
+            onSelect = onSelect,
+            onDismiss = { sheetOpen = false },
+        )
+    }
+}
+
 @Composable
 private fun BaseStationBypassExperimentalNotice(metrics: ServerListMetrics) {
     val isDark = isSystemInDarkTheme()
@@ -1143,7 +1187,9 @@ private fun ServerItem(
     } else {
         Color(0xFF1A1C1E).copy(alpha = 0.18f)
     }
-    val showCountryLine = showEndpoint || !server.isSelectable
+    // Second line under the name: the country for admins, the protocol's
+    // name for everyone else; "unavailable" wins for both.
+    val showCountryLine = true
 
     Card(
         modifier = Modifier
@@ -1221,10 +1267,12 @@ private fun ServerItem(
                     )
                     if (showCountryLine) {
                         Text(
-                            text = if (!server.isSelectable) {
-                                stringResource(R.string.server_unavailable)
-                            } else {
-                                countryName(serverCountryCodeForUi(server.country, server.name))
+                            text = when {
+                                !server.isSelectable -> stringResource(R.string.server_unavailable)
+                                showEndpoint -> countryName(
+                                    serverCountryCodeForUi(server.country, server.name),
+                                )
+                                else -> server.protocol.displayName
                             },
                             style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                             color = if (!server.isSelectable) {
@@ -1269,6 +1317,20 @@ private fun ServerItem(
                     metrics = metrics,
                 )
             }
+            // Admins get the protocol and how it is built in a row of its
+            // own; users see the protocol's name under the server name.
+            if (showEndpoint) {
+                HorizontalDivider(
+                    modifier = Modifier.fillMaxWidth(),
+                    thickness = 1.dp,
+                    color = dividerColor,
+                )
+                ServerProtocolRow(
+                    server = server,
+                    metrics = metrics,
+                    detailed = true,
+                )
+            }
         }
     }
 }
@@ -1283,9 +1345,9 @@ private fun ServerEndpointRow(
             .fillMaxWidth()
             .padding(
                 start = metrics.rowHorizontalPadding,
-                top = 8.dp,
+                top = 10.dp,
                 end = metrics.rowHorizontalPadding,
-                bottom = 12.dp,
+                bottom = 10.dp,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1332,6 +1394,98 @@ private fun ServerEndpointRow(
             width = metrics.adminPingWidth,
         )
     }
+}
+
+/**
+ * Which protocol carries the profile. Users see its name only; admins
+ * ([detailed]) also get how it is built - the security/transport "formula"
+ * and the layer the traffic rides on (TCP for VLESS, UDP for Hysteria2's
+ * QUIC). One neutral icon and colour for every protocol.
+ */
+@Composable
+private fun ServerProtocolRow(
+    server: Server,
+    metrics: ServerListMetrics,
+    detailed: Boolean,
+) {
+    val markerColor = if (isSystemInDarkTheme()) {
+        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f)
+    } else {
+        Color(0xFF1A1C1E).copy(alpha = 0.38f)
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(
+                start = metrics.rowHorizontalPadding,
+                top = 10.dp,
+                end = metrics.rowHorizontalPadding,
+                bottom = 10.dp,
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .width(metrics.flagColumnWidth)
+                .height(24.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Outlined.Route,
+                contentDescription = null,
+                tint = markerColor,
+                modifier = Modifier.size(21.dp),
+            )
+        }
+        Spacer(modifier = Modifier.width(metrics.flagTextGap))
+        // Protocol and formula in one style: "VLESS · REALITY · XHTTP".
+        Text(
+            text = listOf(
+                server.protocol.displayName,
+                if (detailed) protocolFormula(server) else "",
+            )
+                .filter(String::isNotEmpty)
+                .joinToString(" · "),
+            modifier = Modifier.weight(1f),
+            style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (detailed) {
+            Spacer(modifier = Modifier.width(10.dp))
+            EndpointValueChip(
+                text = if (server.protocol == ServerProtocol.HYSTERIA2) "UDP" else "TCP",
+                width = metrics.adminPingWidth,
+            )
+        }
+    }
+}
+
+// "REALITY · XHTTP · Vision" for VLESS, "QUIC · Salamander · ECH" for
+// Hysteria2: the parts an admin checks first when a server misbehaves.
+private fun protocolFormula(server: Server): String = when (server.protocol) {
+    ServerProtocol.HYSTERIA2 -> listOfNotNull(
+        "QUIC",
+        "Salamander".takeIf { server.obfsPassword.isNotBlank() },
+        "ECH".takeIf { server.echConfigList.isNotBlank() },
+        "Port hopping".takeIf { server.portHopping.isNotBlank() },
+    )
+    ServerProtocol.VLESS -> listOfNotNull(
+        server.security.takeIf { it.isNotBlank() && it != "none" }?.uppercase(Locale.ROOT),
+        server.network.takeIf { it.isNotBlank() }?.let(::transportLabel),
+        "Vision".takeIf { server.flow.contains("vision", ignoreCase = true) },
+    )
+}.joinToString(" · ")
+
+private fun transportLabel(network: String): String = when (network.lowercase(Locale.ROOT)) {
+    "tcp" -> "RAW"
+    "ws" -> "WS"
+    "grpc" -> "gRPC"
+    "xhttp" -> "XHTTP"
+    "httpupgrade" -> "HTTPUpgrade"
+    else -> network.uppercase(Locale.ROOT)
 }
 
 @Composable
