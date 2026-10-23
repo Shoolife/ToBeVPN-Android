@@ -494,10 +494,16 @@ class AuthRepository @Inject constructor(
                 )
             }
         } catch (error: Exception) {
-            if (error.isRemoteDeviceUnlinkedError()) {
-                Result.success(false)
-            } else {
-                Result.failure(error)
+            when {
+                !error.isRemoteDeviceUnlinkedError() -> Result.failure(error)
+                // A 401 reaches here when the access token could not be
+                // renewed. That proves an unlink only when the refresh token
+                // is gone too; a refresh that merely failed (bot down, no
+                // network, the phone just woke up) keeps it, and treating
+                // that as an unlink signed the user out over a blip.
+                error is HttpException && error.code() == 401 &&
+                    bootstrapManager.hasUsableRefreshToken() -> Result.failure(error)
+                else -> Result.success(false)
             }
         }
     }

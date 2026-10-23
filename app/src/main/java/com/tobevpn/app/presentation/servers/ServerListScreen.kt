@@ -102,6 +102,8 @@ import com.tobevpn.app.R
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.BaseStationBypassAccess
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.domain.model.ServerListView
+import com.tobevpn.app.domain.model.ServerSubtitle
 import com.tobevpn.app.domain.model.ServerProtocol
 import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
@@ -222,6 +224,8 @@ fun ServerListScreen(
     val automaticServerSelection by viewModel.automaticServerSelection.collectAsStateWithLifecycle()
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val isAdminProfile by viewModel.isAdminProfile.collectAsStateWithLifecycle()
+    val adminServerListView by viewModel.adminServerListView.collectAsStateWithLifecycle()
+    val listView = if (isAdminProfile) adminServerListView else ServerListView.USER
     val bypassFingerprint by viewModel.baseStationBypassFingerprint.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
@@ -696,7 +700,8 @@ fun ServerListScreen(
                                                 // positive or negative full-profile check may be
                                                 // selected while the rest of the list is running.
                                                 server.ping != 0L),
-                                            showEndpoint = isAdminProfile,
+                                            view = listView,
+                                            adminStatusWidth = isAdminProfile,
                                             showStatus = true,
                                             showUnmeasuredStatus = showingBypass &&
                                                 !baseStationBypassPingsMeasured &&
@@ -881,6 +886,8 @@ private fun BaseStationBypassAccessMessage(
 @Composable
 internal fun ServerListScalePreview(
     modifier: Modifier = Modifier,
+    /** The admin's chosen layout; users see ServerListView.USER. */
+    previewView: ServerListView = ServerListView.USER,
 ) {
     val metrics = serverListMetrics(isTv = false).copy(cardHorizontalPadding = 0.dp)
     val previewServers = listOf(
@@ -908,12 +915,15 @@ internal fun ServerListScalePreview(
     ).fontSize
 
     Column(modifier = modifier.fillMaxWidth()) {
-        previewServers.forEach { server ->
+        // Address and protocol rows make a card about twice as tall: one
+        // server then fills the preview.
+        previewServers.take(if (previewView.hasDetailRows) 1 else 2).forEach { server ->
             ServerItem(
                 server = server,
                 selected = false,
                 enabled = false,
-                showEndpoint = false,
+                view = previewView,
+                adminStatusWidth = previewView.hasDetailRows,
                 serverNameFontSize = serverNameFontSize,
                 metrics = metrics,
                 isTv = false,
@@ -1154,12 +1164,39 @@ private fun AutomaticServerItem(
     }
 }
 
+/** A server card exactly as the list draws it, for the settings preview. */
+@Composable
+internal fun ServerListPreviewCard(
+    server: Server,
+    view: ServerListView,
+    modifier: Modifier = Modifier,
+) {
+    val metrics = serverListMetrics(isTv = false).copy(cardHorizontalPadding = 0.dp)
+    Box(modifier = modifier) {
+        ServerItem(
+            server = server,
+            selected = false,
+            enabled = false,
+            view = view,
+            adminStatusWidth = true,
+            serverNameFontSize = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium).fontSize,
+            metrics = metrics,
+            isTv = false,
+            onClick = {},
+        )
+    }
+}
+
 @Composable
 private fun ServerItem(
     server: Server,
     selected: Boolean,
     enabled: Boolean,
-    showEndpoint: Boolean,
+    /** Which lines the card shows; users always get ServerListView.USER. */
+    view: ServerListView,
+    /** The wider admin status column, kept for every admin view so the
+     *  name fitting above lines up whatever lines are shown. */
+    adminStatusWidth: Boolean,
     showStatus: Boolean = true,
     showUnmeasuredStatus: Boolean = false,
     forceStatusLoading: Boolean = false,
@@ -1187,9 +1224,21 @@ private fun ServerItem(
     } else {
         Color(0xFF1A1C1E).copy(alpha = 0.18f)
     }
-    // Second line under the name: the country for admins, the protocol's
-    // name for everyone else; "unavailable" wins for both.
-    val showCountryLine = true
+    // Second line under the name, as the view says; "unavailable" always
+    // shows, whatever the view hides.
+    val subtitleText = when {
+        !server.isSelectable -> stringResource(R.string.server_unavailable)
+        else -> when (view.subtitle) {
+            ServerSubtitle.COUNTRY -> countryName(serverCountryCodeForUi(server.country, server.name))
+            ServerSubtitle.PROTOCOL -> server.protocol.displayName
+            ServerSubtitle.PROTOCOL_FULL ->
+                listOf(server.protocol.displayName, protocolFormula(server))
+                    .filter(String::isNotEmpty)
+                    .joinToString(" · ")
+            ServerSubtitle.NONE -> null
+        }
+    }
+    val showEndpoint = view.hasDetailRows
 
     Card(
         modifier = Modifier
@@ -1265,15 +1314,9 @@ private fun ServerItem(
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    if (showCountryLine) {
+                    if (subtitleText != null) {
                         Text(
-                            text = when {
-                                !server.isSelectable -> stringResource(R.string.server_unavailable)
-                                showEndpoint -> countryName(
-                                    serverCountryCodeForUi(server.country, server.name),
-                                )
-                                else -> server.protocol.displayName
-                            },
+                            text = subtitleText,
                             style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                             color = if (!server.isSelectable) {
                                 VpnRed
@@ -1289,7 +1332,7 @@ private fun ServerItem(
 
                 if (showStatus) {
                     Spacer(modifier = Modifier.width(metrics.statusGap))
-                    val statusWidth = if (showEndpoint) {
+                    val statusWidth = if (adminStatusWidth) {
                         metrics.adminPingWidth
                     } else {
                         metrics.pingWidth
@@ -1306,7 +1349,7 @@ private fun ServerItem(
                 }
             }
 
-            if (showEndpoint) {
+            if (view.endpoint) {
                 HorizontalDivider(
                     modifier = Modifier.fillMaxWidth(),
                     thickness = 1.dp,
@@ -1317,9 +1360,8 @@ private fun ServerItem(
                     metrics = metrics,
                 )
             }
-            // Admins get the protocol and how it is built in a row of its
-            // own; users see the protocol's name under the server name.
-            if (showEndpoint) {
+            // The protocol and how it is built, in a row of its own.
+            if (view.protocol) {
                 HorizontalDivider(
                     modifier = Modifier.fillMaxWidth(),
                     thickness = 1.dp,

@@ -47,8 +47,8 @@ android {
         applicationId = "com.tobevpn.app"
         minSdk = 29
         targetSdk = 36
-        versionCode = versionCodeOverride ?: 84
-        versionName = "1.0.83"
+        versionCode = versionCodeOverride ?: 85
+        versionName = "1.0.84"
 
         // Direct APK releases can use the GitHub self-updater. Google Play
         // builds override this flag because Play policy requires updates to

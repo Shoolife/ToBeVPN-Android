@@ -12,13 +12,13 @@ import org.junit.Test
 
 class Hysteria2Test {
 
-    // The working 3x-ui link the feature was built against (credentials of a
-    // test server; the shape is what matters).
-    private val realLink = "hysteria2://21c638bfdf094cd3a535500240d5ee0f@meow.zchk.ru:443" +
+    // Same shape as a 3x-ui Hysteria2 export (alpn list, ECH, salamander,
+    // ignored fp, Cyrillic name); host and secrets are made up.
+    private val realLink = "hysteria2://0123456789abcdef0123456789abcdef@hy2.example.com:443" +
         "?alpn=h3%2Ch2%2Chttp%2F1.1&ech=AGT%2BDQBgAAAgACAJghoNKFPwgiuwFEgHScjyuE5qlh4kkBbukv2p0el8Ag" +
         "AkAAEAAQABAAIAAQADAAIAAQACAAIAAgADAAMAAQADAAIAAwADABF3d3cucGludGVyZXN0LmNvbQAA" +
-        "&fp=firefox&obfs=salamander&obfs-password=5xh017lfyq5kwx64&security=tls&sni=meow.zchk.ru" +
-        "#%D1%85%D0%B8%D1%81%D1%82%D0%B5%D1%80%D0%B8%D1%8F2-alex"
+        "&fp=firefox&obfs=salamander&obfs-password=example-obfs-pass&security=tls&sni=hy2.example.com" +
+        "#%D1%82%D0%B5%D1%81%D1%822-test"
 
     @Test
     fun parsesRealThreeXUiLink() {
@@ -26,14 +26,14 @@ class Hysteria2Test {
         assertNotNull(server)
         server!!
         assertEquals(ServerProtocol.HYSTERIA2, server.protocol)
-        assertEquals("meow.zchk.ru", server.address)
+        assertEquals("hy2.example.com", server.address)
         assertEquals(443, server.port)
-        assertEquals("21c638bfdf094cd3a535500240d5ee0f", server.uuid)
-        assertEquals("meow.zchk.ru", server.sni)
+        assertEquals("0123456789abcdef0123456789abcdef", server.uuid)
+        assertEquals("hy2.example.com", server.sni)
         assertEquals("h3,h2,http/1.1", server.alpn)
-        assertEquals("5xh017lfyq5kwx64", server.obfsPassword)
+        assertEquals("example-obfs-pass", server.obfsPassword)
         assertTrue(server.echConfigList.startsWith("AGT+DQBg"))
-        assertEquals("хистерия2-alex", server.name)
+        assertEquals("тест2-test", server.name)
         assertTrue(server.isAvailable)
     }
 
@@ -78,16 +78,16 @@ class Hysteria2Test {
         val proxy = config.getJSONArray("outbounds").getJSONObject(0)
         assertEquals("hysteria", proxy.getString("protocol"))
         assertEquals(2, proxy.getJSONObject("settings").getInt("version"))
-        assertEquals("meow.zchk.ru", proxy.getJSONObject("settings").getString("address"))
+        assertEquals("hy2.example.com", proxy.getJSONObject("settings").getString("address"))
         val stream = proxy.getJSONObject("streamSettings")
         assertEquals("hysteria", stream.getString("network"))
         val tls = stream.getJSONObject("tlsSettings")
-        assertEquals("meow.zchk.ru", tls.getString("serverName"))
+        assertEquals("hy2.example.com", tls.getString("serverName"))
         assertEquals(3, tls.getJSONArray("alpn").length())
         assertTrue(tls.has("echConfigList"))
         assertFalse(tls.has("allowInsecure"))
         assertEquals(
-            "21c638bfdf094cd3a535500240d5ee0f",
+            "0123456789abcdef0123456789abcdef",
             stream.getJSONObject("hysteriaSettings").getString("auth"),
         )
         val mask = stream.getJSONObject("finalmask").getJSONArray("udp").getJSONObject(0)

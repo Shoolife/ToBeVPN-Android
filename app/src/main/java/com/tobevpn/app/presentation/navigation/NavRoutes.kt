@@ -36,6 +36,9 @@ object PersonalizationRoute
 object DisplayScaleTextRoute
 
 @Serializable
+object ServerListViewRoute
+
+@Serializable
 object SettingsTransferRoute
 
 @Serializable

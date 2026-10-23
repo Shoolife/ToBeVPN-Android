@@ -13,6 +13,7 @@ import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.BaseStationBypassAccess
 import com.tobevpn.app.domain.model.FingerprintOverride
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.domain.model.ServerListView
 import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.domain.model.baseStationBypassAccess
 import com.tobevpn.app.domain.model.canUseBaseStationBypass
@@ -126,6 +127,10 @@ class ServerListViewModel @Inject constructor(
     val isAdminProfile: StateFlow<Boolean> = authState
         .map { state -> (state as? AuthState.Authenticated)?.isAdminProfile == true }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /** Admins' chosen card layout; the screen gives users ServerListView.USER. */
+    val adminServerListView: StateFlow<ServerListView> = prefsDataStore.serverListView
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ServerListView.ADMIN_DEFAULT)
 
     val baseStationBypassAccess: StateFlow<BaseStationBypassAccess?> =
         authRepository.observeAuthState()

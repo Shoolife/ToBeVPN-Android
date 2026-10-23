@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AspectRatio
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Language
@@ -88,6 +89,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.data.repository.CurrentSubscriptionPlanInfo
+import com.tobevpn.app.domain.model.ServerListView
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
 import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
@@ -123,6 +125,7 @@ import kotlinx.coroutines.launch
 fun PersonalizationScreen(
     onBack: () -> Unit,
     onNavigateToDisplayScaleText: () -> Unit,
+    onNavigateToServerListView: () -> Unit,
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
@@ -200,6 +203,12 @@ fun PersonalizationScreen(
             DisplayScaleNavigationCard(
                 onClick = onNavigateToDisplayScaleText,
             )
+
+            // Admins only: which lines a server card shows, with a preview.
+            if ((authState as? AuthState.Authenticated)?.isAdminProfile == true) {
+                Spacer(modifier = Modifier.height(16.dp))
+                ServerListViewNavigationCard(onClick = onNavigateToServerListView)
+            }
 
             if (authState is AuthState.Authenticated) {
                 Spacer(modifier = Modifier.height(16.dp))
@@ -311,6 +320,7 @@ fun DisplayScaleTextScreen(
     val boldText by viewModel.boldText.collectAsStateWithLifecycle()
     val outlinedText by viewModel.outlinedText.collectAsStateWithLifecycle()
     val authState by viewModel.authState.collectAsStateWithLifecycle()
+    val adminServerListView by viewModel.serverListView.collectAsStateWithLifecycle()
     val currentSubscriptionPlan by viewModel.currentSubscriptionPlan.collectAsStateWithLifecycle()
     val trafficResetAt by viewModel.trafficResetAt.collectAsStateWithLifecycle()
     val profileNameDisplay by viewModel.profileNameDisplay.collectAsStateWithLifecycle()
@@ -368,6 +378,7 @@ fun DisplayScaleTextScreen(
                 avatarLoading = avatarLoading,
                 interfaceScale = previewInterfaceScale,
                 fontScale = previewFontScale,
+                adminServerListView = adminServerListView,
             )
             Spacer(modifier = Modifier.height(24.dp))
             DisplayScaleAndTextControls(
@@ -451,6 +462,7 @@ private fun DisplaySettingsPreview(
     avatarLoading: Boolean,
     interfaceScale: Float,
     fontScale: Float,
+    adminServerListView: ServerListView,
 ) {
     val isDark = isSystemInDarkTheme()
     val previewBackground = if (isDark) {
@@ -512,7 +524,13 @@ private fun DisplaySettingsPreview(
                                 profileNameDisplay = profileNameDisplay,
                                 avatarLoading = avatarLoading,
                             )
-                            1 -> DisplayPreviewServersPage()
+                            1 -> DisplayPreviewServersPage(
+                                view = if ((authState as? AuthState.Authenticated)?.isAdminProfile == true) {
+                                    adminServerListView
+                                } else {
+                                    ServerListView.USER
+                                },
+                            )
                             else -> DisplayPreviewSubscriptionPage(
                                 authState = authState,
                                 currentSubscriptionPlan = currentSubscriptionPlan,
@@ -630,12 +648,12 @@ private fun DisplayPreviewProfilePage(
 }
 
 @Composable
-private fun DisplayPreviewServersPage() {
+private fun DisplayPreviewServersPage(view: ServerListView) {
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        ServerListScalePreview()
+        ServerListScalePreview(previewView = view)
     }
 }
 
@@ -658,6 +676,65 @@ private fun DisplayPreviewSubscriptionPage(
         )
     }
 }
+
+@Composable
+private fun ServerListViewNavigationCard(onClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(ServerListViewAccent.copy(alpha = 0.18f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Dns,
+                    contentDescription = null,
+                    tint = ServerListViewAccent,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.server_list_view_title),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(3.dp))
+                Text(
+                    text = stringResource(R.string.server_list_view_desc),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(modifier = Modifier.width(8.dp))
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+private val ServerListViewAccent = Color(0xFF26A69A)
 
 @Composable
 private fun DisplayScaleNavigationCard(

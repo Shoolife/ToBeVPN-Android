@@ -15,6 +15,7 @@ import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
 import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
 import com.tobevpn.app.domain.model.DEFAULT_SERVER_PING_TIMEOUT_SECONDS
 import com.tobevpn.app.domain.model.FingerprintOverride
+import com.tobevpn.app.domain.model.ServerListView
 import com.tobevpn.app.domain.model.normalizeFontScale
 import com.tobevpn.app.domain.model.normalizeInterfaceScale
 import com.tobevpn.app.domain.model.normalizeServerPingTimeoutSeconds
@@ -88,6 +89,8 @@ class PrefsDataStore @Inject constructor(
         val LEGACY_USER_EMAIL = stringPreferencesKey("user_email")
         val LANGUAGE = stringPreferencesKey("language")
         val PROFILE_NAME_DISPLAY = stringPreferencesKey("profile_name_display")
+        // Admins' server card layout (ServerListView.encode()); absent = default.
+        val SERVER_LIST_VIEW = stringPreferencesKey("server_list_view")
         val THEME_MODE = stringPreferencesKey("theme_mode")
         val INTERFACE_SCALE = doublePreferencesKey("interface_scale")
         val FONT_SCALE = doublePreferencesKey("font_scale")
@@ -201,6 +204,14 @@ class PrefsDataStore @Inject constructor(
 
     suspend fun setProfileNameDisplay(value: String) {
         context.dataStore.edit { it[Keys.PROFILE_NAME_DISPLAY] = value }
+    }
+
+    val serverListView: Flow<ServerListView> = context.dataStore.data
+        .map { ServerListView.decode(it[Keys.SERVER_LIST_VIEW]) }
+        .distinctUntilChanged()
+
+    suspend fun setServerListView(view: ServerListView) {
+        context.dataStore.edit { it[Keys.SERVER_LIST_VIEW] = view.encode() }
     }
 
     val themeMode: Flow<String?> = context.dataStore.data.map { it[Keys.THEME_MODE] }

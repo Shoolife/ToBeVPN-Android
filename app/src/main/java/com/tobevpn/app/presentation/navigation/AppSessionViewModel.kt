@@ -2,6 +2,7 @@ package com.tobevpn.app.presentation.navigation
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.repository.AuthRepository
 import com.tobevpn.app.data.repository.TelegramAuthPollResult
@@ -92,7 +93,17 @@ class AppSessionViewModel @Inject constructor(
                     if (!isAuthenticated) return@collectLatest
 
                     while (isActive) {
-                        val stillLinked = authRepository.syncDeviceSessionState().getOrNull()
+                        var stillLinked = authRepository.syncDeviceSessionState().getOrNull()
+                        if (stillLinked == false) {
+                            // Check once more before signing out, so a single
+                            // bad answer cannot wipe the session.
+                            delay(DEVICE_LINK_CONFIRM_DELAY_MS)
+                            stillLinked = authRepository.syncDeviceSessionState().getOrNull()
+                            SafeDiagnostics.warn(
+                                TAG,
+                                "Device unlink recheck: ${if (stillLinked == false) "CONFIRMED" else "NOT_CONFIRMED"}",
+                            )
+                        }
                         if (stillLinked == false) {
                             connectionManager.stopVpn()
                             withContext(NonCancellable) {
@@ -107,7 +118,9 @@ class AppSessionViewModel @Inject constructor(
     }
 
     private companion object {
+        const val TAG = "AppSessionViewModel"
         const val DEVICE_LINK_POLL_INTERVAL_MS = 5L * 60L * 1000L
+        const val DEVICE_LINK_CONFIRM_DELAY_MS = 15_000L
 
         fun pendingAuthPollDelayMs(attempt: Int): Long = when {
             attempt < 60 -> 3_000L

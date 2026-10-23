@@ -40,6 +40,7 @@ import com.tobevpn.app.presentation.settings.AboutScreen
 import com.tobevpn.app.presentation.settings.AdvancedScreen
 import com.tobevpn.app.presentation.settings.DisplayScaleTextScreen
 import com.tobevpn.app.presentation.settings.PersonalizationScreen
+import com.tobevpn.app.presentation.settings.ServerListViewScreen
 import com.tobevpn.app.presentation.settings.SettingsScreen
 import com.tobevpn.app.presentation.settings.SettingsTransferScreen
 import com.tobevpn.app.presentation.settings.SettingsViewModel
@@ -175,6 +176,16 @@ fun AppNavHost(
                 onNavigateToDisplayScaleText = {
                     navController.navigateSingleTop(DisplayScaleTextRoute)
                 },
+                onNavigateToServerListView = {
+                    navController.navigateSingleTop(ServerListViewRoute)
+                },
+                viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+            )
+        }
+        screen<ServerListViewRoute> { entry ->
+            val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
+            ServerListViewScreen(
+                onBack = { navController.popBackStackOrRecover(startDestination) },
                 viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
             )
         }

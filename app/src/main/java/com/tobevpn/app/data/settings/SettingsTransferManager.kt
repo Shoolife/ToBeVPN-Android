@@ -8,7 +8,11 @@ import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.MAX_INTERFACE_SCALE
+import com.tobevpn.app.domain.model.MAX_SERVER_PING_TIMEOUT_SECONDS
 import com.tobevpn.app.domain.model.MIN_INTERFACE_SCALE
+import com.tobevpn.app.domain.model.MIN_SERVER_PING_TIMEOUT_SECONDS
+import com.tobevpn.app.domain.model.ServerListView
+import com.tobevpn.app.domain.model.ServerSubtitle
 import com.tobevpn.app.domain.model.ThemeMode
 import com.tobevpn.app.util.LocaleManager
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -18,6 +22,7 @@ import java.io.InputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -27,8 +32,12 @@ data class SettingsTransferSelection(
     val theme: Boolean = true,
     val display: Boolean = true,
     val appRouting: Boolean = true,
+    val serverCheck: Boolean = true,
+    /** Admins only (see SettingsTransferManager). */
+    val serverListView: Boolean = true,
 ) {
-    val hasAny: Boolean get() = language || theme || display || appRouting
+    val hasAny: Boolean
+        get() = language || theme || display || appRouting || serverCheck || serverListView
 }
 
 data class SettingsImportPreview(
@@ -47,7 +56,45 @@ data class SettingsBackupDocument(
     val theme: String? = null,
     val display: PortableDisplaySettings? = null,
     val appRouting: PortableAppRoutingSettings? = null,
+    /** Server check timeout, whole seconds (shared with the desktop client). */
+    val serverPingTimeoutSeconds: Int? = null,
+    /** Admins' server card layout (shared with the desktop client). */
+    val serverListView: PortableServerListView? = null,
 )
+
+/**
+ * Same JSON as the desktop client's serverListView: subtitle is "country",
+ * "protocol", "protocolFull" or "none".
+ */
+@Serializable
+data class PortableServerListView(
+    val subtitle: String,
+    val endpoint: Boolean,
+    val protocol: Boolean,
+) {
+    fun toView(): ServerListView = ServerListView(
+        subtitle = requireNotNull(SUBTITLES.entries.firstOrNull { it.value == subtitle }?.key) {
+            "Invalid server list view"
+        },
+        endpoint = endpoint,
+        protocol = protocol,
+    )
+
+    companion object {
+        private val SUBTITLES = mapOf(
+            ServerSubtitle.COUNTRY to "country",
+            ServerSubtitle.PROTOCOL to "protocol",
+            ServerSubtitle.PROTOCOL_FULL to "protocolFull",
+            ServerSubtitle.NONE to "none",
+        )
+
+        fun from(view: ServerListView) = PortableServerListView(
+            subtitle = SUBTITLES.getValue(view.subtitle),
+            endpoint = view.endpoint,
+            protocol = view.protocol,
+        )
+    }
+}
 
 @Serializable
 data class PortableDisplaySettings(
@@ -104,9 +151,16 @@ internal object SettingsBackupCodec {
             require(routing.packages.size <= MAX_PACKAGES) { "Too many applications" }
             require(routing.packages.all(::isSafePackageName)) { "Invalid application identifier" }
         }
+        document.serverPingTimeoutSeconds?.let { seconds ->
+            require(seconds in MIN_SERVER_PING_TIMEOUT_SECONDS..MAX_SERVER_PING_TIMEOUT_SECONDS) {
+                "Invalid server check timeout"
+            }
+        }
+        document.serverListView?.toView()
         require(
             document.language != null || document.theme != null ||
-                document.display != null || document.appRouting != null,
+                document.display != null || document.appRouting != null ||
+                document.serverPingTimeoutSeconds != null || document.serverListView != null,
         ) {
             "Settings file is empty"
         }
@@ -127,7 +181,12 @@ class SettingsTransferManager @Inject constructor(
     private val prefs: PrefsDataStore,
     private val appFilterRepository: AppFilterRepository,
 ) {
-    suspend fun writeExport(uri: Uri, selection: SettingsTransferSelection) = withContext(Dispatchers.IO) {
+    /** [isAdmin]: the server-list view is written for admins only. */
+    suspend fun writeExport(
+        uri: Uri,
+        selection: SettingsTransferSelection,
+        isAdmin: Boolean,
+    ) = withContext(Dispatchers.IO) {
         require(selection.hasAny) { "No settings selected" }
         val display = if (selection.display) {
             prefs.getPortableDisplayPreferences().let {
@@ -161,6 +220,12 @@ class SettingsTransferManager @Inject constructor(
                 ?: ThemeMode.DEFAULT.name.takeIf { selection.theme },
             display = display,
             appRouting = routing,
+            serverPingTimeoutSeconds = prefs.getServerPingTimeoutSeconds().takeIf { selection.serverCheck },
+            serverListView = if (isAdmin && selection.serverListView) {
+                PortableServerListView.from(prefs.serverListView.first())
+            } else {
+                null
+            },
         )
         val encoded = SettingsBackupCodec.encode(document)
         context.contentResolver.openOutputStream(uri, "wt")?.bufferedWriter(Charsets.UTF_8)?.use {
@@ -168,7 +233,8 @@ class SettingsTransferManager @Inject constructor(
         } ?: throw IOException("Unable to open destination")
     }
 
-    suspend fun readImport(uri: Uri): SettingsImportPreview = withContext(Dispatchers.IO) {
+    /** [isAdmin]: a regular account neither sees nor applies the server-list view. */
+    suspend fun readImport(uri: Uri, isAdmin: Boolean): SettingsImportPreview = withContext(Dispatchers.IO) {
         val bytes = context.contentResolver.openInputStream(uri)?.use {
             it.readLimitedBytes(SettingsBackupCodec.MAX_FILE_BYTES)
         } ?: throw IOException("Unable to open settings file")
@@ -180,6 +246,8 @@ class SettingsTransferManager @Inject constructor(
                 theme = document.theme != null,
                 display = document.display != null,
                 appRouting = document.appRouting != null,
+                serverCheck = document.serverPingTimeoutSeconds != null,
+                serverListView = isAdmin && document.serverListView != null,
             ),
         )
     }
@@ -231,6 +299,14 @@ class SettingsTransferManager @Inject constructor(
                         .toSet(),
                 ),
             )
+        }
+        if (selection.serverCheck) {
+            val value = requireNotNull(document.serverPingTimeoutSeconds) { "Server check timeout is absent" }
+            prefs.setServerPingTimeoutSeconds(value)
+        }
+        if (selection.serverListView) {
+            val value = requireNotNull(document.serverListView) { "Server list view is absent" }
+            prefs.setServerListView(value.toView())
         }
         if (selection.language) {
             requireNotNull(document.language) { "Language setting is absent" }.also {

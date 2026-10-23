@@ -16,9 +16,11 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -694,16 +696,40 @@ private fun ReferralRewardsContent() {
             color = MaterialTheme.colorScheme.onSurface,
             textAlign = TextAlign.Center,
         )
-        Spacer(modifier = Modifier.height(9.dp))
-        Text(
-            text = stringResource(R.string.referrals_rewards_description),
-            modifier = Modifier.fillMaxWidth(),
-            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
+        Spacer(modifier = Modifier.height(12.dp))
+        // The new rule first: an invite alone now earns days.
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(IntrinsicSize.Min)
+                .clip(RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp, topEnd = 10.dp, bottomEnd = 10.dp))
+                .background(VpnGreen.copy(alpha = 0.10f)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .fillMaxHeight()
+                    .background(VpnGreen),
+            )
+            Text(
+                text = stringResource(R.string.referrals_rewards_description),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+        }
 
         Spacer(modifier = Modifier.height(16.dp))
+        ReferralRewardRow(
+            icon = Icons.Filled.PersonAdd,
+            iconColor = VpnGreen,
+            label = stringResource(R.string.referrals_rewards_signup),
+            value = stringResource(R.string.referrals_rewards_signup_value),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
         ReferralRewardRow(
             icon = Icons.Filled.Groups,
             iconColor = VpnBlue,

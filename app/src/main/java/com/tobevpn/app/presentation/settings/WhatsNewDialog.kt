@@ -23,10 +23,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Fingerprint
-import androidx.compose.material.icons.filled.Memory
-import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -149,29 +148,24 @@ private val WhatsNewHeroIcon: ImageVector by lazy {
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
+        icon = Icons.Filled.CardGiftcard,
+        titleRes = R.string.whats_new_referral_rewards_title,
+        descriptionRes = R.string.whats_new_referral_rewards_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.Person,
+        titleRes = R.string.whats_new_stay_signed_in_title,
+        descriptionRes = R.string.whats_new_stay_signed_in_desc,
+    ),
+    WhatsNewHighlight(
         icon = Icons.Filled.Route,
         titleRes = R.string.whats_new_hysteria2_title,
         descriptionRes = R.string.whats_new_hysteria2_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.Fingerprint,
-        titleRes = R.string.whats_new_fingerprint_title,
-        descriptionRes = R.string.whats_new_fingerprint_desc,
-    ),
-    WhatsNewHighlight(
         icon = Icons.Filled.Bolt,
         titleRes = R.string.whats_new_fast_connect_title,
         descriptionRes = R.string.whats_new_fast_connect_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Filled.QrCodeScanner,
-        titleRes = R.string.whats_new_qr_scanner_title,
-        descriptionRes = R.string.whats_new_qr_scanner_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Filled.Memory,
-        titleRes = R.string.whats_new_xray_core_title,
-        descriptionRes = R.string.whats_new_xray_core_desc,
     ),
 )
 

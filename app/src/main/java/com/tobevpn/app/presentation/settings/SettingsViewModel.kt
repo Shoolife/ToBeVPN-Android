@@ -19,6 +19,7 @@ import com.tobevpn.app.data.repository.AppFilterRepository
 import com.tobevpn.app.data.repository.AuthRepository
 import com.tobevpn.app.data.repository.CurrentSubscriptionPlanInfo
 import com.tobevpn.app.data.repository.VpnRepository
+import com.tobevpn.app.domain.model.ServerListView
 import com.tobevpn.app.domain.model.AppFilterMode
 import com.tobevpn.app.domain.model.AppFilterState
 import com.tobevpn.app.domain.model.AuthState
@@ -130,6 +131,14 @@ class SettingsViewModel @Inject constructor(
 
     fun setProfileNameDisplay(mode: ProfileNameDisplay) {
         viewModelScope.launch { prefsDataStore.setProfileNameDisplay(mode.name) }
+    }
+
+    /** Admins' server card layout (Personalization -> Server list view). */
+    val serverListView: StateFlow<ServerListView> = prefsDataStore.serverListView
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ServerListView.ADMIN_DEFAULT)
+
+    fun setServerListView(view: ServerListView) {
+        viewModelScope.launch { prefsDataStore.setServerListView(view) }
     }
 
     val themeMode: StateFlow<ThemeMode> = prefsDataStore.themeMode

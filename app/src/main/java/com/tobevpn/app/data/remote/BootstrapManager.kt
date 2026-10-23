@@ -45,6 +45,16 @@ class BootstrapManager @Inject constructor(
         val isLinked: Boolean,
     )
 
+    /**
+     * A refresh token that has not expired is still held. After a 401 this
+     * tells a refresh that failed for a transient reason (network, bot down:
+     * the tokens stay) from one the server refused (they are replaced).
+     */
+    fun hasUsableRefreshToken(): Boolean {
+        val t = tokensRef.get() ?: return false
+        return t.refreshExpiresAt - System.currentTimeMillis() > 5_000
+    }
+
     fun currentAccessToken(): String? {
         val t = tokensRef.get() ?: return null
         // 5s grace to avoid sending a soon-to-expire token.

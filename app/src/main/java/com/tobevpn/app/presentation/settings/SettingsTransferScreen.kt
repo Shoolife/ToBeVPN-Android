@@ -27,13 +27,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.FileOpen
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -127,23 +129,33 @@ fun SettingsTransferScreen(
     var exportTheme by rememberSaveable { mutableStateOf(true) }
     var exportDisplay by rememberSaveable { mutableStateOf(true) }
     var exportApps by rememberSaveable { mutableStateOf(true) }
+    var exportServerCheck by rememberSaveable { mutableStateOf(true) }
+    var exportServerListView by rememberSaveable { mutableStateOf(true) }
+    val isAdmin by viewModel.isAdmin.collectAsStateWithLifecycle()
     var exportOptionsExpanded by rememberSaveable { mutableStateOf(false) }
     var importLanguage by rememberSaveable { mutableStateOf(false) }
     var importTheme by rememberSaveable { mutableStateOf(false) }
     var importDisplay by rememberSaveable { mutableStateOf(false) }
     var importApps by rememberSaveable { mutableStateOf(false) }
+    var importServerCheck by rememberSaveable { mutableStateOf(false) }
+    var importServerListView by rememberSaveable { mutableStateOf(false) }
 
     val exportSelection = SettingsTransferSelection(
         language = exportLanguage,
         theme = exportTheme,
         display = exportDisplay,
         appRouting = exportApps,
+        serverCheck = exportServerCheck,
+        // Admins only: on a regular account the setting has no effect.
+        serverListView = isAdmin && exportServerListView,
     )
     val importSelection = SettingsTransferSelection(
         language = importLanguage,
         theme = importTheme,
         display = importDisplay,
         appRouting = importApps,
+        serverCheck = importServerCheck,
+        serverListView = importServerListView,
     )
 
     val createDocument = rememberLauncherForActivityResult(
@@ -163,6 +175,8 @@ fun SettingsTransferScreen(
         importTheme = preview?.available?.theme == true
         importDisplay = preview?.available?.display == true
         importApps = preview?.available?.appRouting == true
+        importServerCheck = preview?.available?.serverCheck == true
+        importServerListView = preview?.available?.serverListView == true
     }
 
     val exportedText = stringResource(R.string.settings_transfer_export_success)
@@ -224,6 +238,7 @@ fun SettingsTransferScreen(
             ) {
                 ExportOptionsSummary(
                     selection = exportSelection,
+                    isAdmin = isAdmin,
                     expanded = exportOptionsExpanded,
                     onToggle = { exportOptionsExpanded = !exportOptionsExpanded },
                 )
@@ -277,6 +292,22 @@ fun SettingsTransferScreen(
                             checked = exportApps,
                             onCheckedChange = { exportApps = it },
                         )
+                        TransferChoiceRow(
+                            icon = Icons.Filled.Timer,
+                            title = stringResource(R.string.settings_transfer_server_check),
+                            description = stringResource(R.string.settings_transfer_server_check_desc),
+                            checked = exportServerCheck,
+                            onCheckedChange = { exportServerCheck = it },
+                        )
+                        if (isAdmin) {
+                            TransferChoiceRow(
+                                icon = Icons.Filled.Dns,
+                                title = stringResource(R.string.settings_transfer_server_list_view),
+                                description = stringResource(R.string.settings_transfer_server_list_view_desc),
+                                checked = exportServerListView,
+                                onCheckedChange = { exportServerListView = it },
+                            )
+                        }
                     }
                 }
                 Spacer(Modifier.height(12.dp))
@@ -344,6 +375,8 @@ fun SettingsTransferScreen(
             onThemeChange = { importTheme = it },
             onDisplayChange = { importDisplay = it },
             onAppsChange = { importApps = it },
+            onServerCheckChange = { importServerCheck = it },
+            onServerListViewChange = { importServerListView = it },
             onImport = { viewModel.applyImport(importSelection) },
             onDismiss = viewModel::clearImport,
         )
@@ -353,9 +386,11 @@ fun SettingsTransferScreen(
 @Composable
 private fun ExportOptionsSummary(
     selection: SettingsTransferSelection,
+    isAdmin: Boolean,
     expanded: Boolean,
     onToggle: () -> Unit,
 ) {
+    val sectionCount = settingsTransferSectionCount(isAdmin)
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val backgroundColor by animateColorAsState(
@@ -380,14 +415,16 @@ private fun ExportOptionsSummary(
         selection.theme,
         selection.display,
         selection.appRouting,
+        selection.serverCheck,
+        selection.serverListView,
     ).count { it }
     val summary = when (selectedCount) {
         0 -> stringResource(R.string.settings_transfer_nothing_selected)
-        SETTINGS_TRANSFER_SECTION_COUNT -> stringResource(R.string.settings_transfer_all_settings)
+        sectionCount -> stringResource(R.string.settings_transfer_all_settings)
         else -> stringResource(
             R.string.settings_transfer_selected_count,
             selectedCount,
-            SETTINGS_TRANSFER_SECTION_COUNT,
+            sectionCount,
         )
     }
     Row(
@@ -431,6 +468,8 @@ private fun ImportSettingsBottomSheet(
     onThemeChange: (Boolean) -> Unit,
     onDisplayChange: (Boolean) -> Unit,
     onAppsChange: (Boolean) -> Unit,
+    onServerCheckChange: (Boolean) -> Unit,
+    onServerListViewChange: (Boolean) -> Unit,
     onImport: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -518,6 +557,27 @@ private fun ImportSettingsBottomSheet(
                         checked = selection.appRouting,
                         enabled = !isBusy,
                         onCheckedChange = onAppsChange,
+                    )
+                }
+                if (preview.available.serverCheck) {
+                    TransferChoiceRow(
+                        icon = Icons.Filled.Timer,
+                        title = stringResource(R.string.settings_transfer_server_check),
+                        description = stringResource(R.string.settings_transfer_server_check_desc),
+                        checked = selection.serverCheck,
+                        enabled = !isBusy,
+                        onCheckedChange = onServerCheckChange,
+                    )
+                }
+                // Already left out for regular accounts by readImport.
+                if (preview.available.serverListView) {
+                    TransferChoiceRow(
+                        icon = Icons.Filled.Dns,
+                        title = stringResource(R.string.settings_transfer_server_list_view),
+                        description = stringResource(R.string.settings_transfer_server_list_view_desc),
+                        checked = selection.serverListView,
+                        enabled = !isBusy,
+                        onCheckedChange = onServerListViewChange,
                     )
                 }
 
@@ -701,5 +761,6 @@ private fun TransferChoiceRow(
     }
 }
 
-private const val SETTINGS_TRANSFER_SECTION_COUNT = 4
+/** Sections a user can move; admins also get the server-list view. */
+private fun settingsTransferSectionCount(isAdmin: Boolean): Int = if (isAdmin) 6 else 5
 private const val EXPORT_OPTIONS_ANIMATION_MS = 400
