@@ -1,6 +1,7 @@
 package com.tobevpn.app.data.repository
 
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.domain.model.ServerProtocol
 import com.tobevpn.app.domain.model.ServerSource
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,6 +10,92 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class BaseStationBypassProfileParserTest {
+
+    @Test
+    fun `keeps hysteria2 CIDR entry with encoded flag and display name`() {
+        // Same shape as the missing subscription entry; endpoint and auth are fixtures.
+        val result = BaseStationBypassProfileParser.parseWithFilterSummary(
+            "hysteria2://550e8400-e29b-41d4-a716-446655440000@203.0.113.5:443" +
+                "?sni=hy2.example.com&fp=firefox" +
+                "#%F0%9F%87%B5%F0%9F%87%B1%20Poland%20%7C%20%F0%9F%8C%90%20%5B%2ACIDR%5D",
+        )
+
+        val server = result.servers.single()
+        assertEquals(ServerProtocol.HYSTERIA2, server.protocol)
+        assertEquals(ServerSource.BASE_STATION_BYPASS, server.source)
+        assertEquals("203.0.113.5", server.address)
+        assertEquals("hy2.example.com", server.sni)
+        assertEquals("Poland | [*CIDR]", server.name)
+        assertEquals("PL", server.country)
+        assertTrue(server.id.startsWith("bs:"))
+        assertTrue(BaseStationBypassProfileParser.isSupportedProfile(server))
+        assertEquals(
+            "links=1 unparsable=0 sentinel=0 rejected=0 duplicates=0 kept=1",
+            result.filterSummary,
+        )
+    }
+
+    @Test
+    fun `mixed subscription keeps vless and hysteria2 and deduplicates hy2 alias`() {
+        val result = BaseStationBypassProfileParser.parseWithFilterSummary(
+            listOf(
+                "vless://pass@node.example:443?security=tls#VLESS",
+                "hysteria2://pass@node.example:443#Hysteria2",
+                "hy2://pass@node.example:443#Alias",
+                "HYSTERIA2://other@other.example:443#Other",
+                "hysteria2://broken",
+                "hy2://@node.example:443",
+            ).joinToString("\n"),
+        )
+
+        assertEquals(listOf("VLESS", "Hysteria2", "Other"), result.servers.map(Server::name))
+        assertEquals(
+            listOf(ServerProtocol.VLESS, ServerProtocol.HYSTERIA2, ServerProtocol.HYSTERIA2),
+            result.servers.map(Server::protocol),
+        )
+        assertEquals(3, result.servers.map(Server::id).distinct().size)
+        assertEquals(
+            "links=6 unparsable=2 sentinel=0 rejected=0 duplicates=1 kept=3",
+            result.filterSummary,
+        )
+    }
+
+    @Test
+    fun `hysteria2 config variants get separate ids`() {
+        val link = "hysteria2://pass@node.example:443?sni=hy2.example"
+        val servers = BaseStationBypassProfileParser.parse(
+            listOf(
+                link,
+                "$link&obfs=salamander&obfs-password=secret",
+                "$link&pinSHA256=${"ab".repeat(32)}",
+                "$link&mport=20000-30000",
+                "$link&ech=fixture-ech-config",
+                "$link&alpn=h3,h2",
+            ).joinToString("\n"),
+        )
+
+        assertEquals(6, servers.size)
+        assertEquals(6, servers.map(Server::id).distinct().size)
+        assertTrue(servers.all(BaseStationBypassProfileParser::hasCurrentStableId))
+    }
+
+    @Test
+    fun `hysteria2 profile survives bypass cache round trip with complete vpn config`() {
+        val server = BaseStationBypassProfileParser.parse(
+            "hy2://user:pass@node.example:443,20000-30000?sni=hy2.example&alpn=h3,h2" +
+                "&obfs=salamander&obfs-password=secret&pinSHA256=${"ab".repeat(32)}" +
+                "&ech=fixture-ech-config#Poland",
+        ).single()
+
+        val entity = server.toBaseStationBypassEntity(sortOrder = 7)
+        val restored = entity.toDomain()
+
+        assertEquals(7, entity.sortOrder)
+        assertEquals(ServerProtocol.HYSTERIA2, restored.protocol)
+        assertEquals(server, restored)
+        assertTrue(BaseStationBypassProfileParser.isSupportedProfile(restored))
+        assertTrue(BaseStationBypassProfileParser.hasCurrentStableId(restored))
+    }
 
     @Test
     fun `parses direct vless lines and preserves unencoded display name`() {

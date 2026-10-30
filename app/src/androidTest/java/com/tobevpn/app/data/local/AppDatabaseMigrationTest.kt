@@ -83,6 +83,44 @@ class AppDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration21To22AddsBypassProtocolDefaultsAndPreservesBothCaches() {
+        helper.createDatabase(TEST_DATABASE, 21).use { database ->
+            insertVersion19Server(database, STANDARD_TABLE, "standard-id")
+            insertVersion19Server(database, BYPASS_TABLE, "bs:legacy-id")
+            database.execSQL(
+                "UPDATE $STANDARD_TABLE SET protocol = 'HYSTERIA2', obfsPassword = 'saved-secret'",
+            )
+        }
+
+        helper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            22,
+            true,
+            DatabaseModule.MIGRATION_21_22,
+        ).use { database ->
+            assertMigratedServer(database, STANDARD_TABLE, "standard-id")
+            assertMigratedServer(database, BYPASS_TABLE, "bs:legacy-id")
+            database.query(
+                "SELECT protocol, obfsPassword, pinSha256, portHopping, echConfigList " +
+                    "FROM $BYPASS_TABLE",
+            ).use { cursor ->
+                assertEquals(1, cursor.count)
+                cursor.moveToFirst()
+                assertEquals("VLESS", cursor.getString(cursor.getColumnIndexOrThrow("protocol")))
+                listOf("obfsPassword", "pinSha256", "portHopping", "echConfigList").forEach { column ->
+                    assertEquals("", cursor.getString(cursor.getColumnIndexOrThrow(column)))
+                }
+            }
+            database.query("SELECT protocol, obfsPassword FROM $STANDARD_TABLE").use { cursor ->
+                assertEquals(1, cursor.count)
+                cursor.moveToFirst()
+                assertEquals("HYSTERIA2", cursor.getString(0))
+                assertEquals("saved-secret", cursor.getString(1))
+            }
+        }
+    }
+
     private fun insertVersion19Server(
         database: SupportSQLiteDatabase,
         table: String,
