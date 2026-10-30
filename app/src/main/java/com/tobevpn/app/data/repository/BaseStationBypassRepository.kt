@@ -7,8 +7,10 @@ import com.tobevpn.app.data.local.entity.BaseStationBypassServerEntity
 import com.tobevpn.app.data.remote.await
 import com.tobevpn.app.domain.model.FingerprintOverride
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.domain.model.ServerProtocol
 import com.tobevpn.app.domain.model.ServerSource
 import com.tobevpn.app.util.SafeDiagnostics
+import com.tobevpn.app.vpn.Hysteria2UrlParser
 import com.tobevpn.app.vpn.VlessUrlParser
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -68,7 +70,9 @@ class BaseStationBypassRepository @Inject constructor(
     suspend fun refreshServers(): Result<List<Server>> = withContext(Dispatchers.IO) {
         try {
             val servers = fetchProfileServers()
-            serverDao.replaceAll(servers.mapIndexed { index, server -> server.toEntity(index) })
+            serverDao.replaceAll(
+                servers.mapIndexed { index, server -> server.toBaseStationBypassEntity(index) },
+            )
             SafeDiagnostics.info(
                 TAG,
                 "Base-station bypass profile refreshed: count=${servers.size}",
@@ -283,9 +287,15 @@ internal object BaseStationBypassProfileParser {
         val links = rawProfile
             .lineSequence()
             .map { it.trim().removePrefix("\uFEFF") }
-            .filter { it.startsWith("vless://") }
+            .filter { link ->
+                link.startsWith("vless://") ||
+                    link.startsWith("hysteria2://", ignoreCase = true) ||
+                    link.startsWith("hy2://", ignoreCase = true)
+            }
             .toList()
-        val decoded = links.mapNotNull(VlessUrlParser::parse)
+        val decoded = links.mapNotNull { link ->
+            VlessUrlParser.parse(link) ?: Hysteria2UrlParser.parse(link)
+        }
         val parsed = decoded.filterNot(Server::isSentinel)
         val servers = parsed
             .asSequence()
@@ -364,6 +374,9 @@ internal object BaseStationBypassProfileParser {
         server.id == stableId(server, includeExtendedTransport = true)
 
     internal fun isSupportedProfile(server: Server): Boolean {
+        if (server.protocol == ServerProtocol.HYSTERIA2) {
+            return server.network == "hysteria" && server.security == "tls"
+        }
         val headerType = server.headerType.lowercase(Locale.ROOT)
         if (server.network !in SUPPORTED_NETWORKS ||
             server.security !in SUPPORTED_SECURITIES
@@ -429,6 +442,17 @@ internal object BaseStationBypassProfileParser {
                 headerType.takeIf { server.network == "tcp" }.orEmpty(),
                 server.serviceName.takeIf { server.network == "grpc" }.orEmpty(),
                 server.extra.takeIf { server.network == "xhttp" }.orEmpty(),
+            )
+        }
+        // Keep existing VLESS selection ids unchanged. Hysteria2 profiles
+        // also need their protocol-specific settings in the configuration id.
+        if (server.protocol == ServerProtocol.HYSTERIA2) {
+            configFields += listOf(
+                server.protocol.name,
+                server.obfsPassword,
+                server.pinSha256,
+                server.portHopping,
+                server.echConfigList,
             )
         }
         val configFingerprint = configFields.joinToString(separator = "\u0000")
@@ -563,7 +587,7 @@ internal object BaseStationBypassProfileParser {
     )
 }
 
-private fun Server.toEntity(sortOrder: Int) = BaseStationBypassServerEntity(
+internal fun Server.toBaseStationBypassEntity(sortOrder: Int) = BaseStationBypassServerEntity(
     id = id,
     name = name,
     address = address,
@@ -584,12 +608,17 @@ private fun Server.toEntity(sortOrder: Int) = BaseStationBypassServerEntity(
     extra = extra,
     mode = mode,
     spx = spx,
+    protocol = protocol.name,
+    obfsPassword = obfsPassword,
+    pinSha256 = pinSha256,
+    portHopping = portHopping,
+    echConfigList = echConfigList,
     country = country,
     isOnline = isOnline,
     sortOrder = sortOrder,
 )
 
-private fun BaseStationBypassServerEntity.toDomain() = Server(
+internal fun BaseStationBypassServerEntity.toDomain() = Server(
     id = id,
     name = name,
     address = address,
@@ -610,6 +639,11 @@ private fun BaseStationBypassServerEntity.toDomain() = Server(
     extra = extra,
     mode = mode,
     spx = spx,
+    protocol = ServerProtocol.entries.firstOrNull { it.name == protocol } ?: ServerProtocol.VLESS,
+    obfsPassword = obfsPassword,
+    pinSha256 = pinSha256,
+    portHopping = portHopping,
+    echConfigList = echConfigList,
     country = country,
     isOnline = isOnline,
     source = ServerSource.BASE_STATION_BYPASS,

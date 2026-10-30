@@ -55,6 +55,7 @@ object DatabaseModule {
                 MIGRATION_18_19,
                 MIGRATION_19_20,
                 MIGRATION_20_21,
+                MIGRATION_21_22,
             )
             .fallbackToDestructiveMigration(dropAllTables = false)
             // TRUNCATE journal (no WAL) — committed writes land in the
@@ -221,8 +222,8 @@ object DatabaseModule {
         }
     }
 
-    // v20 -> v21: Hysteria2 profiles in the standard server cache. The
-    // base-station bypass profile stays VLESS-only, so its table is untouched.
+    // v20 -> v21: Hysteria2 profiles in the standard server cache. Bypass
+    // support was added later in v22, so this historical migration stays intact.
     internal val MIGRATION_20_21 = object : Migration(20, 21) {
         override fun migrate(db: SupportSQLiteDatabase) {
             db.execSQL("ALTER TABLE servers ADD COLUMN protocol TEXT NOT NULL DEFAULT 'VLESS'")
@@ -230,6 +231,17 @@ object DatabaseModule {
             db.execSQL("ALTER TABLE servers ADD COLUMN pinSha256 TEXT NOT NULL DEFAULT ''")
             db.execSQL("ALTER TABLE servers ADD COLUMN portHopping TEXT NOT NULL DEFAULT ''")
             db.execSQL("ALTER TABLE servers ADD COLUMN echConfigList TEXT NOT NULL DEFAULT ''")
+        }
+    }
+
+    // v21 -> v22: retain Hysteria2 profiles in the bypass cache as well.
+    internal val MIGRATION_21_22 = object : Migration(21, 22) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE base_station_bypass_servers ADD COLUMN protocol TEXT NOT NULL DEFAULT 'VLESS'")
+            db.execSQL("ALTER TABLE base_station_bypass_servers ADD COLUMN obfsPassword TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE base_station_bypass_servers ADD COLUMN pinSha256 TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE base_station_bypass_servers ADD COLUMN portHopping TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE base_station_bypass_servers ADD COLUMN echConfigList TEXT NOT NULL DEFAULT ''")
         }
     }
 
