@@ -133,6 +133,14 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { prefsDataStore.setProfileNameDisplay(mode.name) }
     }
 
+    /** The stored admin switch; screens read the effective value from LocalPersonalDataHidden. */
+    val personalDataHiddenSetting: StateFlow<Boolean> = prefsDataStore.personalDataHidden
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun setPersonalDataHidden(hidden: Boolean) {
+        viewModelScope.launch { prefsDataStore.setPersonalDataHidden(hidden) }
+    }
+
     /** Admins' server card layout (Personalization -> Server list view). */
     val serverListView: StateFlow<ServerListView> = prefsDataStore.serverListView
         .stateIn(viewModelScope, SharingStarted.Eagerly, ServerListView.ADMIN_DEFAULT)

@@ -37,6 +37,11 @@ data class Server(
     val portHopping: String = "",
     /** TLS Encrypted Client Hello config list (base64), from the link's ech=. */
     val echConfigList: String = "",
+    /**
+     * Xray finalmask object (compact JSON) from the link's fm=, the format
+     * v2rayN shares; replaces streamSettings.finalmask. Empty = none.
+     */
+    val finalMask: String = "",
     val country: String = "",
     val ping: Long = -1,
     val isOnline: Boolean = true,
@@ -52,7 +57,7 @@ data class Server(
             source.name, address, port, uuid, flow, security, sni, fingerprint,
             publicKey, shortId, network, path, host, alpn, headerType,
             serviceName, extra, mode, spx, protocol.name, obfsPassword,
-            pinSha256, portHopping, echConfigList,
+            pinSha256, portHopping, echConfigList, finalMask,
         ).joinToString("|")
 
     /**
@@ -144,7 +149,8 @@ data class Server(
             obfsPassword == other.obfsPassword &&
             pinSha256 == other.pinSha256 &&
             portHopping == other.portHopping &&
-            echConfigList == other.echConfigList
+            echConfigList == other.echConfigList &&
+            finalMask == other.finalMask
 
     private companion object {
         const val DEFAULT_FINGERPRINT = "chrome"

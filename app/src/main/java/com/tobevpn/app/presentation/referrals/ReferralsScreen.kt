@@ -103,6 +103,8 @@ import com.tobevpn.app.R
 import com.tobevpn.app.data.remote.dto.ReferralListItemDto
 import com.tobevpn.app.data.remote.dto.ReferralsDto
 import com.tobevpn.app.presentation.components.BrandLoader
+import com.tobevpn.app.presentation.components.LocalPersonalDataHidden
+import com.tobevpn.app.presentation.components.PERSONAL_DATA_MASK
 import com.tobevpn.app.presentation.components.SpinningRefreshIcon
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.theme.AppAlertDialog
@@ -468,8 +470,10 @@ private fun ReferralHeroCard(
                     }
                     Spacer(modifier = Modifier.height(7.dp))
                     Text(
-                        text = referralUrl.ifBlank {
-                            stringResource(R.string.referrals_link_unavailable)
+                        text = when {
+                            referralUrl.isBlank() -> stringResource(R.string.referrals_link_unavailable)
+                            LocalPersonalDataHidden.current -> PERSONAL_DATA_MASK
+                            else -> referralUrl
                         },
                         style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                         fontWeight = FontWeight.Medium,
@@ -1245,7 +1249,8 @@ private fun ReferrerCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    text = displayName
+                    text = PERSONAL_DATA_MASK.takeIf { LocalPersonalDataHidden.current }
+                        ?: displayName
                         ?.takeIf { it.isNotBlank() }
                         ?: telegramId?.let {
                             stringResource(R.string.referrals_referrer_id_value, it)
@@ -1427,7 +1432,8 @@ private fun ReferralListRow(item: ReferralListItemDto) {
                 Spacer(modifier = Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = item.displayName
+                        text = PERSONAL_DATA_MASK.takeIf { LocalPersonalDataHidden.current }
+                            ?: item.displayName
                             ?.takeIf { it.isNotBlank() }
                             ?: stringResource(R.string.referrals_unknown_user),
                         style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),

@@ -46,6 +46,40 @@ class AppDatabaseMigrationTest {
     }
 
     @Test
+    fun migration21To22AddsFinalMaskAndBypassHysteria2Columns() {
+        helper.createDatabase(TEST_DATABASE, 21).use { database ->
+            insertVersion19Server(database, STANDARD_TABLE, "standard-id")
+            insertVersion19Server(database, BYPASS_TABLE, "bs:legacy-id")
+        }
+        // Validates the migrated schema against 22.json.
+        helper.runMigrationsAndValidate(
+            TEST_DATABASE,
+            22,
+            true,
+            DatabaseModule.MIGRATION_21_22,
+        ).use { database ->
+            database.query("SELECT id, finalMask FROM $STANDARD_TABLE").use { cursor ->
+                assertEquals(1, cursor.count)
+                cursor.moveToFirst()
+                assertEquals("standard-id", cursor.getString(cursor.getColumnIndexOrThrow("id")))
+                assertEquals("", cursor.getString(cursor.getColumnIndexOrThrow("finalMask")))
+            }
+            database.query(
+                "SELECT id, protocol, obfsPassword, pinSha256, portHopping, echConfigList, finalMask " +
+                    "FROM $BYPASS_TABLE",
+            ).use { cursor ->
+                assertEquals(1, cursor.count)
+                cursor.moveToFirst()
+                assertEquals("bs:legacy-id", cursor.getString(cursor.getColumnIndexOrThrow("id")))
+                assertEquals("VLESS", cursor.getString(cursor.getColumnIndexOrThrow("protocol")))
+                listOf("obfsPassword", "pinSha256", "portHopping", "echConfigList", "finalMask").forEach { column ->
+                    assertEquals("", cursor.getString(cursor.getColumnIndexOrThrow(column)))
+                }
+            }
+        }
+    }
+
+    @Test
     fun migration20To21AddsHysteria2ColumnsAndKeepsServersVless() {
         helper.createDatabase(TEST_DATABASE, 20).use { database ->
             insertVersion19Server(database, STANDARD_TABLE, "standard-id")

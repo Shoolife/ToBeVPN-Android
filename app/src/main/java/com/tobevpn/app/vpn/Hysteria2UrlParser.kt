@@ -67,6 +67,7 @@ object Hysteria2UrlParser {
                 portHopping = params["mport"]?.trim()?.takeIf { PORT_LIST.matches(it) }
                     ?: portSpec.orEmpty(),
                 echConfigList = params["ech"]?.trim().orEmpty(),
+                finalMask = VlessUrlParser.normalizeFinalMask(params["fm"]),
             )
         } catch (_: Exception) {
             null

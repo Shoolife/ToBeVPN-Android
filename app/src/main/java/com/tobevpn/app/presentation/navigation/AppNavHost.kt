@@ -5,6 +5,7 @@ import androidx.compose.animation.EnterExitState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -30,6 +31,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import com.tobevpn.app.presentation.appfilter.AppFilterScreen
 import com.tobevpn.app.presentation.auth.AuthScreen
+import com.tobevpn.app.presentation.components.LocalPersonalDataHidden
 import com.tobevpn.app.presentation.main.MainScreen
 import com.tobevpn.app.presentation.onboarding.DisplayScaleHintDialog
 import com.tobevpn.app.presentation.onboarding.OnboardingScreen
@@ -101,142 +103,146 @@ fun AppNavHost(
         }
     }
 
-    NavHost(
-        navController = navController,
-        startDestination = startDestination,
-        modifier = modifier.fillMaxSize(),
-    ) {
-        screen<OnboardingRoute> {
-            OnboardingScreen(
-                onComplete = {
-                    navController.navigate(MainRoute) {
-                        launchSingleTop = true
-                        popUpTo(OnboardingRoute) { inclusive = true }
-                    }
-                },
-            )
-        }
-        screen<MainRoute> {
-            MainScreen(
-                onNavigateToServers = { navController.navigateSingleTop(ServerListRoute) },
-                onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
-                onNavigateToSettings = { navController.navigateSingleTop(SettingsRoute) },
-                onNavigateToStats = { navController.navigateSingleTop(StatsRoute) },
-                onNavigateToSpeedTest = { navController.navigateSingleTop(SpeedTestRoute) },
-                quickSettingsConnectRequest = quickSettingsConnectRequest,
-            )
-        }
-        screen<ServerListRoute> {
-            ServerListScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-                onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
-            )
-        }
-        screen<AuthRoute> {
-            AuthScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-            )
-        }
-        screen<StatsRoute> {
-            StatsScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-            )
-        }
-        screen<SpeedTestRoute> {
-            SpeedTestScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-                onNavigateToHistory = { navController.navigateSingleTop(SpeedTestHistoryRoute) },
-            )
-        }
-        screen<SpeedTestHistoryRoute> {
-            SpeedTestHistoryScreen(
-                onBack = { navController.popBackStackOrRecover(SpeedTestRoute) },
-            )
-        }
-        screen<SettingsRoute> {
-            SettingsScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-                onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
-                onNavigateToPersonalization = { navController.navigateSingleTop(PersonalizationRoute) },
-                onNavigateToAdvanced = { navController.navigateSingleTop(AdvancedRoute) },
-                onNavigateToSupport = { navController.navigateSingleTop(SupportRoute) },
-                onNavigateToAbout = { navController.navigateSingleTop(AboutRoute) },
-                onNavigateToReferrals = { navController.navigateSingleTop(ReferralsRoute) },
-                onNavigateToPromocodes = { navController.navigateSingleTop(PromocodesRoute) },
-                onNavigateToSettingsTransfer = { navController.navigateSingleTop(SettingsTransferRoute) },
-            )
-        }
-        screen<PersonalizationRoute> { entry ->
-            // Share the SettingsRoute-scoped ViewModel so its init side effects
-            // (subscription sync, device registration, pairing observer) run
-            // once, not once per sub-screen.
-            val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
-            PersonalizationScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-                onNavigateToDisplayScaleText = {
-                    navController.navigateSingleTop(DisplayScaleTextRoute)
-                },
-                onNavigateToServerListView = {
-                    navController.navigateSingleTop(ServerListViewRoute)
-                },
-                viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
-            )
-        }
-        screen<ServerListViewRoute> { entry ->
-            val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
-            ServerListViewScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-                viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
-            )
-        }
-        screen<DisplayScaleTextRoute> { entry ->
-            val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
-            DisplayScaleTextScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-                viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
-            )
-        }
-        screen<SettingsTransferRoute> {
-            SettingsTransferScreen(
-                onBack = { navController.popBackStackOrRecover(SettingsRoute) },
-            )
-        }
-        screen<AdvancedRoute> { entry ->
-            val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
-            AdvancedScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-                onNavigateToAppFilter = { navController.navigateSingleTop(AppFilterRoute) },
-                viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
-            )
-        }
-        screen<SupportRoute> {
-            SupportScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-            )
-        }
-        screen<AboutRoute> { entry ->
-            val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
-            AboutScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-                viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
-            )
-        }
-        screen<ReferralsRoute> {
-            ReferralsScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-                onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
-            )
-        }
-        screen<PromocodesRoute> {
-            PromocodesScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-                onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
-            )
-        }
-        screen<AppFilterRoute> {
-            AppFilterScreen(
-                onBack = { navController.popBackStackOrRecover(startDestination) },
-            )
+    val personalDataHidden by appSessionViewModel.personalDataHidden.collectAsStateWithLifecycle()
+
+    CompositionLocalProvider(LocalPersonalDataHidden provides personalDataHidden) {
+        NavHost(
+            navController = navController,
+            startDestination = startDestination,
+            modifier = modifier.fillMaxSize(),
+        ) {
+            screen<OnboardingRoute> {
+                OnboardingScreen(
+                    onComplete = {
+                        navController.navigate(MainRoute) {
+                            launchSingleTop = true
+                            popUpTo(OnboardingRoute) { inclusive = true }
+                        }
+                    },
+                )
+            }
+            screen<MainRoute> {
+                MainScreen(
+                    onNavigateToServers = { navController.navigateSingleTop(ServerListRoute) },
+                    onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
+                    onNavigateToSettings = { navController.navigateSingleTop(SettingsRoute) },
+                    onNavigateToStats = { navController.navigateSingleTop(StatsRoute) },
+                    onNavigateToSpeedTest = { navController.navigateSingleTop(SpeedTestRoute) },
+                    quickSettingsConnectRequest = quickSettingsConnectRequest,
+                )
+            }
+            screen<ServerListRoute> {
+                ServerListScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                    onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
+                )
+            }
+            screen<AuthRoute> {
+                AuthScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                )
+            }
+            screen<StatsRoute> {
+                StatsScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                )
+            }
+            screen<SpeedTestRoute> {
+                SpeedTestScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                    onNavigateToHistory = { navController.navigateSingleTop(SpeedTestHistoryRoute) },
+                )
+            }
+            screen<SpeedTestHistoryRoute> {
+                SpeedTestHistoryScreen(
+                    onBack = { navController.popBackStackOrRecover(SpeedTestRoute) },
+                )
+            }
+            screen<SettingsRoute> {
+                SettingsScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                    onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
+                    onNavigateToPersonalization = { navController.navigateSingleTop(PersonalizationRoute) },
+                    onNavigateToAdvanced = { navController.navigateSingleTop(AdvancedRoute) },
+                    onNavigateToSupport = { navController.navigateSingleTop(SupportRoute) },
+                    onNavigateToAbout = { navController.navigateSingleTop(AboutRoute) },
+                    onNavigateToReferrals = { navController.navigateSingleTop(ReferralsRoute) },
+                    onNavigateToPromocodes = { navController.navigateSingleTop(PromocodesRoute) },
+                    onNavigateToSettingsTransfer = { navController.navigateSingleTop(SettingsTransferRoute) },
+                )
+            }
+            screen<PersonalizationRoute> { entry ->
+                // Share the SettingsRoute-scoped ViewModel so its init side effects
+                // (subscription sync, device registration, pairing observer) run
+                // once, not once per sub-screen.
+                val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
+                PersonalizationScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                    onNavigateToDisplayScaleText = {
+                        navController.navigateSingleTop(DisplayScaleTextRoute)
+                    },
+                    onNavigateToServerListView = {
+                        navController.navigateSingleTop(ServerListViewRoute)
+                    },
+                    viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+                )
+            }
+            screen<ServerListViewRoute> { entry ->
+                val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
+                ServerListViewScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                    viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+                )
+            }
+            screen<DisplayScaleTextRoute> { entry ->
+                val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
+                DisplayScaleTextScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                    viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+                )
+            }
+            screen<SettingsTransferRoute> {
+                SettingsTransferScreen(
+                    onBack = { navController.popBackStackOrRecover(SettingsRoute) },
+                )
+            }
+            screen<AdvancedRoute> { entry ->
+                val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
+                AdvancedScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                    onNavigateToAppFilter = { navController.navigateSingleTop(AppFilterRoute) },
+                    viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+                )
+            }
+            screen<SupportRoute> {
+                SupportScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                )
+            }
+            screen<AboutRoute> { entry ->
+                val parentEntry = remember(entry) { navController.getBackStackEntry(SettingsRoute) }
+                AboutScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                    viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+                )
+            }
+            screen<ReferralsRoute> {
+                ReferralsScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                    onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
+                )
+            }
+            screen<PromocodesRoute> {
+                PromocodesScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                    onNavigateToAuth = { navController.navigateSingleTop(AuthRoute) },
+                )
+            }
+            screen<AppFilterRoute> {
+                AppFilterScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                )
+            }
         }
     }
 

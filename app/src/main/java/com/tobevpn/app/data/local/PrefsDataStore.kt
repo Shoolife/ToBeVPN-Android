@@ -89,6 +89,8 @@ class PrefsDataStore @Inject constructor(
         val LEGACY_USER_EMAIL = stringPreferencesKey("user_email")
         val LANGUAGE = stringPreferencesKey("language")
         val PROFILE_NAME_DISPLAY = stringPreferencesKey("profile_name_display")
+        // Admins only: hide personal data on screen (screenshots, sharing).
+        val PERSONAL_DATA_HIDDEN = booleanPreferencesKey("personal_data_hidden")
         // Admins' server card layout (ServerListView.encode()); absent = default.
         val SERVER_LIST_VIEW = stringPreferencesKey("server_list_view")
         val THEME_MODE = stringPreferencesKey("theme_mode")
@@ -204,6 +206,14 @@ class PrefsDataStore @Inject constructor(
 
     suspend fun setProfileNameDisplay(value: String) {
         context.dataStore.edit { it[Keys.PROFILE_NAME_DISPLAY] = value }
+    }
+
+    val personalDataHidden: Flow<Boolean> = context.dataStore.data
+        .map { it[Keys.PERSONAL_DATA_HIDDEN] ?: false }
+        .distinctUntilChanged()
+
+    suspend fun setPersonalDataHidden(hidden: Boolean) {
+        context.dataStore.edit { it[Keys.PERSONAL_DATA_HIDDEN] = hidden }
     }
 
     val serverListView: Flow<ServerListView> = context.dataStore.data

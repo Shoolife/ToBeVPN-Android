@@ -13,9 +13,13 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -33,6 +37,15 @@ class AppSessionViewModel @Inject constructor(
     fun consumeDisplayScaleHint() {
         viewModelScope.launch { prefsDataStore.consumeDisplayScaleHint() }
     }
+
+    // Hiding personal data is an admin privilege; a stored value outlives the
+    // role, so it only applies while the account is an admin.
+    val personalDataHidden: StateFlow<Boolean> = combine(
+        prefsDataStore.personalDataHidden,
+        authRepository.observeAuthState().map { (it as? AuthState.Authenticated)?.isAdminProfile == true },
+    ) { hidden, isAdmin -> hidden && isAdmin }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     init {
         viewModelScope.launch {

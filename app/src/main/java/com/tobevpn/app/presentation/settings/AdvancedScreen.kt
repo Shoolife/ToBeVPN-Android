@@ -114,6 +114,8 @@ import com.tobevpn.app.domain.model.MAX_SERVER_PING_TIMEOUT_SECONDS
 import com.tobevpn.app.domain.model.MIN_SERVER_PING_TIMEOUT_SECONDS
 import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT
 import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_HEIGHT_FRACTION
+import com.tobevpn.app.presentation.components.LocalPersonalDataHidden
+import com.tobevpn.app.presentation.components.PERSONAL_DATA_MASK
 import com.tobevpn.app.presentation.components.SpinningRefreshIcon
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.endEdgeFade
@@ -1549,15 +1551,18 @@ private fun deviceTitle(device: LinkedDeviceDto): String {
         DeviceKind.Phone -> stringResource(R.string.devices_type_phone)
         DeviceKind.Generic -> stringResource(R.string.devices_type_generic)
     }
+    // With personal data hidden the user-given device name (often the
+    // owner's name) is skipped in favour of the model.
+    val hideName = LocalPersonalDataHidden.current
     if (kind == DeviceKind.Desktop) {
-        val name = device.deviceName?.trim().orEmpty()
+        val name = if (hideName) "" else device.deviceName?.trim().orEmpty()
         if (name.isNotBlank() && !isTechnicalDesktopName(name)) return name
         val model = cleanDesktopModel(device.deviceModel, device.platform)
         if (model.isNotBlank()) return model
         val platform = device.platform?.trim()?.takeIf { it.isNotBlank() }
         return if (platform != null) "$fallback $platform" else fallback
     }
-    return device.deviceName?.takeIf { it.isNotBlank() }
+    return device.deviceName?.takeIf { it.isNotBlank() && !hideName }
         ?: device.deviceModel?.takeIf { it.isNotBlank() }
         ?: fallback
 }
@@ -1700,7 +1705,7 @@ private fun EmailInput(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                savedEmail,
+                if (LocalPersonalDataHidden.current) PERSONAL_DATA_MASK else savedEmail,
                 style = fixedLayoutTextStyle(TextStyle(fontSize = 15.sp)),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.weight(1f),

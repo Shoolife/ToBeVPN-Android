@@ -70,8 +70,14 @@ class ServerQualityRepository @Inject constructor(
         val outcome = if (server.protocol == ServerProtocol.HYSTERIA2) {
             measureThroughCore(server, timeoutMs)
         } else {
-            awaitBlocking(timeoutMs.toLong() + DNS_LOOKUP_GRACE_MS) {
-                connectFirstReachable(server.address, server.port, timeoutMs)
+            // As on LG webOS: a TCP ping that has not connected within 2 s,
+            // DNS included, means "unavailable". That leaves room for one SYN
+            // retransmit (sent after 1 s) and a slow DNS answer, and the list
+            // no longer waits out the 5-15 s setting for a silent server.
+            // The full profile check keeps the setting.
+            val tcpBudgetMs = min(timeoutMs, TCP_PING_BUDGET_MS)
+            awaitBlocking(tcpBudgetMs.toLong()) {
+                connectFirstReachable(server.address, server.port, tcpBudgetMs)
             }
         }
         val ping = when {
@@ -556,6 +562,8 @@ class ServerQualityRepository @Inject constructor(
     private companion object {
         /** Extra time for the DNS lookup before a TCP ping gives up. */
         const val DNS_LOOKUP_GRACE_MS = 1_500L
+        /** Upper bound of a TCP ping, DNS lookup included. */
+        const val TCP_PING_BUDGET_MS = 2_000
         const val CORE_PROBE_TARGET = "https://www.gstatic.com/generate_204"
         /** Shortest connect attempt per resolved address (Go's dialSerial uses 2 s). */
         const val MIN_ADDRESS_ATTEMPT_MS = 2_000L

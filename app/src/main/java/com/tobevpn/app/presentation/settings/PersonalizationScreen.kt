@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -82,6 +83,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
@@ -131,6 +133,7 @@ fun PersonalizationScreen(
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val language by viewModel.language.collectAsStateWithLifecycle()
     val profileNameDisplay by viewModel.profileNameDisplay.collectAsStateWithLifecycle()
+    val personalDataHidden by viewModel.personalDataHiddenSetting.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val context = LocalContext.current
     var pendingLanguage by remember { mutableStateOf<String?>(null) }
@@ -215,6 +218,15 @@ fun PersonalizationScreen(
                 ProfileDisplayCard(
                     selected = profileNameDisplay,
                     onSelect = { viewModel.setProfileNameDisplay(it) },
+                )
+            }
+
+            // Admins only: hide personal data for screenshots and screen sharing.
+            if ((authState as? AuthState.Authenticated)?.isAdminProfile == true) {
+                Spacer(modifier = Modifier.height(16.dp))
+                PersonalDataHiddenCard(
+                    hidden = personalDataHidden,
+                    onHiddenChange = { viewModel.setPersonalDataHidden(it) },
                 )
             }
 
@@ -1049,6 +1061,7 @@ private fun TextStyleToggleRow(
     description: String?,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
+    horizontalPadding: Dp = 16.dp,
 ) {
     val switchColors = if (isSystemInDarkTheme()) {
         SwitchDefaults.colors()
@@ -1067,7 +1080,7 @@ private fun TextStyleToggleRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onCheckedChange(!checked) }
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = horizontalPadding, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(modifier = Modifier.weight(1f)) {
@@ -1284,6 +1297,26 @@ private fun ProfileDisplayCard(
                 onClick = { onSelect(modes[index]) },
             )
         }
+    }
+}
+
+@Composable
+private fun PersonalDataHiddenCard(
+    hidden: Boolean,
+    onHiddenChange: (Boolean) -> Unit,
+) {
+    SelectionCard(
+        icon = Icons.Filled.VisibilityOff,
+        accent = VpnGreen,
+        title = stringResource(R.string.settings_personal_data_hidden_title),
+    ) {
+        TextStyleToggleRow(
+            title = stringResource(R.string.settings_personal_data_hidden_switch),
+            description = stringResource(R.string.settings_personal_data_hidden_description),
+            checked = hidden,
+            onCheckedChange = onHiddenChange,
+            horizontalPadding = 0.dp,
+        )
     }
 }
 

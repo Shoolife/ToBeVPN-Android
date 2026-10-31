@@ -2,9 +2,14 @@ package com.tobevpn.app.vpn
 
 import com.tobevpn.app.domain.model.Server
 import java.net.URLDecoder
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import java.util.Locale
 
 object VlessUrlParser {
+
+    private const val MAX_FINAL_MASK_CHARS = 16_384
+
 
     private const val SCHEME = "vless://"
     private const val DEFAULT_PORT = 443
@@ -77,6 +82,7 @@ object VlessUrlParser {
                     ?.lowercase(Locale.ROOT)
                     ?: "",
                 spx = params["spx"] ?: "",
+                finalMask = normalizeFinalMask(params["fm"]),
                 country = "",
             )
         } catch (_: Exception) {
@@ -127,6 +133,18 @@ object VlessUrlParser {
      * space, which corrupts literal '+' characters in fragments and paths —
      * protect them before delegating.
      */
+    /**
+     * The fm= value (already percent-decoded) as compact JSON when it is a
+     * JSON object, else "": Xray rejects the whole config on a malformed
+     * finalmask, so a broken one is dropped instead of breaking the server.
+     */
+    internal fun normalizeFinalMask(raw: String?): String {
+        val text = raw?.trim().orEmpty()
+        if (text.isEmpty() || text.length > MAX_FINAL_MASK_CHARS) return ""
+        val element = runCatching { Json.parseToJsonElement(text) }.getOrNull()
+        return (element as? JsonObject)?.takeIf { it.isNotEmpty() }?.toString().orEmpty()
+    }
+
     internal fun percentDecode(value: String): String {
         return try {
             URLDecoder.decode(value.replace("+", "%2B"), "UTF-8")

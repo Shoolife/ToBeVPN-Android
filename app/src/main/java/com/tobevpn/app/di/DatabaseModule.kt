@@ -55,6 +55,7 @@ object DatabaseModule {
                 MIGRATION_18_19,
                 MIGRATION_19_20,
                 MIGRATION_20_21,
+                MIGRATION_21_22,
             )
             .fallbackToDestructiveMigration(dropAllTables = false)
             // TRUNCATE journal (no WAL) — committed writes land in the
@@ -230,6 +231,21 @@ object DatabaseModule {
             db.execSQL("ALTER TABLE servers ADD COLUMN pinSha256 TEXT NOT NULL DEFAULT ''")
             db.execSQL("ALTER TABLE servers ADD COLUMN portHopping TEXT NOT NULL DEFAULT ''")
             db.execSQL("ALTER TABLE servers ADD COLUMN echConfigList TEXT NOT NULL DEFAULT ''")
+        }
+    }
+
+    // v21 -> v22: the link's finalmask (fm=) for every server, and Hysteria2
+    // profiles in the base-station bypass tab. Existing rows stay VLESS.
+    internal val MIGRATION_21_22 = object : Migration(21, 22) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE servers ADD COLUMN finalMask TEXT NOT NULL DEFAULT ''")
+            val bypass = "base_station_bypass_servers"
+            db.execSQL("ALTER TABLE $bypass ADD COLUMN protocol TEXT NOT NULL DEFAULT 'VLESS'")
+            db.execSQL("ALTER TABLE $bypass ADD COLUMN obfsPassword TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE $bypass ADD COLUMN pinSha256 TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE $bypass ADD COLUMN portHopping TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE $bypass ADD COLUMN echConfigList TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE $bypass ADD COLUMN finalMask TEXT NOT NULL DEFAULT ''")
         }
     }
 

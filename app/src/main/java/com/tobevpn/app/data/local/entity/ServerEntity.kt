@@ -33,6 +33,8 @@ data class ServerEntity(
     @ColumnInfo(defaultValue = "''") val pinSha256: String = "",
     @ColumnInfo(defaultValue = "''") val portHopping: String = "",
     @ColumnInfo(defaultValue = "''") val echConfigList: String = "",
+    // v22: Xray finalmask JSON from the link's fm=.
+    @ColumnInfo(defaultValue = "''") val finalMask: String = "",
     val country: String = "",
     val isOnline: Boolean = true,
     val sortOrder: Int = 0,

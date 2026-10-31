@@ -149,6 +149,12 @@ object VpnConfig {
                     })
                 }
             })
+            // The link's own finalmask (fm=) replaces whatever was built
+            // above, salamander and port hopping included, the way v2rayN
+            // applies it: the server published the exact masks it expects.
+            server.finalMask.takeIf(String::isNotBlank)
+                ?.let { raw -> runCatching { JSONObject(raw) }.getOrNull() }
+                ?.let { mask -> optJSONObject(0)?.optJSONObject("streamSettings")?.put("finalmask", mask) }
             put(JSONObject().apply {
                 put("tag", "direct")
                 put("protocol", "freedom")

@@ -105,6 +105,8 @@ import java.io.File
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ProfileNameDisplay
 import com.tobevpn.app.domain.model.UserPlan
+import com.tobevpn.app.presentation.components.LocalPersonalDataHidden
+import com.tobevpn.app.presentation.components.PERSONAL_DATA_MASK
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.SubscriptionExpiryUrgency
 import com.tobevpn.app.presentation.components.subscriptionExpiryUrgency
@@ -623,6 +625,7 @@ internal fun AccountCard(
                         UserPlan.FREE_TRIAL -> VpnOrange
                         UserPlan.EXPIRED -> VpnRed
                     }
+                    val personalDataHidden = LocalPersonalDataHidden.current
                     // Full name + @username parsed from the panel; rendered
                     // according to the user's Personalization choice.
                     val fullName = authState.name?.takeIf { it.isNotBlank() }
@@ -643,18 +646,20 @@ internal fun AccountCard(
                         ) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 ProfileAvatar(
-                                    photoUrl = authState.photoUrl,
+                                    photoUrl = authState.photoUrl.takeUnless { personalDataHidden },
                                     size = 120.dp,
-                                    loading = avatarLoading,
+                                    loading = avatarLoading && !personalDataHidden,
                                 )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                ProfileNameBlock(
-                                    mode = nameDisplay,
-                                    fullName = fullName,
-                                    handle = handle,
-                                    telegramId = authState.telegramId,
-                                    color = titleColor,
-                                )
+                                if (!personalDataHidden) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    ProfileNameBlock(
+                                        mode = nameDisplay,
+                                        fullName = fullName,
+                                        handle = handle,
+                                        telegramId = authState.telegramId,
+                                        color = titleColor,
+                                    )
+                                }
                             }
                         }
                         Box(
@@ -667,10 +672,14 @@ internal fun AccountCard(
                                 PlanPill(text = planLabel, color = planPillColor)
                                 Spacer(modifier = Modifier.height(6.dp))
                                 Text(
-                                    text = "ID ${authState.telegramId}",
+                                    text = if (personalDataHidden) {
+                                        "ID $PERSONAL_DATA_MASK"
+                                    } else {
+                                        "ID ${authState.telegramId}"
+                                    },
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
-                                        .clickable {
+                                        .clickable(enabled = !personalDataHidden) {
                                             val clipboard = context.getSystemService(
                                                 Context.CLIPBOARD_SERVICE,
                                             ) as ClipboardManager

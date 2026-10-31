@@ -23,10 +23,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.CardGiftcard
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Route
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SettingsInputAntenna
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -148,24 +149,29 @@ private val WhatsNewHeroIcon: ImageVector by lazy {
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.CardGiftcard,
-        titleRes = R.string.whats_new_referral_rewards_title,
-        descriptionRes = R.string.whats_new_referral_rewards_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Filled.Person,
-        titleRes = R.string.whats_new_stay_signed_in_title,
-        descriptionRes = R.string.whats_new_stay_signed_in_desc,
+        icon = Icons.Filled.Bolt,
+        titleRes = R.string.whats_new_quick_ping_title,
+        descriptionRes = R.string.whats_new_quick_ping_desc,
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.Route,
-        titleRes = R.string.whats_new_hysteria2_title,
-        descriptionRes = R.string.whats_new_hysteria2_desc,
+        titleRes = R.string.whats_new_final_mask_title,
+        descriptionRes = R.string.whats_new_final_mask_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.Bolt,
-        titleRes = R.string.whats_new_fast_connect_title,
-        descriptionRes = R.string.whats_new_fast_connect_desc,
+        icon = Icons.Filled.SettingsInputAntenna,
+        titleRes = R.string.whats_new_bypass_hysteria2_title,
+        descriptionRes = R.string.whats_new_bypass_hysteria2_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.CloudOff,
+        titleRes = R.string.whats_new_fallback_subscription_title,
+        descriptionRes = R.string.whats_new_fallback_subscription_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.Security,
+        titleRes = R.string.whats_new_xray_core_title,
+        descriptionRes = R.string.whats_new_xray_core_desc,
     ),
 )
 
