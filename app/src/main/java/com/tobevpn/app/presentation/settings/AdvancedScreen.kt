@@ -108,6 +108,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
@@ -181,9 +182,21 @@ fun AdvancedScreen(
     val unsupportedQrText = stringResource(R.string.devices_unsupported_qr)
     val scannerUnavailableText = stringResource(R.string.devices_scanner_unavailable)
     val fallbackScanPrompt = stringResource(R.string.devices_scan_prompt)
-    // Saveable: coming back from the Router section opens the devices list
-    // again, as Back from the router does on PC.
-    var showDevicesSheet by rememberSaveable { mutableStateOf(false) }
+    var showDevicesSheet by remember { mutableStateOf(false) }
+    // Coming back from the Router section opens the devices list again, as
+    // Back from the router does on PC. Only once this screen is resumed: a
+    // back swipe draws it underneath while the finger moves, and the sheet,
+    // a window of its own, would pop up over everything at once.
+    var reopenDevicesSheet by rememberSaveable { mutableStateOf(false) }
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            if (reopenDevicesSheet) {
+                reopenDevicesSheet = false
+                showDevicesSheet = true
+            }
+        }
+    }
     var showPairingCodeInput by remember { mutableStateOf(false) }
 
     val linkedDevicesCount = linkedDevicesState.currentCount ?: linkedDevicesState.devices.size
@@ -395,7 +408,10 @@ fun AdvancedScreen(
             onClearError = { viewModel.clearLinkedDevicesError() },
             routerHere = routerHere,
             routerLink = routerLink,
-            onOpenRouter = onNavigateToRouter,
+            onOpenRouter = {
+                reopenDevicesSheet = true
+                onNavigateToRouter()
+            },
         )
     }
 
