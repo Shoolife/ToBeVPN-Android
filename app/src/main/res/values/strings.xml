@@ -855,4 +855,5 @@
     <string name="router_vpn_description">The router connects to ToBeVPN servers by itself, and any device at home can go through the VPN — TVs, consoles, guests’ gadgets. The router counts as one device of the subscription.</string>
     <string name="router_install">Install the VPN on the router</string>
     <string name="router_install_unsupported">Installing is available for OpenWrt routers. Stock firmware (Huawei, TP-Link, ISP routers) does not allow installing software.</string>
+    <string name="refresh_hint_servers">Run a manual check of the servers</string>
 </resources>

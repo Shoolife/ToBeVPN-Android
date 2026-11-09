@@ -361,22 +361,32 @@ fun ServerListScreen(
                         // A little air between the two actions.
                         Spacer(modifier = Modifier.width(6.dp))
                     }
-                    IconButton(
-                        onClick = {
-                            if (showingBypass) {
-                                viewModel.refreshBaseStationBypassServers()
-                            } else {
-                                viewModel.refreshServers()
-                            }
-                        },
-                        enabled = !showingBypass ||
-                            baseStationBypassAccess == BaseStationBypassAccess.ALLOWED,
-                    ) {
-                        com.tobevpn.app.presentation.components.SpinningRefreshIcon(
-                            spinning = displayedLoading,
-                            contentDescription = stringResource(R.string.refresh),
-                            tint = refreshIconColor,
-                        )
+                    Box {
+                        IconButton(
+                            onClick = {
+                                if (showingBypass) {
+                                    viewModel.refreshBaseStationBypassServers()
+                                } else {
+                                    viewModel.refreshServers()
+                                }
+                            },
+                            enabled = !showingBypass ||
+                                baseStationBypassAccess == BaseStationBypassAccess.ALLOWED,
+                        ) {
+                            com.tobevpn.app.presentation.components.SpinningRefreshIcon(
+                                spinning = displayedLoading,
+                                contentDescription = stringResource(R.string.refresh),
+                                tint = refreshIconColor,
+                            )
+                        }
+                        // Once ever, as on PC: the list is checked by itself,
+                        // and this button checks it again on demand.
+                        if (!isTv) {
+                            com.tobevpn.app.presentation.components.OneTimeHint(
+                                id = "servers_refresh",
+                                text = stringResource(R.string.refresh_hint_servers),
+                            )
+                        }
                     }
                 },
             )
