@@ -179,7 +179,9 @@ fun AdvancedScreen(
     val unsupportedQrText = stringResource(R.string.devices_unsupported_qr)
     val scannerUnavailableText = stringResource(R.string.devices_scanner_unavailable)
     val fallbackScanPrompt = stringResource(R.string.devices_scan_prompt)
-    var showDevicesSheet by remember { mutableStateOf(false) }
+    // Saveable: coming back from the Router section opens the devices list
+    // again, as Back from the router does on PC.
+    var showDevicesSheet by rememberSaveable { mutableStateOf(false) }
     var showPairingCodeInput by remember { mutableStateOf(false) }
 
     val linkedDevicesCount = linkedDevicesState.currentCount ?: linkedDevicesState.devices.size
@@ -391,10 +393,7 @@ fun AdvancedScreen(
             onClearError = { viewModel.clearLinkedDevicesError() },
             routerHere = routerHere,
             routerLink = routerLink,
-            onOpenRouter = {
-                showDevicesSheet = false
-                onNavigateToRouter()
-            },
+            onOpenRouter = onNavigateToRouter,
         )
     }
 
