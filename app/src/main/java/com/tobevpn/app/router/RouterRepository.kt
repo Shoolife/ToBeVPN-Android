@@ -42,7 +42,40 @@ class RouterRepository @Inject constructor(
     /** The router of the current network, as last detected. */
     val router: StateFlow<RouterInfo?> = _router.asStateFlow()
 
-    suspend fun detect(): RouterInfo = detector.detect().also { _router.value = it }
+    suspend fun detect(): RouterInfo = detector.detect().also { info ->
+        _router.value = info
+        if (info.gateway != null) {
+            prefs.edit()
+                .putString(
+                    KEY_ROUTER,
+                    JSONObject()
+                        .put("gateway", info.gateway)
+                        .put("model", info.model.orEmpty())
+                        .put("firmware", info.firmware.orEmpty())
+                        .toString(),
+                )
+                .apply()
+        }
+    }
+
+    /**
+     * What is known at once about this network's router, without asking it:
+     * the last detection when the gateway is the same, else just the gateway.
+     * The screen shows it straight away and detects again in the background.
+     */
+    fun knownRouterHere(): RouterInfo? {
+        val gateway = detector.homeLan()?.gateway ?: return null
+        _router.value?.takeIf { it.gateway == gateway }?.let { return it }
+        val saved = runCatching { JSONObject(prefs.getString(KEY_ROUTER, null) ?: "") }.getOrNull()
+        if (saved?.optString("gateway") == gateway) {
+            return RouterInfo(
+                gateway = gateway,
+                model = saved.optString("model").takeIf { it.isNotEmpty() },
+                firmware = saved.optString("firmware").takeIf { it.isNotEmpty() },
+            )
+        }
+        return RouterInfo(gateway = gateway)
+    }
 
     /** The linked router, when it is the router of the current network. */
     fun linkHere(): RouterLink? {
@@ -252,6 +285,7 @@ class RouterRepository @Inject constructor(
 
     companion object {
         private const val KEY_LINK = "link"
+        private const val KEY_ROUTER = "router_here"
 
         /** Slots that devices other than [exceptMac] go through. */
         fun usedSlots(network: RouterNetwork, exceptMac: String?): Set<Int> =

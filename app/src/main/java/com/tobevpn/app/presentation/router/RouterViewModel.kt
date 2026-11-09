@@ -19,6 +19,7 @@ import com.tobevpn.app.router.RouterStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,7 +28,10 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class RouterUiState(
+    /** Nothing known yet about this network (no Wi-Fi seen). */
     val loading: Boolean = true,
+    /** The paired router is being asked for its status and devices. */
+    val checking: Boolean = false,
     val refreshing: Boolean = false,
     /** A change on the router is in progress; the controls wait. */
     val busy: Boolean = false,
@@ -56,7 +60,19 @@ class RouterViewModel @Inject constructor(
     private val repository: RouterRepository,
     vpnRepository: VpnRepository,
 ) : ViewModel() {
-    private val _state = MutableStateFlow(RouterUiState(link = repository.link.value, info = repository.router.value))
+    private val _state = MutableStateFlow(
+        repository.knownRouterHere().let { known ->
+            RouterUiState(
+                // Shown at once from what is known; the router is asked in
+                // the background, as on PC.
+                loading = false,
+                checking = known != null && repository.linkHere() != null,
+                link = repository.link.value,
+                info = known,
+                paired = known != null && repository.linkHere() != null,
+            )
+        },
+    )
     val state: StateFlow<RouterUiState> = _state.asStateFlow()
     private var migrating = false
 
@@ -73,10 +89,11 @@ class RouterViewModel @Inject constructor(
 
     private fun load(initial: Boolean) {
         viewModelScope.launch {
-            _state.update { it.copy(loading = initial && it.status == null, refreshing = !initial, error = null) }
-            val info = repository.detect()
+            _state.update { it.copy(refreshing = !initial, error = null) }
             val here = repository.linkHere()
-            _state.update { it.copy(info = info, link = repository.link.value, paired = here != null) }
+            _state.update { it.copy(checking = here != null && it.status == null, paired = here != null) }
+            // The login page and the router's own status are asked at once.
+            val detection = async { repository.detect() }
             if (here != null) {
                 runRouter {
                     val status = repository.status()
@@ -88,7 +105,10 @@ class RouterViewModel @Inject constructor(
                     }
                 }
             }
-            _state.update { it.copy(loading = false, refreshing = false) }
+            val info = detection.await()
+            _state.update {
+                it.copy(info = info, link = repository.link.value, loading = false, checking = false, refreshing = false)
+            }
         }
     }
 

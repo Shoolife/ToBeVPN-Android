@@ -144,7 +144,7 @@ fun RouterScreen(
         ) {
             item { RouterHeader(state) }
             val installed = state.paired && status?.installed == true
-            if (!installed) {
+            if (!installed && !state.checking) {
                 item { StatusText(state) }
             }
             state.error?.let { error ->
@@ -156,7 +156,13 @@ fun RouterScreen(
                     item { SectionTitle(stringResource(R.string.router_vpn_section)) }
                     item { InstallCard(state = state, onPair = viewModel::pair) }
                 }
-                status == null -> Unit
+                status == null -> if (state.checking) {
+                    item {
+                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.5.dp)
+                        }
+                    }
+                }
                 !status.installed -> {
                     item { SectionTitle(stringResource(R.string.router_vpn_section)) }
                     item { HintCard(stringResource(R.string.router_not_installed_phone)) }
