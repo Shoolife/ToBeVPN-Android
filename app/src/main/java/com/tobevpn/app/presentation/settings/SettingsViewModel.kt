@@ -41,6 +41,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -425,7 +426,12 @@ class SettingsViewModel @Inject constructor(
         _language.value = tag
     }
 
-    fun refreshLinkedDevices() {
+    /**
+     * Loads the linked devices. Placeholders show only on the first load;
+     * later loads keep the list on screen and swap it when the answer comes,
+     * except a [userRequested] refresh, which shows its turn as before.
+     */
+    fun refreshLinkedDevices(userRequested: Boolean = false) {
         val current = authState.value
         if (current !is AuthState.Authenticated) {
             _linkedDevicesState.value = LinkedDevicesUiState(
@@ -437,7 +443,7 @@ class SettingsViewModel @Inject constructor(
 
         linkedDevicesRefreshJob = viewModelScope.launch {
             val before = _linkedDevicesState.value
-            val isRefresh = before.hasLoaded
+            val isRefresh = before.hasLoaded && userRequested
             val refreshFeedbackStartedAt = if (isRefresh) {
                 SystemClock.elapsedRealtime()
             } else {
@@ -446,7 +452,7 @@ class SettingsViewModel @Inject constructor(
             val currentDeviceId = authRepository.getOrCreateDeviceId()
             val currentDeviceAliases = authRepository.getCurrentDeviceAliases()
             _linkedDevicesState.value = before.copy(
-                isLoading = !isRefresh,
+                isLoading = !before.hasLoaded,
                 isRefreshing = isRefresh,
                 errorMessage = null,
                 currentDeviceId = currentDeviceId,
@@ -454,9 +460,24 @@ class SettingsViewModel @Inject constructor(
             )
 
             _linkedDevicesState.value = try {
-                authRepository.registerCurrentDevice()
-                runCatching { authRepository.pingHwidOnly() }
-                val response = botApi.getDevices()
+                // The list does not wait for this phone's registration: both
+                // run at once, and the list is fetched again only when this
+                // phone is not in it yet.
+                val registration = async {
+                    authRepository.registerCurrentDevice()
+                    runCatching { authRepository.pingHwidOnly() }
+                }
+                var response = botApi.getDevices()
+                val aliases = currentDeviceAliases.map { it.trim().lowercase(java.util.Locale.ROOT) }.toSet()
+                val listed = response.data?.devices.orEmpty().any { device ->
+                    listOf(device.deviceId, device.hwid).any {
+                        it?.trim()?.lowercase(java.util.Locale.ROOT) in aliases
+                    }
+                }
+                if (response.success && !listed) {
+                    registration.await()
+                    response = botApi.getDevices()
+                }
                 val data = response.data
                 if (response.success && data != null) {
                     awaitMinimumDevicesRefreshFeedback(refreshFeedbackStartedAt)

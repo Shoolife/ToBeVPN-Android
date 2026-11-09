@@ -703,6 +703,8 @@
     <string name="devices_scan_prompt">Point the camera at the QR code</string>
     <string name="devices_unsupported_qr">This QR code is not supported for device sign-in.</string>
     <string name="devices_this_device">This device</string>
+    <string name="devices_router">Router</string>
+    <string name="devices_routers">Routers</string>
     <string name="devices_other_devices">Other devices</string>
     <string name="devices_empty">No other connected devices.</string>
     <string name="devices_disconnect">Disconnect</string>

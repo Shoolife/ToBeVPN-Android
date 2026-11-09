@@ -43,6 +43,10 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.outlined.Computer
+import androidx.compose.material.icons.outlined.Router
+import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Tv
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -155,6 +159,11 @@ fun AdvancedScreen(
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val tvPairResult by viewModel.tvPairResult.collectAsStateWithLifecycle()
     val linkedDevicesState by viewModel.linkedDevicesState.collectAsStateWithLifecycle()
+    // The device list is fetched with the screen, so the sheet opens with it.
+    val signedIn = authState is AuthState.Authenticated
+    LaunchedEffect(signedIn) {
+        if (signedIn) viewModel.refreshLinkedDevices()
+    }
     val appFilterState by viewModel.appFilterSummary.collectAsStateWithLifecycle()
     val emailSaveResult by viewModel.emailSaveResult.collectAsStateWithLifecycle()
     val savedEmail by viewModel.userEmail.collectAsStateWithLifecycle()
@@ -368,7 +377,7 @@ fun AdvancedScreen(
         LinkedDevicesBottomSheet(
             state = linkedDevicesState,
             onDismiss = { showDevicesSheet = false },
-            onRefresh = { viewModel.refreshLinkedDevices() },
+            onRefresh = { viewModel.refreshLinkedDevices(userRequested = true) },
             onScanQr = startDeviceQrScan,
             onEnterCode = { showPairingCodeInput = true },
             onDisconnect = { deviceId, resetSubscription ->
@@ -920,9 +929,12 @@ private fun LinkedDevicesBottomSheet(
     val currentDevice = state.devices.firstOrNull {
         it.matchesDeviceAliases(state.currentDeviceAliases)
     }
-    val otherDevices = state.devices.filterNot {
+    val notCurrent = state.devices.filterNot {
         it.matchesDeviceAliases(state.currentDeviceAliases)
     }
+    // Home routers get their own section above the other devices, as on PC.
+    val routerDevices = notCurrent.filter { it.inferredKind() == DeviceKind.Router }
+    val otherDevices = notCurrent.filterNot { it.inferredKind() == DeviceKind.Router }
     val refreshActive = state.isLoading || state.isRefreshing
     val canLinkMoreDevices = state.maxDevices == 0 || devicesCount < state.maxDevices
     // The sheet has its own Android window, so use the effective in-app theme
@@ -1219,6 +1231,31 @@ private fun LinkedDevicesBottomSheet(
                         }
                     }
 
+                    if (!refreshActive && routerDevices.isNotEmpty()) {
+                        Text(
+                            text = stringResource(
+                                if (routerDevices.size > 1) R.string.devices_routers else R.string.devices_router,
+                            ),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            routerDevices.forEach { device ->
+                                LinkedDeviceCard(
+                                    device = device,
+                                    isCurrent = false,
+                                    isBusy = state.busyDeviceId == device.deviceId,
+                                    onDisconnect = askDisconnect,
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(20.dp))
+                    }
+
                     Text(
                         text = stringResource(R.string.devices_other_devices),
                         style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
@@ -1359,6 +1396,13 @@ private fun LinkedDeviceLoadingCard(
                 .alpha(alpha),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(placeholderColor),
+            )
+            Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Box(
                     modifier = Modifier
@@ -1415,6 +1459,8 @@ private fun LinkedDeviceCard(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            DeviceKindIcon(device.inferredKind())
+            Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = deviceTitle(device),
@@ -1636,9 +1682,10 @@ private fun LinkedDeviceDto.inferredKind(): DeviceKind {
     ) {
         return DeviceKind.Desktop
     }
-    return when (type) {
-        "phone" -> DeviceKind.Phone
-        "" -> if (platform == "android") DeviceKind.Phone else DeviceKind.Generic
+    // As on PC: what is neither a computer, a TV nor a router is a phone.
+    return when {
+        type == "phone" || type == "mobile" || type == "android" -> DeviceKind.Phone
+        platform == "android" || platform == "ios" || userAgent.contains("/android/") -> DeviceKind.Phone
         else -> DeviceKind.Generic
     }
 }
@@ -2020,4 +2067,28 @@ private fun UnlinkDeviceDialog(
         },
         dismissButton = {},
     )
+}
+
+/** The device type as a rounded icon tile, as on PC. */
+@Composable
+private fun DeviceKindIcon(kind: DeviceKind) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = when (kind) {
+                DeviceKind.Tv -> Icons.Outlined.Tv
+                DeviceKind.Desktop -> Icons.Outlined.Computer
+                DeviceKind.Router -> Icons.Outlined.Router
+                DeviceKind.Phone, DeviceKind.Generic -> Icons.Outlined.Smartphone
+            },
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }

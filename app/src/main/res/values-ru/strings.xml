@@ -717,6 +717,8 @@
     <string name="devices_scan_prompt">Наведите камеру на QR-код</string>
     <string name="devices_unsupported_qr">Этот QR-код не подходит для входа устройства.</string>
     <string name="devices_this_device">Это устройство</string>
+    <string name="devices_router">Роутер</string>
+    <string name="devices_routers">Роутеры</string>
     <string name="devices_other_devices">Другие устройства</string>
     <string name="devices_empty">Других подключённых устройств пока нет.</string>
     <string name="devices_disconnect">Отключить</string>
