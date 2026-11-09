@@ -37,6 +37,7 @@ import com.tobevpn.app.presentation.onboarding.DisplayScaleHintDialog
 import com.tobevpn.app.presentation.onboarding.OnboardingScreen
 import com.tobevpn.app.presentation.promocodes.PromocodesScreen
 import com.tobevpn.app.presentation.referrals.ReferralsScreen
+import com.tobevpn.app.presentation.router.RouterScreen
 import com.tobevpn.app.presentation.servers.ServerListScreen
 import com.tobevpn.app.presentation.settings.AboutScreen
 import com.tobevpn.app.presentation.settings.AdvancedScreen
@@ -211,7 +212,13 @@ fun AppNavHost(
                 AdvancedScreen(
                     onBack = { navController.popBackStackOrRecover(startDestination) },
                     onNavigateToAppFilter = { navController.navigateSingleTop(AppFilterRoute) },
+                    onNavigateToRouter = { navController.navigateSingleTop(RouterRoute) },
                     viewModel = hiltViewModel<SettingsViewModel>(parentEntry),
+                )
+            }
+            screen<RouterRoute> {
+                RouterScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
                 )
             }
             screen<SupportRoute> {

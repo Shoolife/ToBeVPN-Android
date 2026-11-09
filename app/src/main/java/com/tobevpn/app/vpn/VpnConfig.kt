@@ -51,6 +51,17 @@ object VpnConfig {
         return config.toString()
     }
 
+    /**
+     * The server's outbound alone, under [tag], for the home router's Xray
+     * (one per server slot): the same VLESS or Hysteria2 settings as the
+     * phone's own connection.
+     */
+    fun buildProxyOutbound(server: Server, tag: String): JSONObject {
+        val outbound = buildOutbounds(server, null).getJSONObject(0)
+        outbound.put("tag", tag)
+        return outbound
+    }
+
     private fun buildPolicy(): JSONObject {
         return JSONObject().apply {
             put("levels", JSONObject().apply {

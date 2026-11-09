@@ -287,6 +287,10 @@ dependencies {
     implementation(libs.retrofit)
     implementation(libs.retrofit.gson)
     implementation(libs.okhttp.logging)
+    // SSH to the home router (Router section); BouncyCastle gives JSch
+    // ed25519 and curve25519, which Android's JCE lacks.
+    implementation(libs.jsch)
+    implementation(libs.bouncycastle.prov)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)

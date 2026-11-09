@@ -68,6 +68,7 @@ class SettingsViewModel @Inject constructor(
     private val sessionDao: SessionDao,
     private val diagnosticLogManager: DiagnosticLogManager,
     private val playBillingCountry: PlayBillingCountry,
+    private val routerRepository: com.tobevpn.app.router.RouterRepository,
     deepLinkBus: DeepLinkBus,
     appFilterRepository: AppFilterRepository,
 ) : ViewModel() {
@@ -83,6 +84,10 @@ class SettingsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AuthState.Anonymous)
 
     val avatarLoading: StateFlow<Boolean> = authRepository.avatarLoading
+
+    /** The router of the current network, for the devices list's Routers section. */
+    val routerHere: StateFlow<com.tobevpn.app.router.RouterInfo?> = routerRepository.router
+    val routerLink: StateFlow<com.tobevpn.app.router.RouterLink?> = routerRepository.link
 
     private val _currentSubscriptionPlan = MutableStateFlow<CurrentSubscriptionPlanInfo?>(null)
     val currentSubscriptionPlan: StateFlow<CurrentSubscriptionPlanInfo?> =
@@ -441,6 +446,7 @@ class SettingsViewModel @Inject constructor(
         }
         if (linkedDevicesRefreshJob?.isActive == true) return
 
+        viewModelScope.launch { runCatching { routerRepository.detect() } }
         linkedDevicesRefreshJob = viewModelScope.launch {
             val before = _linkedDevicesState.value
             val isRefresh = before.hasLoaded && userRequested

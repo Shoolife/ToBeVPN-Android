@@ -60,3 +60,12 @@
     public static *** w(...);
     public static *** e(...);
 }
+
+# Router section: JSch loads its algorithms by class name, and they use
+# BouncyCastle's lightweight API.
+-keep class com.jcraft.jsch.** { *; }
+-dontwarn com.jcraft.jsch.**
+-keep class org.bouncycastle.math.ec.rfc7748.** { *; }
+-keep class org.bouncycastle.math.ec.rfc8032.** { *; }
+-keep class org.bouncycastle.crypto.** { *; }
+-dontwarn org.bouncycastle.**

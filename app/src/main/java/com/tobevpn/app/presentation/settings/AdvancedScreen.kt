@@ -140,6 +140,8 @@ import com.tobevpn.app.presentation.theme.LocalAppInterfaceScale
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
+import com.tobevpn.app.router.RouterInfo
+import com.tobevpn.app.router.RouterLink
 import com.tobevpn.app.util.DeviceQrScanAction
 import com.tobevpn.app.util.DeviceQrScanParser
 import com.tobevpn.app.util.SafeDiagnostics
@@ -154,11 +156,14 @@ private const val TAG = "AdvancedScreen"
 fun AdvancedScreen(
     onBack: () -> Unit,
     onNavigateToAppFilter: () -> Unit,
+    onNavigateToRouter: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val tvPairResult by viewModel.tvPairResult.collectAsStateWithLifecycle()
     val linkedDevicesState by viewModel.linkedDevicesState.collectAsStateWithLifecycle()
+    val routerHere by viewModel.routerHere.collectAsStateWithLifecycle()
+    val routerLink by viewModel.routerLink.collectAsStateWithLifecycle()
     // The device list is fetched with the screen, so the sheet opens with it.
     val signedIn = authState is AuthState.Authenticated
     LaunchedEffect(signedIn) {
@@ -384,6 +389,12 @@ fun AdvancedScreen(
                 viewModel.disconnectDevice(deviceId, resetSubscription)
             },
             onClearError = { viewModel.clearLinkedDevicesError() },
+            routerHere = routerHere,
+            routerLink = routerLink,
+            onOpenRouter = {
+                showDevicesSheet = false
+                onNavigateToRouter()
+            },
         )
     }
 
@@ -907,6 +918,9 @@ private fun LinkedDevicesBottomSheet(
     onEnterCode: () -> Unit,
     onDisconnect: (deviceId: String, resetSubscription: Boolean) -> Unit,
     onClearError: () -> Unit,
+    routerHere: RouterInfo? = null,
+    routerLink: RouterLink? = null,
+    onOpenRouter: () -> Unit = {},
 ) {
     val sheetState = rememberResistantModalBottomSheetState()
     // The device whose "Disconnect" was tapped: asked first, with the
@@ -932,8 +946,21 @@ private fun LinkedDevicesBottomSheet(
     val notCurrent = state.devices.filterNot {
         it.matchesDeviceAliases(state.currentDeviceAliases)
     }
-    // Home routers get their own section above the other devices, as on PC.
-    val routerDevices = notCurrent.filter { it.inferredKind() == DeviceKind.Router }
+    // Home routers get their own section above the other devices, as on PC:
+    // first the router of this network (it opens the Router section), then
+    // the account's routers elsewhere. The account's router of this network
+    // is the same box, so it is not listed twice.
+    val gatewayHere = routerHere?.gateway
+    val linkedHere = routerLink?.takeIf { it.host == gatewayHere }
+    val isRouterHere: (LinkedDeviceDto) -> Boolean = { device ->
+        val hwid = linkedHere?.hwid
+        if (hwid != null) {
+            device.hwid.equals(hwid, ignoreCase = true) || device.deviceId.equals(hwid, ignoreCase = true)
+        } else {
+            routerHere?.model != null && device.deviceModel == routerHere.model
+        }
+    }
+    val routerDevices = notCurrent.filter { it.inferredKind() == DeviceKind.Router && !isRouterHere(it) }
     val otherDevices = notCurrent.filterNot { it.inferredKind() == DeviceKind.Router }
     val refreshActive = state.isLoading || state.isRefreshing
     val canLinkMoreDevices = state.maxDevices == 0 || devicesCount < state.maxDevices
@@ -1231,10 +1258,14 @@ private fun LinkedDevicesBottomSheet(
                         }
                     }
 
-                    if (!refreshActive && routerDevices.isNotEmpty()) {
+                    if (!refreshActive && (routerDevices.isNotEmpty() || gatewayHere != null)) {
                         Text(
                             text = stringResource(
-                                if (routerDevices.size > 1) R.string.devices_routers else R.string.devices_router,
+                                if (routerDevices.size + (if (gatewayHere != null) 1 else 0) > 1) {
+                                    R.string.devices_routers
+                                } else {
+                                    R.string.devices_router
+                                },
                             ),
                             style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                             fontWeight = FontWeight.SemiBold,
@@ -1244,12 +1275,28 @@ private fun LinkedDevicesBottomSheet(
                         )
                         Spacer(modifier = Modifier.height(12.dp))
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (gatewayHere != null) {
+                                RouterHereCard(
+                                    title = linkedHere?.name ?: routerHere.model
+                                        ?: stringResource(R.string.router_not_detected),
+                                    meta = when {
+                                        linkedHere != null -> listOfNotNull(
+                                            routerHere.model?.takeIf { it != linkedHere.name },
+                                            stringResource(R.string.router_this_network),
+                                        ).joinToString(" • ")
+                                        routerHere.firmware != null -> stringResource(R.string.router_card_protect_home)
+                                        else -> gatewayHere
+                                    },
+                                    onClick = onOpenRouter,
+                                )
+                            }
                             routerDevices.forEach { device ->
                                 LinkedDeviceCard(
                                     device = device,
                                     isCurrent = false,
                                     isBusy = state.busyDeviceId == device.deviceId,
                                     onDisconnect = askDisconnect,
+                                    subtitle = if (gatewayHere != null) stringResource(R.string.router_other_network) else null,
                                 )
                             }
                         }
@@ -1438,6 +1485,7 @@ private fun LinkedDeviceCard(
     isCurrent: Boolean,
     isBusy: Boolean,
     onDisconnect: (String) -> Unit,
+    subtitle: String? = null,
 ) {
     val isDark = LocalAppDarkTheme.current
     Card(
@@ -1477,7 +1525,7 @@ private fun LinkedDeviceCard(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = deviceSubtitle(device),
+                    text = subtitle ?: deviceSubtitle(device),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -2090,5 +2138,54 @@ private fun DeviceKindIcon(kind: DeviceKind) {
             modifier = Modifier.size(20.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+    }
+}
+
+/** The router of the phone's current network: opens the Router section. */
+@Composable
+private fun RouterHereCard(title: String, meta: String, onClick: () -> Unit) {
+    val isDark = LocalAppDarkTheme.current
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDark) MaterialTheme.colorScheme.surfaceContainerHigh else BrandSoftCardFill,
+        ),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DeviceKindIcon(DeviceKind.Router)
+            Spacer(modifier = Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (isDark) MaterialTheme.colorScheme.onSurface else Color.Black,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = meta,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }

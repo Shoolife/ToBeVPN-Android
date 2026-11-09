@@ -1,0 +1,272 @@
+package com.tobevpn.app.router
+
+import android.content.Context
+import android.net.Network
+import com.jcraft.jsch.HostKey
+import com.jcraft.jsch.HostKeyRepository
+import com.jcraft.jsch.JSch
+import com.jcraft.jsch.JSchException
+import com.jcraft.jsch.KeyPair
+import com.jcraft.jsch.Session
+import com.jcraft.jsch.SocketFactory
+import com.jcraft.jsch.UserInfo
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.Socket
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/**
+ * SSH to the home router, as the desktop app does it: pairing logs in once
+ * with the router password, which is never stored, and adds this app's own
+ * ed25519 key; later calls use that key. The router's host key is
+ * remembered on pairing and checked on every connection. Sockets go through
+ * the Wi-Fi network itself, so the phone's own VPN does not carry them.
+ */
+@Singleton
+class RouterSsh @Inject constructor(
+    @ApplicationContext private val context: Context,
+) {
+    private val dir: File get() = File(context.filesDir, "router").apply { mkdirs() }
+    private val keyFile: File get() = File(dir, "ssh_ed25519")
+    private val hostsFile: File get() = File(dir, "known_hosts.json")
+
+    init {
+        // Android's JCE has neither ed25519 nor X25519: BouncyCastle's
+        // lightweight implementations stand in, and JSch's Java-version
+        // detection does not apply here.
+        JSch.setConfig("xdh", "com.jcraft.jsch.bc.XDH")
+        JSch.setConfig("keypairgen.eddsa", "com.jcraft.jsch.bc.KeyPairGenEdDSA")
+        JSch.setConfig("keypairgen_fromprivate.eddsa", "com.jcraft.jsch.bc.KeyPairGenEdDSA")
+        JSch.setConfig("ssh-ed25519", "com.jcraft.jsch.bc.SignatureEd25519")
+        JSch.setConfig("ssh-ed448", "com.jcraft.jsch.bc.SignatureEd448")
+    }
+
+    /** Logs in with the password once and installs this app's key on the router. */
+    suspend fun pair(network: Network?, host: String, user: String, password: String) = withContext(Dispatchers.IO) {
+        val jsch = JSch()
+        val seen = arrayOfNulls<String>(1)
+        jsch.setHostKeyRepository(PinnedHosts(expected = null, seen = seen))
+        val session = jsch.getSession(user, host, 22).apply {
+            setPassword(password)
+            configure(network)
+        }
+        try {
+            connect(session)
+            val line = "${publicKey()} $keyComment\n"
+            RouterShell(session).runOk(
+                "umask 077; if [ \"\$(id -u)\" = 0 ] && [ -d /etc/dropbear ]; then f=/etc/dropbear/authorized_keys; " +
+                    "else mkdir -p ~/.ssh; f=~/.ssh/authorized_keys; fi; " +
+                    "sed -i '/ $keyComment\$/d' \"\$f\" 2>/dev/null; cat >> \"\$f\"",
+                line.toByteArray(),
+            )
+            seen[0]?.let { fingerprint -> saveHost(host, fingerprint) }
+        } finally {
+            session.disconnect()
+        }
+    }
+
+    fun isPaired(host: String): Boolean = knownHosts().has(host)
+
+    fun forget(host: String) {
+        val hosts = knownHosts()
+        hosts.remove(host)
+        hostsFile.writeText(hosts.toString())
+    }
+
+    /** Runs [block] in a session that uses this app's key. */
+    suspend fun <T> session(
+        network: Network?,
+        host: String,
+        user: String,
+        block: (RouterShell) -> T,
+    ): T = withContext(Dispatchers.IO) {
+        val expected = knownHosts().optString(host).takeIf { it.isNotEmpty() }
+            ?: throw RouterException("router is not paired")
+        val jsch = JSch()
+        jsch.setHostKeyRepository(PinnedHosts(expected = expected, seen = arrayOfNulls(1)))
+        jsch.addIdentity(keyComment, keyFileBytes(), null, null)
+        val session = jsch.getSession(user, host, 22).apply { configure(network) }
+        try {
+            connect(session)
+            block(RouterShell(session))
+        } finally {
+            session.disconnect()
+        }
+    }
+
+    private fun Session.configure(network: Network?) {
+        timeout = TIMEOUT_MS
+        setConfig("PreferredAuthentications", "publickey,password,keyboard-interactive")
+        setServerAliveInterval(30_000)
+        userInfo = SilentUserInfo
+        if (network != null) setSocketFactory(NetworkSockets(network))
+    }
+
+    private fun connect(session: Session) {
+        try {
+            session.connect(TIMEOUT_MS)
+        } catch (error: JSchException) {
+            val message = error.message.orEmpty()
+            throw RouterException(
+                when {
+                    message.contains("HostKey has been changed", ignoreCase = true) ||
+                        message.contains("reject HostKey", ignoreCase = true) -> "router host key changed"
+                    message.contains("Auth fail", ignoreCase = true) ||
+                        message.contains("Auth cancel", ignoreCase = true) -> "wrong router login or password"
+                    message.contains("timeout", ignoreCase = true) ||
+                        message.contains("connect", ignoreCase = true) -> "router did not answer on SSH"
+                    else -> "ssh: $message"
+                },
+                error,
+            )
+        }
+    }
+
+    // ------------------------------------------------------------ key ---
+
+    /**
+     * Comment on this app's key line in the router's authorized_keys: one
+     * per installation, so pairing one phone does not drop another phone's
+     * key or the computer's ("tobevpn-desktop-router").
+     */
+    private val keyComment: String by lazy {
+        val idFile = File(dir, "key_id")
+        val id = idFile.takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.matches(Regex("[0-9a-f]{8}")) }
+            ?: ByteArray(4).also { SecureRandom().nextBytes(it) }
+                .joinToString("") { "%02x".format(it) }
+                .also { idFile.writeText(it) }
+        "tobevpn-android-$id-router"
+    }
+
+    @Synchronized
+    private fun keyFileBytes(): ByteArray {
+        if (!keyFile.isFile) {
+            val pair = KeyPair.genKeyPair(JSch(), KeyPair.ED25519)
+            val out = ByteArrayOutputStream()
+            pair.writeOpenSSHv1PrivateKey(out, null, "none", 0)
+            pair.dispose()
+            keyFile.writeBytes(out.toByteArray())
+            keyFile.setReadable(false, false)
+            keyFile.setReadable(true, true)
+        }
+        return keyFile.readBytes()
+    }
+
+    private fun publicKey(): String {
+        val pair = KeyPair.load(JSch(), keyFileBytes(), null)
+        try {
+            val blob = Base64.getEncoder().encodeToString(pair.publicKeyBlob)
+            return "ssh-ed25519 $blob"
+        } finally {
+            pair.dispose()
+        }
+    }
+
+    // ---------------------------------------------------------- hosts ---
+
+    private fun knownHosts(): JSONObject =
+        runCatching { JSONObject(hostsFile.readText()) }.getOrDefault(JSONObject())
+
+    private fun saveHost(host: String, fingerprint: String) {
+        val hosts = knownHosts()
+        hosts.put(host, fingerprint)
+        hostsFile.writeText(hosts.toString())
+    }
+
+    /** Accepts any key while pairing (recording it), afterwards only the recorded one. */
+    private class PinnedHosts(
+        private val expected: String?,
+        private val seen: Array<String?>,
+    ) : HostKeyRepository {
+        override fun check(host: String?, key: ByteArray?): Int {
+            val fingerprint = key?.let(::fingerprint) ?: return HostKeyRepository.NOT_INCLUDED
+            if (expected == null) {
+                seen[0] = fingerprint
+                return HostKeyRepository.OK
+            }
+            return if (fingerprint == expected) HostKeyRepository.OK else HostKeyRepository.CHANGED
+        }
+
+        override fun add(hostkey: HostKey?, ui: UserInfo?) = Unit
+        override fun remove(host: String?, type: String?) = Unit
+        override fun remove(host: String?, type: String?, key: ByteArray?) = Unit
+        override fun getKnownHostsRepositoryID(): String = "tobevpn-router"
+        override fun getHostKey(): Array<HostKey> = emptyArray()
+        override fun getHostKey(host: String?, type: String?): Array<HostKey> = emptyArray()
+    }
+
+    private object SilentUserInfo : UserInfo {
+        override fun getPassphrase(): String? = null
+        override fun getPassword(): String? = null
+        override fun promptPassword(message: String?) = false
+        override fun promptPassphrase(message: String?) = false
+        // A changed host key is refused by PinnedHosts; nothing to ask here.
+        override fun promptYesNo(message: String?) = false
+        override fun showMessage(message: String?) = Unit
+    }
+
+    private class NetworkSockets(private val network: Network) : SocketFactory {
+        override fun createSocket(host: String, port: Int): Socket =
+            network.socketFactory.createSocket().apply {
+                connect(java.net.InetSocketAddress(host, port), TIMEOUT_MS)
+            }
+
+        override fun getInputStream(socket: Socket): InputStream = socket.getInputStream()
+        override fun getOutputStream(socket: Socket): OutputStream = socket.getOutputStream()
+    }
+
+    companion object {
+        private const val TIMEOUT_MS = 10_000
+
+        fun fingerprint(key: ByteArray): String =
+            "SHA256:" + Base64.getEncoder().withoutPadding()
+                .encodeToString(MessageDigest.getInstance("SHA-256").digest(key))
+    }
+}
+
+class RouterException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/** Commands on the router within one SSH session. */
+class RouterShell(private val session: Session) {
+    /** Runs one command, feeding [stdin] to it; returns stdout and the exit code. */
+    fun run(command: String, stdin: ByteArray? = null): Pair<String, Int> {
+        val channel = session.openChannel("exec") as com.jcraft.jsch.ChannelExec
+        channel.setCommand(command)
+        channel.setErrStream(null)
+        val output = channel.inputStream
+        val input = channel.outputStream
+        channel.connect(10_000)
+        try {
+            if (stdin != null) input.write(stdin)
+            input.close()
+            val bytes = output.readBytes()
+            while (!channel.isClosed) Thread.sleep(20)
+            return String(bytes) to channel.exitStatus.let { if (it < 0) 255 else it }
+        } finally {
+            channel.disconnect()
+        }
+    }
+
+    fun runOk(command: String, stdin: ByteArray? = null): String {
+        val (output, code) = run(command, stdin)
+        if (code != 0) throw RouterException("router command failed ($code): ${output.trim()}")
+        return output
+    }
+
+    fun writeFile(path: String, content: ByteArray, mode: String) {
+        runOk(
+            "umask 077; cat > '$path.tmp' && chmod $mode '$path.tmp' && mv '$path.tmp' '$path'",
+            content,
+        )
+    }
+}
