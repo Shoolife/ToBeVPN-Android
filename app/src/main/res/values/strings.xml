@@ -812,8 +812,6 @@
     <string name="router_status_stopped">Off</string>
     <string name="router_status_failed">Error</string>
     <string name="router_status_not_installed">Not installed</string>
-    <string name="router_no_wifi">The phone is not on Wi‑Fi, so no router was found. Connect to the Wi‑Fi of the router you want to manage.</string>
-    <string name="router_pair_explain">Connect the phone to the router to manage its VPN: choose a server for each device at home, turn the VPN on and off.</string>
     <string name="router_login">Router login</string>
     <string name="router_login_placeholder">Login of the router\'s web interface, usually %1$s</string>
     <string name="router_password">Router password</string>
@@ -849,4 +847,12 @@
     <string name="router_error_slots_full">There is no room on the router for one more server. Choose a server already in use or “No VPN”.</string>
     <string name="router_error_server_missing">This server is no longer in the subscription. Refresh the server list.</string>
     <string name="router_error_generic">Could not complete the action on the router: %1$s</string>
+    <string name="router_status_supported">ToBeVPN can be installed on this router without reflashing it: the VPN will cover every device at home.</string>
+    <string name="router_status_openwrt_unverified">An OpenWrt router: ToBeVPN can be installed if it has an ARM64 or ARMv7 CPU and enough memory. This is checked when connecting.</string>
+    <string name="router_status_unknown">The router model could not be identified. OpenWrt routers are supported for now.</string>
+    <string name="router_status_no_network">The phone is not on Wi‑Fi: no router found.</string>
+    <string name="router_vpn_section">VPN on the router</string>
+    <string name="router_vpn_description">The router connects to ToBeVPN servers by itself, and any device at home can go through the VPN — TVs, consoles, guests’ gadgets. The router counts as one device of the subscription.</string>
+    <string name="router_install">Install the VPN on the router</string>
+    <string name="router_install_unsupported">Installing is available for OpenWrt routers. Stock firmware (Huawei, TP-Link, ISP routers) does not allow installing software.</string>
 </resources>

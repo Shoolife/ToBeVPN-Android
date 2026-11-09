@@ -73,6 +73,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
@@ -142,14 +143,24 @@ fun RouterScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item { RouterHeader(state) }
+            val installed = state.paired && status?.installed == true
+            if (!installed) {
+                item { StatusText(state) }
+            }
             state.error?.let { error ->
-                item { Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+                item { Text(error, color = MaterialTheme.colorScheme.error, style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium)) }
             }
             when {
-                state.info?.gateway == null -> item { HintCard(stringResource(R.string.router_no_wifi)) }
-                !state.paired -> item { PairCard(busy = state.busy, onPair = viewModel::pair) }
+                state.info?.gateway == null -> Unit
+                !state.paired -> {
+                    item { SectionTitle(stringResource(R.string.router_vpn_section)) }
+                    item { InstallCard(state = state, onPair = viewModel::pair) }
+                }
                 status == null -> Unit
-                !status.installed -> item { HintCard(stringResource(R.string.router_not_installed_phone)) }
+                !status.installed -> {
+                    item { SectionTitle(stringResource(R.string.router_vpn_section)) }
+                    item { HintCard(stringResource(R.string.router_not_installed_phone)) }
+                }
                 else -> {
                     if (status.failed) {
                         item { WarningText(stringResource(R.string.router_failed)) }
@@ -264,19 +275,73 @@ private fun RouterHeader(state: RouterUiState) {
     }
 }
 
+/** Routers the installer has been verified on, as on PC. */
+private val SUPPORTED_MODELS = setOf("SNR-CPE-AX2")
+
+/** What is known about this network's router, under its card (as on PC). */
+@Composable
+private fun StatusText(state: RouterUiState) {
+    val info = state.info
+    val text = when {
+        info?.gateway == null -> stringResource(R.string.router_status_no_network)
+        info.model in SUPPORTED_MODELS -> stringResource(R.string.router_status_supported)
+        info.firmware != null -> stringResource(R.string.router_status_openwrt_unverified)
+        else -> stringResource(R.string.router_status_unknown)
+    }
+    Text(
+        text,
+        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 4.dp),
+    )
+}
+
 // -------------------------------------------------------------- pairing ---
 
+/**
+ * "VPN on the router" as on PC: what it gives, and the install button,
+ * which opens the router login. Only OpenWrt-based routers can take it.
+ */
 @Composable
-private fun PairCard(busy: Boolean, onPair: (String, String) -> Unit) {
-    var user by rememberSaveable { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    var visible by remember { mutableStateOf(false) }
+private fun InstallCard(state: RouterUiState, onPair: (String, String) -> Unit) {
+    var formOpen by rememberSaveable { mutableStateOf(false) }
+    val canInstall = state.info?.firmware != null
     RouterCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                stringResource(R.string.router_pair_explain),
+                stringResource(R.string.router_vpn_description),
                 style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
             )
+            if (formOpen) {
+                PairForm(busy = state.busy, onPair = onPair)
+            } else {
+                Button(
+                    onClick = { formOpen = true },
+                    enabled = canInstall,
+                    shape = RoundedCornerShape(13.dp),
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                ) {
+                    Text(stringResource(R.string.router_install))
+                }
+            }
+            if (!canInstall) {
+                Text(
+                    stringResource(R.string.router_install_unsupported),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PairForm(busy: Boolean, onPair: (String, String) -> Unit) {
+    var user by rememberSaveable { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var visible by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        run {
             OutlinedTextField(
                 value = user,
                 onValueChange = { user = it },
@@ -675,9 +740,11 @@ private fun WarningText(text: String) {
 @Composable
 private fun SectionTitle(text: String) {
     Text(
-        text,
-        style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+        text.uppercase(),
+        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
         fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(start = 4.dp, top = 8.dp),
+        letterSpacing = 0.6.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 4.dp, top = 12.dp),
     )
 }

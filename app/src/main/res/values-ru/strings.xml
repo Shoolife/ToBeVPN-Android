@@ -826,8 +826,6 @@
     <string name="router_status_stopped">Выключен</string>
     <string name="router_status_failed">Ошибка</string>
     <string name="router_status_not_installed">Не установлен</string>
-    <string name="router_no_wifi">Телефон не подключён к Wi‑Fi: роутер не найден. Подключитесь к Wi‑Fi роутера, которым хотите управлять.</string>
-    <string name="router_pair_explain">Подключите телефон к роутеру, чтобы управлять VPN на нём: выбирать сервер для каждого устройства дома, включать и выключать VPN.</string>
     <string name="router_login">Логин роутера</string>
     <string name="router_login_placeholder">Логин от веб-интерфейса роутера, обычно %1$s</string>
     <string name="router_password">Пароль роутера</string>
@@ -863,4 +861,12 @@
     <string name="router_error_slots_full">На роутере не осталось места под ещё один сервер. Выберите уже используемый сервер или «Без VPN».</string>
     <string name="router_error_server_missing">Этого сервера больше нет в подписке. Обновите список серверов.</string>
     <string name="router_error_generic">Не удалось выполнить действие на роутере: %1$s</string>
+    <string name="router_status_supported">На этот роутер можно установить ToBeVPN без перепрошивки: VPN заработает для всех устройств дома.</string>
+    <string name="router_status_openwrt_unverified">Роутер на OpenWrt: ToBeVPN можно установить, если у него процессор ARM64 или ARMv7 и хватает памяти. Это проверится при подключении.</string>
+    <string name="router_status_unknown">Модель роутера определить не удалось. Сейчас поддерживаются роутеры на OpenWrt.</string>
+    <string name="router_status_no_network">Телефон не подключён к Wi‑Fi: роутер не найден.</string>
+    <string name="router_vpn_section">VPN на роутере</string>
+    <string name="router_vpn_description">Роутер сам подключается к серверам ToBeVPN, и через VPN можно пустить любые устройства дома — телевизоры, приставки, гаджеты гостей. Роутер считается одним устройством подписки.</string>
+    <string name="router_install">Установить VPN на роутер</string>
+    <string name="router_install_unsupported">Установка доступна для роутеров на OpenWrt. Заводские прошивки (Huawei, TP-Link, роутеры провайдеров) не дают ставить программы.</string>
 </resources>
