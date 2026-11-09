@@ -79,6 +79,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -147,6 +148,7 @@ import com.tobevpn.app.util.DeviceQrScanParser
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.util.TelegramLinks
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 
 private const val TAG = "AdvancedScreen"
@@ -922,6 +924,7 @@ private fun LinkedDevicesBottomSheet(
     onOpenRouter: () -> Unit = {},
 ) {
     val sheetState = rememberResistantModalBottomSheetState()
+    val sheetScope = rememberCoroutineScope()
     // The device whose "Disconnect" was tapped: asked first, with the
     // choice to reset the subscription link.
     var confirmingDevice by remember { mutableStateOf<LinkedDeviceDto?>(null) }
@@ -1286,7 +1289,14 @@ private fun LinkedDevicesBottomSheet(
                                         routerHere.firmware != null -> stringResource(R.string.router_card_protect_home)
                                         else -> gatewayHere
                                     },
-                                    onClick = onOpenRouter,
+                                    // The sheet slides away first, then the Router
+                                    // section comes in; it slides back on return.
+                                    onClick = {
+                                        sheetScope.launch {
+                                            sheetState.hide()
+                                            onOpenRouter()
+                                        }
+                                    },
                                 )
                             }
                             routerDevices.forEach { device ->
