@@ -498,7 +498,7 @@ class SettingsViewModel @Inject constructor(
         if (remaining > 0) delay(remaining)
     }
 
-    fun disconnectDevice(deviceId: String) {
+    fun disconnectDevice(deviceId: String, resetSubscription: Boolean = true) {
         val current = authState.value
         if (current !is AuthState.Authenticated) return
 
@@ -508,7 +508,7 @@ class SettingsViewModel @Inject constructor(
                 errorMessage = null,
             )
             _linkedDevicesState.value = try {
-                val result = authRepository.unlinkDevice(deviceId)
+                val result = authRepository.unlinkDevice(deviceId, resetSubscription)
                 if (result.isSuccess) {
                     _linkedDevicesState.value.copy(busyDeviceId = null)
                 } else {

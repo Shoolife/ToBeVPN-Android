@@ -712,6 +712,13 @@
     <string name="devices_type_tv">TV</string>
     <string name="devices_type_desktop">Desktop</string>
     <string name="devices_type_generic">Device</string>
+    <string name="devices_type_router">Router</string>
+    <string name="devices_unlink_title">Disconnect the device?</string>
+    <string name="devices_unlink_text">“%1$s” leaves the account and frees a place in the device limit.</string>
+    <string name="devices_unlink_confirm">Confirm</string>
+    <string name="reset_link_option">Reset the subscription link</string>
+    <string name="reset_link_option_on">To remove the device completely, reset the subscription link so it cannot connect with it again and come back.</string>
+    <string name="reset_link_option_off">The link stays the same: other VPN clients it is pasted into keep working.</string>
 
     <!-- Errors -->
     <string name="error_no_subscription">No subscription</string>

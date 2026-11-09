@@ -116,6 +116,8 @@ data class DeviceRegisterRequestDto(
 // Unlinks a device belonging to the current account.
 data class DeviceUnlinkRequestDto(
     @SerializedName("device_id") val deviceId: String,
+    // false keeps the subscription link; missing or true resets it.
+    @SerializedName("reset_subscription") val resetSubscription: Boolean? = null,
 )
 
 data class DeviceUnlinkResponseDto(
@@ -126,6 +128,8 @@ data class DeviceUnlinkResponseDto(
     @SerializedName("linked_devices_updated") val linkedDevicesUpdated: Int? = null,
     @SerializedName("current_plan") val currentPlan: CurrentPlanSnapshotDto? = null,
     val subscription: CurrentPlanSubscriptionDto? = null,
+    // false when the link was kept (reset_subscription = false).
+    @SerializedName("subscription_link_reset") val subscriptionLinkReset: Boolean? = null,
 )
 
 data class LinkedDeviceDto(

@@ -726,6 +726,13 @@
     <string name="devices_type_tv">TV</string>
     <string name="devices_type_desktop">ПК</string>
     <string name="devices_type_generic">Устройство</string>
+    <string name="devices_type_router">Роутер</string>
+    <string name="devices_unlink_title">Отключить устройство?</string>
+    <string name="devices_unlink_text">«%1$s» выйдет из аккаунта и освободит место в лимите устройств.</string>
+    <string name="devices_unlink_confirm">Подтвердить</string>
+    <string name="reset_link_option">Сбросить ссылку подписки</string>
+    <string name="reset_link_option_on">Чтобы полноценно удалить устройство, нужно сбросить ссылку подписки, чтобы оно не могло снова по ней подключиться и добавиться обратно.</string>
+    <string name="reset_link_option_off">Ссылка останется прежней: сторонние VPN-клиенты, куда она вставлена, продолжат работать.</string>
 
     <!-- Errors -->
     <string name="error_no_subscription">Нет подписки</string>

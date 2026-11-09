@@ -413,11 +413,21 @@ class AuthRepository @Inject constructor(
         return this is HttpException && (code() == 401 || code() == 403)
     }
 
-    suspend fun unlinkDevice(deviceId: String): Result<Unit> {
+    /**
+     * Takes a device off the account. With [resetSubscription] (the default,
+     * as before) the subscription link changes, so the removed device cannot
+     * keep using it; without it the link stays and the VPN does not reconnect.
+     */
+    suspend fun unlinkDevice(deviceId: String, resetSubscription: Boolean = true): Result<Unit> {
         return try {
             val currentDeviceAliases = getCurrentDeviceAliases()
             val response = withFreshDeviceSessionRetry {
-                botApi.unlinkDevice(DeviceUnlinkRequestDto(deviceId = deviceId))
+                botApi.unlinkDevice(
+                    DeviceUnlinkRequestDto(
+                        deviceId = deviceId,
+                        resetSubscription = resetSubscription,
+                    ),
+                )
             }
             if (!response.success) {
                 Result.failure(IllegalStateException(response.message ?: "Could not unlink device"))
@@ -426,7 +436,8 @@ class AuthRepository @Inject constructor(
                 if (isCurrentDevice) {
                     clearLinkedIdentity()
                 } else {
-                    refreshAfterDeviceUnlink(response.data)
+                    val linkReset = response.data?.subscriptionLinkReset ?: resetSubscription
+                    refreshAfterDeviceUnlink(response.data, linkReset)
                 }
                 Result.success(Unit)
             }
@@ -435,7 +446,7 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    private suspend fun refreshAfterDeviceUnlink(data: DeviceUnlinkResponseDto?) {
+    private suspend fun refreshAfterDeviceUnlink(data: DeviceUnlinkResponseDto?, linkReset: Boolean) {
         val oldShortUuid = sessionDao.getSession()?.shortUuid
         runCatching { bootstrapManager.bootstrap() }
 
@@ -473,7 +484,8 @@ class AuthRepository @Inject constructor(
         prefsDataStore.clearSubscriptionSyncTimestamp()
         runCatching { syncSubscription(force = true) }
         runCatching { vpnRepository.refreshServers(forceRefresh = true) }
-        _subscriptionResetEvents.tryEmit(Unit)
+        // A kept link leaves the running VPN as it is.
+        if (linkReset) _subscriptionResetEvents.tryEmit(Unit)
     }
 
     suspend fun syncDeviceSessionState(): Result<Boolean> {

@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -47,6 +48,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -73,6 +75,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,6 +92,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -367,7 +371,9 @@ fun AdvancedScreen(
             onRefresh = { viewModel.refreshLinkedDevices() },
             onScanQr = startDeviceQrScan,
             onEnterCode = { showPairingCodeInput = true },
-            onDisconnect = { viewModel.disconnectDevice(it) },
+            onDisconnect = { deviceId, resetSubscription ->
+                viewModel.disconnectDevice(deviceId, resetSubscription)
+            },
             onClearError = { viewModel.clearLinkedDevicesError() },
         )
     }
@@ -890,10 +896,26 @@ private fun LinkedDevicesBottomSheet(
     onRefresh: () -> Unit,
     onScanQr: () -> Unit,
     onEnterCode: () -> Unit,
-    onDisconnect: (String) -> Unit,
+    onDisconnect: (deviceId: String, resetSubscription: Boolean) -> Unit,
     onClearError: () -> Unit,
 ) {
     val sheetState = rememberResistantModalBottomSheetState()
+    // The device whose "Disconnect" was tapped: asked first, with the
+    // choice to reset the subscription link.
+    var confirmingDevice by remember { mutableStateOf<LinkedDeviceDto?>(null) }
+    val askDisconnect: (String) -> Unit = { deviceId ->
+        confirmingDevice = state.devices.firstOrNull { it.deviceId == deviceId }
+    }
+    confirmingDevice?.let { device ->
+        UnlinkDeviceDialog(
+            deviceName = deviceTitle(device),
+            onConfirm = { resetSubscription ->
+                confirmingDevice = null
+                onDisconnect(device.deviceId, resetSubscription)
+            },
+            onDismiss = { confirmingDevice = null },
+        )
+    }
     val devicesCount = state.currentCount ?: state.devices.size
     val currentDevice = state.devices.firstOrNull {
         it.matchesDeviceAliases(state.currentDeviceAliases)
@@ -1191,7 +1213,7 @@ private fun LinkedDevicesBottomSheet(
                                 device = device,
                                 isCurrent = true,
                                 isBusy = false,
-                                onDisconnect = onDisconnect,
+                                onDisconnect = askDisconnect,
                             )
                             Spacer(modifier = Modifier.height(20.dp))
                         }
@@ -1253,7 +1275,7 @@ private fun LinkedDevicesBottomSheet(
                                                 device = device,
                                                 isCurrent = false,
                                                 isBusy = state.busyDeviceId == device.deviceId,
-                                                onDisconnect = onDisconnect,
+                                                onDisconnect = askDisconnect,
                                             )
                                         }
                                     }
@@ -1549,6 +1571,7 @@ private fun deviceTitle(device: LinkedDeviceDto): String {
         DeviceKind.Tv -> stringResource(R.string.devices_type_tv)
         DeviceKind.Desktop -> stringResource(R.string.devices_type_desktop)
         DeviceKind.Phone -> stringResource(R.string.devices_type_phone)
+        DeviceKind.Router -> stringResource(R.string.devices_type_router)
         DeviceKind.Generic -> stringResource(R.string.devices_type_generic)
     }
     // With personal data hidden the user-given device name (often the
@@ -1573,6 +1596,7 @@ private fun deviceSubtitle(device: LinkedDeviceDto): String {
         DeviceKind.Tv -> stringResource(R.string.devices_type_tv)
         DeviceKind.Desktop -> stringResource(R.string.devices_type_desktop)
         DeviceKind.Phone -> stringResource(R.string.devices_type_phone)
+        DeviceKind.Router -> stringResource(R.string.devices_type_router)
         DeviceKind.Generic -> stringResource(R.string.devices_type_generic)
     }
     val platform = device.platform?.takeIf { it.isNotBlank() }
@@ -1583,6 +1607,7 @@ private enum class DeviceKind {
     Phone,
     Desktop,
     Tv,
+    Router,
     Generic,
 }
 
@@ -1592,6 +1617,11 @@ private fun LinkedDeviceDto.inferredKind(): DeviceKind {
     val type = deviceType?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
     val platform = platform?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
     val userAgent = userAgent?.trim()?.lowercase(java.util.Locale.ROOT).orEmpty()
+    // A home router with ToBeVPN fetches its subscription with a "/router/"
+    // User-Agent and OpenWrt as its OS.
+    if (type == "router" || userAgent.contains("/router/") || platform == "openwrt") {
+        return DeviceKind.Router
+    }
     if (type == "tv" || platform == "android tv" || userAgent.contains("/androidtv/")) {
         return DeviceKind.Tv
     }
@@ -1855,5 +1885,139 @@ private fun settingsInputFieldColors() = if (isSystemInDarkTheme()) {
         unfocusedTextColor = Color.Black,
         focusedTrailingIconColor = Color(0xFF3F3F3F),
         unfocusedTrailingIconColor = Color(0xFF5F5F5F),
+    )
+}
+
+/**
+ * Asks before a device leaves the account, with "Reset the subscription
+ * link" on by default: a removed device that kept the link could otherwise
+ * connect with it again and come back.
+ */
+@Composable
+private fun UnlinkDeviceDialog(
+    deviceName: String,
+    onConfirm: (resetSubscription: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val darkTheme = LocalAppDarkTheme.current
+    val dialogShape = RoundedCornerShape(28.dp)
+    var resetLink by rememberSaveable { mutableStateOf(true) }
+    AppAlertDialog(
+        modifier = Modifier.border(
+            width = 1.dp,
+            color = if (darkTheme) Color.White.copy(alpha = 0.16f) else Color.Black.copy(alpha = 0.18f),
+            shape = dialogShape,
+        ),
+        onDismissRequest = onDismiss,
+        shape = dialogShape,
+        containerColor = if (darkTheme) {
+            MaterialTheme.colorScheme.surfaceContainer
+        } else {
+            MaterialTheme.colorScheme.surface
+        },
+        icon = {
+            Icon(
+                imageVector = Icons.Default.LinkOff,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+            )
+        },
+        title = {
+            Text(
+                text = stringResource(R.string.devices_unlink_title),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    text = stringResource(R.string.devices_unlink_text, deviceName),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                        .toggleable(
+                            value = resetLink,
+                            role = Role.Checkbox,
+                            onValueChange = { resetLink = it },
+                        )
+                        .padding(end = 14.dp, bottom = 12.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Checkbox(
+                        checked = resetLink,
+                        onCheckedChange = null,
+                        modifier = Modifier.padding(12.dp),
+                    )
+                    Column(modifier = Modifier.padding(top = 12.dp)) {
+                        Text(
+                            text = stringResource(R.string.reset_link_option),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = stringResource(
+                                if (resetLink) R.string.reset_link_option_on else R.string.reset_link_option_off,
+                            ),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp),
+                    shape = RoundedCornerShape(13.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.cancel),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Button(
+                    onClick = { onConfirm(resetLink) },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(46.dp),
+                    shape = RoundedCornerShape(13.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.devices_unlink_confirm),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        },
+        dismissButton = {},
     )
 }
