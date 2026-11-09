@@ -89,6 +89,7 @@ class RouterViewModel @Inject constructor(
 
     private fun load(initial: Boolean) {
         viewModelScope.launch {
+            val startedAt = android.os.SystemClock.elapsedRealtime()
             _state.update { it.copy(refreshing = !initial, error = null) }
             val here = repository.linkHere()
             _state.update { it.copy(checking = here != null && it.status == null, paired = here != null) }
@@ -106,6 +107,12 @@ class RouterViewModel @Inject constructor(
                 }
             }
             val info = detection.await()
+            // A refresh that answers at once still shows one full turn of
+            // its icon, as on PC (and the devices list).
+            if (!initial) {
+                val left = MIN_REFRESH_FEEDBACK_MS - (android.os.SystemClock.elapsedRealtime() - startedAt)
+                if (left > 0) kotlinx.coroutines.delay(left)
+            }
             _state.update {
                 it.copy(info = info, link = repository.link.value, loading = false, checking = false, refreshing = false)
             }
@@ -254,6 +261,8 @@ class RouterViewModel @Inject constructor(
     }
 
     companion object {
+        private const val MIN_REFRESH_FEEDBACK_MS = 900L
+
         fun deviceLabel(device: RouterDevice): String =
             device.name ?: device.hostname ?: device.mac.uppercase()
     }
