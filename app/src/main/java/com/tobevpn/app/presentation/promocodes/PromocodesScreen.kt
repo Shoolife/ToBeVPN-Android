@@ -94,6 +94,7 @@ import com.tobevpn.app.presentation.components.SpinningRefreshIcon
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.lazyScrollCues
 import com.tobevpn.app.presentation.components.startEdgeFade
 import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.AppAlertDialog
@@ -396,8 +397,11 @@ private fun PromocodeContent(
                 }
             }
         } else {
+            val promocodesListState = rememberLazyListState()
             LazyColumn(
+                state = promocodesListState,
                 modifier = Modifier
+                    .lazyScrollCues(promocodesListState)
                     .fillMaxSize()
                     .widthIn(max = pageMaxWidth),
                 contentPadding = PaddingValues(

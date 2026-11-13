@@ -168,6 +168,7 @@ import com.tobevpn.app.presentation.components.startEdgeFade
 import com.tobevpn.app.presentation.components.subscriptionExpiryMillisLeft
 import com.tobevpn.app.presentation.components.subscriptionExpiryUrgency
 import com.tobevpn.app.presentation.components.verticalFadingEdges
+import com.tobevpn.app.presentation.components.verticalScrollWithCues
 import com.tobevpn.app.presentation.components.withSmallerEmoji
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.AppScaledContent
@@ -546,7 +547,7 @@ fun MainScreen(
                             modifier = Modifier
                                 .widthIn(max = tabletDetailsMaxWidth)
                                 .fillMaxWidth()
-                                .verticalScroll(rememberScrollState())
+                                .verticalScrollWithCues(rememberScrollState())
                                 .padding(vertical = 16.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
@@ -597,7 +598,7 @@ fun MainScreen(
             modifier = Modifier
                 .widthIn(max = pageMaxWidth)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
+                .verticalScrollWithCues(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (showTemporaryAccessBanner) {

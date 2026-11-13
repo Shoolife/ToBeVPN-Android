@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -107,6 +108,7 @@ import com.tobevpn.app.presentation.components.LocalPersonalDataHidden
 import com.tobevpn.app.presentation.components.PERSONAL_DATA_MASK
 import com.tobevpn.app.presentation.components.SpinningRefreshIcon
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.lazyScrollCues
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.VpnBlue
@@ -277,8 +279,11 @@ private fun ReferralContent(
         modifier = modifier,
         contentAlignment = Alignment.TopCenter,
     ) {
+        val referralsListState = rememberLazyListState()
         LazyColumn(
+            state = referralsListState,
             modifier = Modifier
+                .lazyScrollCues(referralsListState)
                 .fillMaxSize()
                 .widthIn(max = pageMaxWidth),
             contentPadding = PaddingValues(
@@ -918,8 +923,11 @@ private fun InvitedFriendsBottomSheet(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+            val rewardsListState = rememberLazyListState()
             LazyColumn(
+                state = rewardsListState,
                 modifier = Modifier
+                    .lazyScrollCues(rewardsListState)
                     .fillMaxWidth()
                     .heightIn(max = 560.dp),
                 contentPadding = PaddingValues(

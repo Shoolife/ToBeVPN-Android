@@ -3,6 +3,7 @@ package com.tobevpn.app.presentation.components
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -13,6 +14,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
@@ -20,8 +22,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -175,4 +180,53 @@ private fun edgeFraction(distancePx: Float, fadePx: Float): Float = when {
     distancePx <= 0f -> 0f
     fadePx <= 0f -> 1f
     else -> (distancePx / fadePx).coerceIn(0f, 1f)
+}
+
+private val EDGE_ARROW_SIZE = 22.dp
+private val EDGE_ARROW_INSET = 2.dp
+
+/**
+ * [verticalScroll] with the shared edge cues: the content fades out at an
+ * edge that has more of it, and a small arrow shows there. One modifier, so
+ * any scrolling column gets the same cues as the lists that have them.
+ */
+internal fun Modifier.verticalScrollWithCues(state: ScrollState): Modifier = composed {
+    val top = state.startEdgeFade()
+    val bottom = state.endEdgeFade()
+    this
+        .edgeArrows(top, bottom)
+        .verticalFadingEdges(topAlpha = top, bottomAlpha = bottom, fadeHeight = EDGE_FADE_LENGTH)
+        .verticalScroll(state)
+}
+
+/** The same cues for a lazy list; put it on the list's modifier with its [state]. */
+internal fun Modifier.lazyScrollCues(state: LazyListState): Modifier = composed {
+    val top = state.startEdgeFade()
+    val bottom = state.endEdgeFade()
+    this
+        .edgeArrows(top, bottom)
+        .verticalFadingEdges(topAlpha = top, bottomAlpha = bottom, fadeHeight = EDGE_FADE_LENGTH)
+}
+
+/** Arrows drawn over the faded content (outside its mask), centred at the edges. */
+private fun Modifier.edgeArrows(topAlpha: Float, bottomAlpha: Float): Modifier = composed {
+    val up = rememberVectorPainter(Icons.Filled.KeyboardArrowUp)
+    val down = rememberVectorPainter(Icons.Filled.KeyboardArrowDown)
+    val tint = ColorFilter.tint(MaterialTheme.colorScheme.onSurfaceVariant)
+    drawWithContent {
+        drawContent()
+        val side = EDGE_ARROW_SIZE.toPx()
+        val inset = EDGE_ARROW_INSET.toPx()
+        val left = (size.width - side) / 2f
+        if (topAlpha > 0f) {
+            translate(left, inset) {
+                with(up) { draw(Size(side, side), alpha = topAlpha.coerceIn(0f, 1f), colorFilter = tint) }
+            }
+        }
+        if (bottomAlpha > 0f) {
+            translate(left, size.height - side - inset) {
+                with(down) { draw(Size(side, side), alpha = bottomAlpha.coerceIn(0f, 1f), colorFilter = tint) }
+            }
+        }
+    }
 }

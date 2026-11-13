@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -52,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.tobevpn.app.R
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.lazyScrollCues
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.util.DiagnosticLogFileInfo
@@ -123,8 +125,11 @@ internal fun DiagnosticLogHistoryBottomSheet(
                         DiagnosticLogHistoryEmptyState()
                     }
                     else -> {
+                        val logsListState = rememberLazyListState()
                         LazyColumn(
+                            state = logsListState,
                             modifier = Modifier
+                                .lazyScrollCues(logsListState)
                                 .fillMaxWidth()
                                 .heightIn(max = 560.dp),
                             contentPadding = PaddingValues(

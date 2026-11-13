@@ -1,7 +1,5 @@
 package com.tobevpn.app.presentation.settings
 
-import com.tobevpn.app.billing.LocalExternalPurchasesAllowed
-import com.tobevpn.app.billing.paymentUnavailableMessage
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -43,13 +41,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Logout
+import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.GroupAdd
-import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.SettingsBackupRestore
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -66,10 +64,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -100,23 +98,26 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
-import kotlinx.coroutines.delay
-import java.io.File
+import com.tobevpn.app.billing.LocalExternalPurchasesAllowed
+import com.tobevpn.app.billing.paymentUnavailableMessage
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ProfileNameDisplay
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.presentation.components.LocalPersonalDataHidden
 import com.tobevpn.app.presentation.components.PERSONAL_DATA_MASK
-import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.SubscriptionExpiryUrgency
+import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.subscriptionExpiryUrgency
+import com.tobevpn.app.presentation.components.verticalScrollWithCues
+import com.tobevpn.app.presentation.components.withSmallerEmoji
 import com.tobevpn.app.presentation.theme.AppScaledContent
+import com.tobevpn.app.presentation.theme.SettingsTransferAccent
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.presentation.theme.VpnOrange
 import com.tobevpn.app.presentation.theme.VpnRed
-import com.tobevpn.app.presentation.theme.SettingsTransferAccent
-import com.tobevpn.app.presentation.components.withSmallerEmoji
+import java.io.File
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -179,7 +180,7 @@ fun SettingsScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
                     .padding(horizontal = 16.dp)
-                    .verticalScroll(rememberScrollState()),
+                    .verticalScrollWithCues(rememberScrollState()),
             ) {
                 AccountCard(
                     authState = authState,

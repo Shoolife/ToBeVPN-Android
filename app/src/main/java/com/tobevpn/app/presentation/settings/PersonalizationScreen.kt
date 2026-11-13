@@ -33,9 +33,9 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AspectRatio
-import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Badge
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Remove
@@ -91,7 +91,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.data.repository.CurrentSubscriptionPlanInfo
-import com.tobevpn.app.domain.model.ServerListView
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
 import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
@@ -100,6 +99,7 @@ import com.tobevpn.app.domain.model.INTERFACE_SCALE_STEP
 import com.tobevpn.app.domain.model.MAX_INTERFACE_SCALE
 import com.tobevpn.app.domain.model.MIN_INTERFACE_SCALE
 import com.tobevpn.app.domain.model.ProfileNameDisplay
+import com.tobevpn.app.domain.model.ServerListView
 import com.tobevpn.app.domain.model.ThemeMode
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.domain.model.normalizeFontScale
@@ -109,6 +109,7 @@ import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.horizontalFadingEdges
 import com.tobevpn.app.presentation.components.startEdgeFade
+import com.tobevpn.app.presentation.components.verticalScrollWithCues
 import com.tobevpn.app.presentation.main.SubscriptionCurrentPlanCard
 import com.tobevpn.app.presentation.servers.ServerListScalePreview
 import com.tobevpn.app.presentation.theme.AppAlertDialog
@@ -167,7 +168,7 @@ fun PersonalizationScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScrollWithCues(rememberScrollState()),
         ) {
             SelectionCard(
                 icon = Icons.Filled.Language,
@@ -380,7 +381,7 @@ fun DisplayScaleTextScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScrollWithCues(rememberScrollState()),
         ) {
             DisplaySettingsPreview(
                 authState = authState,

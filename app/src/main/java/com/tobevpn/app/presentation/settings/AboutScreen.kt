@@ -80,6 +80,7 @@ import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.startEdgeFade
 import com.tobevpn.app.presentation.components.verticalFadingEdges
+import com.tobevpn.app.presentation.components.verticalScrollWithCues
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.update.SettingsUpdateCheckRow
 import com.tobevpn.app.util.DiagnosticLogState
@@ -201,7 +202,7 @@ fun AboutScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScrollWithCues(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Spacer(modifier = Modifier.height(24.dp))

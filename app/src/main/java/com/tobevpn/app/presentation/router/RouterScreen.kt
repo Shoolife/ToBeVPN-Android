@@ -1,7 +1,11 @@
 package com.tobevpn.app.presentation.router
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -92,6 +96,7 @@ import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.countryFlagForUi
 import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.lazyScrollCues
 import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
 import com.tobevpn.app.presentation.components.serverDisplayName
 import com.tobevpn.app.presentation.components.startEdgeFade
@@ -183,6 +188,12 @@ fun RouterScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (!contentShown) return@LazyColumn
+            // A refresh shows pulsing placeholders of the same shape until the
+            // router answers, as on PC and in the devices list.
+            if (state.refreshing) {
+                item { RouterSkeleton(installed = state.paired && status?.installed == true) }
+                return@LazyColumn
+            }
             val installed = state.paired && status?.installed == true
             if (!installed && !state.checking) {
                 item { StatusText(state) }
@@ -685,7 +696,8 @@ private fun ServerSheet(
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                 )
             }
-            LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
+            val serversListState = rememberLazyListState()
+            LazyColumn(state = serversListState, modifier = Modifier.lazyScrollCues(serversListState), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
                 item {
                     SheetRow(
                         flag = null,
@@ -1006,6 +1018,50 @@ private fun ResetLinkRow(checked: Boolean, onChange: (Boolean) -> Unit) {
                 style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun RouterSkeleton(installed: Boolean) {
+    val transition = rememberInfiniteTransition(label = "router-refresh")
+    val pulse by transition.animateFloat(
+        initialValue = 0.42f,
+        targetValue = 0.9f,
+        animationSpec = infiniteRepeatable(animation = tween(720), repeatMode = RepeatMode.Reverse),
+        label = "router-placeholder-alpha",
+    )
+    val line = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.14f)
+    @Composable
+    fun panel(rows: Int) {
+        RouterCard {
+            Column(
+                Modifier.padding(16.dp).graphicsLayer { alpha = pulse },
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                repeat(rows) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Box(Modifier.fillMaxWidth(0.6f).height(16.dp).clip(RoundedCornerShape(6.dp)).background(line))
+                            Spacer(Modifier.height(7.dp))
+                            Box(Modifier.fillMaxWidth(0.4f).height(13.dp).clip(RoundedCornerShape(6.dp)).background(line))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Box(Modifier.width(120.dp).height(36.dp).clip(CircleShape).background(line))
+                    }
+                }
+            }
+        }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (installed) {
+            SectionTitle(stringResource(R.string.router_home_network_section))
+            panel(3)
+            SectionTitle(stringResource(R.string.router_controls_section))
+            panel(2)
+        } else {
+            SectionTitle(stringResource(R.string.router_vpn_section))
+            panel(2)
         }
     }
 }

@@ -5,6 +5,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -55,7 +57,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -67,10 +68,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.data.local.dao.TrafficStat
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
-import com.tobevpn.app.presentation.theme.rememberAppWindowAdaptiveLayout
-import com.tobevpn.app.presentation.theme.responsiveMaxWidth
+import com.tobevpn.app.presentation.components.lazyScrollCues
 import com.tobevpn.app.presentation.theme.VpnBlue
 import com.tobevpn.app.presentation.theme.VpnGreen
+import com.tobevpn.app.presentation.theme.rememberAppWindowAdaptiveLayout
+import com.tobevpn.app.presentation.theme.responsiveMaxWidth
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -230,8 +232,10 @@ fun StatsScreen(
                     val maxRowBytes = remember(stats) {
                         stats.maxOf { it.totalBytes }.coerceAtLeast(1L)
                     }
+                    val statsListState = rememberLazyListState()
                     LazyColumn(
-                        modifier = Modifier.weight(1f),
+                        state = statsListState,
+                        modifier = Modifier.weight(1f).lazyScrollCues(statsListState),
                     ) {
                         items(stats) { stat ->
                             EnhancedStatRow(stat = stat, period = period, maxBytes = maxRowBytes)
