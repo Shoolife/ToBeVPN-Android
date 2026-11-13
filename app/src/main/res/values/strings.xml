@@ -926,4 +926,9 @@
     <string name="router_update_done_title">The VPN on the router is updated</string>
     <string name="router_update_done_text">The router runs the new versions of its components; every setting is in place.</string>
     <string name="router_update_sites">Russian sites list</string>
+    <string name="router_rename_hint">Rename the router</string>
+    <string name="router_rename_title">Router name</string>
+    <string name="router_rename_save">Save</string>
+    <string name="router_name_placeholder">For example, Home or Cottage</string>
+    <string name="router_rename_explain">The name is kept on the router itself: every ToBeVPN app connected to it shows it. An empty field brings back the router\'s model.</string>
 </resources>

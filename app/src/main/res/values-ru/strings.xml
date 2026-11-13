@@ -940,4 +940,9 @@
     <string name="router_update_done_title">VPN на роутере обновлён</string>
     <string name="router_update_done_text">Роутер работает на новых версиях компонентов, все настройки на месте.</string>
     <string name="router_update_sites">Список российских сайтов</string>
+    <string name="router_rename_hint">Переименовать роутер</string>
+    <string name="router_rename_title">Название роутера</string>
+    <string name="router_rename_save">Сохранить</string>
+    <string name="router_name_placeholder">Например, Дом или Дача</string>
+    <string name="router_rename_explain">Название хранится на самом роутере: его увидят все приложения ToBeVPN, подключённые к нему. Пустое поле вернёт модель роутера.</string>
 </resources>

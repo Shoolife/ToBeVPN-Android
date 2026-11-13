@@ -94,6 +94,8 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.repeatOnLifecycle
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -177,6 +179,8 @@ fun RouterScreen(
             while (true) {
                 kotlinx.coroutines.delay(TRAFFIC_EVERY_MS)
                 viewModel.refreshTraffic(maxAgeMs = TRAFFIC_EVERY_MS - 5_000L)
+                // A name or state changed on PC shows here within a minute.
+                viewModel.refreshStatusQuietly()
             }
         }
     }
@@ -184,6 +188,7 @@ fun RouterScreen(
         if (notInstalled && state.servers.isNotEmpty()) viewModel.ensureInstallServer()
     }
     var pickingInstallServer by remember { mutableStateOf(false) }
+    var renaming by rememberSaveable { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -252,7 +257,9 @@ fun RouterScreen(
         if (!state.loading) Column(Modifier.fillMaxSize().graphicsLayer { alpha = headerAlpha }) {
         // A gap under the router card: the list's upper edge (its fade and
         // arrow) starts below it rather than against it.
-        Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)) { RouterHeader(state) }
+        Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)) {
+            RouterHeader(state, onRename = { renaming = true })
+        }
         // Fades and arrows at the edges with more content, as on the other
         // screens; they follow the scroll over the fade's height.
         // A change of what the screen is about (connecting, checking,
@@ -363,6 +370,16 @@ fun RouterScreen(
         }
     }
 
+    if (renaming) {
+        RenameDialog(
+            current = state.status?.name.orEmpty(),
+            model = state.info?.model,
+            busy = state.busy,
+            onSave = { name -> viewModel.rename(name) { renaming = false } },
+            onClose = { renaming = false },
+        )
+    }
+
     state.updating?.let { updating ->
         UpdateDialog(ui = updating, onConfirm = viewModel::runUpdate, onClose = viewModel::closeUpdate)
     }
@@ -411,7 +428,7 @@ fun RouterScreen(
 // --------------------------------------------------------------- header ---
 
 @Composable
-private fun RouterHeader(state: RouterUiState) {
+private fun RouterHeader(state: RouterUiState, onRename: () -> Unit) {
     val info = state.info
     val status = state.status
     val title = status?.name ?: state.link?.name?.takeIf { state.paired }
@@ -439,13 +456,35 @@ private fun RouterHeader(state: RouterUiState) {
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                // As on PC: with ToBeVPN on it, the name is tapped to rename
+                // the router (for every app connected to it).
+                val renamable = state.paired && status?.installed == true
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = if (renamable) {
+                        Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = !state.busy, onClick = onRename)
+                    } else {
+                        Modifier
+                    },
+                ) {
+                    Text(
+                        title,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (renamable) {
+                        Spacer(Modifier.width(6.dp))
+                        Icon(
+                            Icons.Outlined.Edit,
+                            contentDescription = stringResource(R.string.router_rename_hint),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(15.dp),
+                        )
+                    }
+                }
                 if (meta.isNotEmpty()) {
                     Text(
                         meta,
@@ -1148,6 +1187,67 @@ private fun SectionTitle(text: String) {
  * Removing ToBeVPN, as on PC: a question with "Reset the subscription
  * link", then each step with its spinner, then the result, in one dialog.
  */
+/** The router's name, kept on the router: every app connected to it shows it. */
+@Composable
+private fun RenameDialog(current: String, model: String?, busy: Boolean, onSave: (String) -> Unit, onClose: () -> Unit) {
+    val dark = LocalAppDarkTheme.current
+    var name by rememberSaveable { mutableStateOf(current) }
+    AppAlertDialog(
+        onDismissRequest = { if (!busy) onClose() },
+        shape = RoundedCornerShape(28.dp),
+        containerColor = if (dark) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface,
+        title = {
+            Text(
+                stringResource(R.string.router_rename_title),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(40) },
+                    placeholder = { Text(model ?: stringResource(R.string.router_name_placeholder)) },
+                    singleLine = true,
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    stringResource(R.string.router_rename_explain),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = onClose,
+                    enabled = !busy,
+                    shape = RoundedCornerShape(13.dp),
+                    modifier = Modifier.weight(1f).height(46.dp),
+                ) { Text(stringResource(R.string.cancel)) }
+                Button(
+                    onClick = { onSave(name.trim()) },
+                    enabled = !busy,
+                    shape = RoundedCornerShape(13.dp),
+                    modifier = Modifier.weight(1f).height(46.dp),
+                ) {
+                    if (busy) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = LocalContentColor.current)
+                    } else {
+                        Text(stringResource(R.string.router_rename_save))
+                    }
+                }
+            }
+        },
+        dismissButton = {},
+    )
+}
+
 /** Newer components in the app than on the router: offered with a button, as on PC. */
 @Composable
 private fun UpdateBanner(update: com.tobevpn.app.router.RouterUpdate, enabled: Boolean, onUpdate: () -> Unit) {

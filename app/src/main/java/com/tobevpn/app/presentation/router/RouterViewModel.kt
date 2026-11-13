@@ -407,6 +407,32 @@ class RouterViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Reads the router's status again without any sign on screen, so a
+     * name or state changed from another device (the PC) shows up here too.
+     */
+    fun refreshStatusQuietly() {
+        val current = _state.value
+        if (!current.paired || current.busy || current.refreshing || current.updating != null) return
+        viewModelScope.launch {
+            val status = runCatching { repository.status() }.getOrNull() ?: return@launch
+            _state.update { if (it.busy) it else it.copy(status = status, link = repository.link.value) }
+        }
+    }
+
+    /** Renames the router; every app connected to it shows the new name. */
+    fun rename(name: String, onDone: () -> Unit) {
+        viewModelScope.launch {
+            _state.update { it.copy(busy = true, error = null) }
+            runRouter {
+                val status = repository.setName(name)
+                _state.update { it.copy(status = status, link = repository.link.value) }
+                onDone()
+            }
+            _state.update { it.copy(busy = false) }
+        }
+    }
+
     fun openUpdate() = _state.update { it.copy(updating = UpdateUi()) }
 
     fun closeUpdate() {

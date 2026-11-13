@@ -195,6 +195,16 @@ class RouterRepository @Inject constructor(
         return cache.optLong("fetchedAt") to RouterAgent.parseTraffic(text)
     }
 
+    /**
+     * Names the router, as on PC: the name lives on the router itself, so
+     * every app connected to it shows the same one. Empty brings the model back.
+     */
+    suspend fun setName(name: String): RouterStatus = withRouter { shell ->
+        val clean = name.filter { !it.isISOControl() && it !in "|\\\"`$" }.take(40).trim()
+        shell.runOk("${RouterAgent.SCRIPT} set-name '${RouterAgent.shellQuoteInner(clean)}'")
+        RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
+    }.also(::remember)
+
     suspend fun devices(): RouterNetwork = withRouter { shell ->
         val output = shell.runOk("${RouterAgent.SCRIPT} devices")
         RouterNetwork(RouterAgent.parseDevices(output), RouterAgent.parseSlots(output))
