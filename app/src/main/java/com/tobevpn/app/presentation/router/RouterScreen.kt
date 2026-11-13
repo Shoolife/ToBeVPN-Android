@@ -93,6 +93,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -145,6 +146,8 @@ import kotlinx.coroutines.launch
 
 private const val NOTICE_VISIBLE_MS = 6_000L
 
+private const val TRAFFIC_EVERY_MS = 60_000L
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RouterScreen(
@@ -163,6 +166,19 @@ fun RouterScreen(
     val notInstalled = state.paired && state.status?.installed == false && !state.refreshing
     LaunchedEffect(notInstalled) {
         if (notInstalled && state.install.check == null && !state.install.checking) viewModel.checkRouter()
+    }
+    // As on PC: while the screen is open, the traffic is read again every
+    // minute (the router counts by the minute, so never more often).
+    val routerRunsVpn = state.paired && state.status?.installed == true
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    LaunchedEffect(routerRunsVpn) {
+        if (!routerRunsVpn) return@LaunchedEffect
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            while (true) {
+                kotlinx.coroutines.delay(TRAFFIC_EVERY_MS)
+                viewModel.refreshTraffic(maxAgeMs = TRAFFIC_EVERY_MS - 5_000L)
+            }
+        }
     }
     LaunchedEffect(notInstalled, state.servers.isNotEmpty()) {
         if (notInstalled && state.servers.isNotEmpty()) viewModel.ensureInstallServer()
