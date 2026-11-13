@@ -2,12 +2,6 @@ package com.tobevpn.app.presentation.navigation
 
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.EnterExitState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -117,22 +111,6 @@ fun AppNavHost(
             navController = navController,
             startDestination = startDestination,
             modifier = modifier.fillMaxSize(),
-            // A steady shared-axis slide instead of the default 700 ms
-            // crossfade, where both screens showed through each other. The
-            // slow start of the curve also covers the new screen's first,
-            // heavier frame.
-            enterTransition = {
-                slideInHorizontally(screenMotion()) { it / 4 } + fadeIn(screenMotion())
-            },
-            exitTransition = {
-                slideOutHorizontally(screenMotion()) { -it / 8 } + fadeOut(screenMotion(SCREEN_FADE_OUT_MS))
-            },
-            popEnterTransition = {
-                slideInHorizontally(screenMotion()) { -it / 8 } + fadeIn(screenMotion())
-            },
-            popExitTransition = {
-                slideOutHorizontally(screenMotion()) { it / 4 } + fadeOut(screenMotion(SCREEN_FADE_OUT_MS))
-            },
         ) {
             screen<OnboardingRoute> {
                 OnboardingScreen(
@@ -365,9 +343,3 @@ private object NoHitShape : Shape {
         density: Density,
     ): Outline = Outline.Rectangle(Rect.Zero)
 }
-
-private const val SCREEN_MOTION_MS = 400
-private const val SCREEN_FADE_OUT_MS = 260
-
-private fun <T> screenMotion(durationMs: Int = SCREEN_MOTION_MS) =
-    tween<T>(durationMillis = durationMs, easing = FastOutSlowInEasing)
