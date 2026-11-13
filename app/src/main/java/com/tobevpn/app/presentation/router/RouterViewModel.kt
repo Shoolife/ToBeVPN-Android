@@ -322,11 +322,17 @@ class RouterViewModel @Inject constructor(
     }
 
     /** Pings the servers directly from home (the router sends them direct too). */
-    fun measurePings() {
+    fun measurePings(userRequested: Boolean = false) {
         if (_state.value.pinging) return
         viewModelScope.launch {
-            _state.update { it.copy(pinging = true) }
+            val startedAt = android.os.SystemClock.elapsedRealtime()
+            // A requested check starts from scratch, so every row shows it.
+            _state.update { it.copy(pinging = true, pings = if (userRequested) emptyMap() else it.pings) }
             val pings = runCatching { repository.pingServers(_state.value.servers) }.getOrDefault(emptyMap())
+            if (userRequested) {
+                val left = MIN_REFRESH_FEEDBACK_MS - (android.os.SystemClock.elapsedRealtime() - startedAt)
+                if (left > 0) kotlinx.coroutines.delay(left)
+            }
             _state.update { it.copy(pings = it.pings + pings, pinging = false) }
         }
     }

@@ -305,6 +305,7 @@ fun RouterScreen(
                 viewModel.choose(device, choice)
             },
             onDismiss = { picking = null },
+            onRefresh = { viewModel.measurePings(userRequested = true) },
         )
     }
 }
@@ -700,6 +701,7 @@ private fun ServerSheet(
     state: RouterUiState,
     onChoose: (String) -> Unit,
     onDismiss: () -> Unit,
+    onRefresh: () -> Unit,
 ) {
     val network = state.network ?: return
     val current = choiceServer(device, network, state.servers)?.id?.let { "server:$it" }
@@ -735,14 +737,27 @@ private fun ServerSheet(
         },
     ) {
         Column(Modifier.heightIn(max = maxHeight).navigationBarsPadding()) {
-            Text(
-                RouterViewModel.deviceLabel(device),
-                style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 24.dp),
-            )
+            // Title and the refresh, which checks every server's ping again
+            // (as the devices sheet's refresh reloads its list).
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(start = 24.dp, end = 12.dp),
+            ) {
+                Text(
+                    RouterViewModel.deviceLabel(device),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                IconButton(onClick = onRefresh) {
+                    SpinningRefreshIcon(
+                        spinning = state.pinging,
+                        contentDescription = stringResource(R.string.refresh),
+                    )
+                }
+            }
             if (!canAdd) {
                 Text(
                     stringResource(R.string.router_sheet_full, state.serverLimit),
