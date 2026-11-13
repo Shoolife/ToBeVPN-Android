@@ -1,6 +1,9 @@
 package com.tobevpn.app.presentation.router
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -97,9 +100,14 @@ private const val NOTICE_VISIBLE_MS = 6_000L
 @Composable
 fun RouterScreen(
     onBack: () -> Unit,
+    entered: Boolean = true,
     viewModel: RouterViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    // Everything below the router card is shown once the screen has come
+    // in, and fades in then: during the transition only the card is drawn.
+    var contentShown by rememberSaveable { mutableStateOf(false) }
+    if (entered) contentShown = true
     var picking by remember { mutableStateOf<RouterDevice?>(null) }
 
     Scaffold(
@@ -137,12 +145,21 @@ fun RouterScreen(
         }
         val status = state.status
         val network = state.network
+        val contentAlpha by animateFloatAsState(
+            targetValue = if (contentShown) 1f else 0f,
+            animationSpec = tween(360),
+            label = "router-content",
+        )
+        Column(Modifier.fillMaxSize().padding(padding)) {
+        Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) { RouterHeader(state) }
         LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 32.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = contentAlpha },
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item { RouterHeader(state) }
+            if (!contentShown) return@LazyColumn
             val installed = state.paired && status?.installed == true
             if (!installed && !state.checking) {
                 item { StatusText(state) }
@@ -194,6 +211,7 @@ fun RouterScreen(
                     }
                 }
             }
+        }
         }
     }
 

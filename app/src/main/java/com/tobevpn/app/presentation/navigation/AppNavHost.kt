@@ -219,6 +219,9 @@ fun AppNavHost(
             screen<RouterRoute> {
                 RouterScreen(
                     onBack = { navController.popBackStackOrRecover(startDestination) },
+                    // The screen fades in over 700 ms; its content waits for
+                    // the end, so nothing rebuilds in the middle of it.
+                    entered = !transition.isRunning,
                 )
             }
             screen<SupportRoute> {
