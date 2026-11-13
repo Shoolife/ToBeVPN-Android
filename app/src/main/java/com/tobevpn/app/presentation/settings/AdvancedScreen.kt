@@ -82,7 +82,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -109,7 +108,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
@@ -125,12 +123,14 @@ import com.tobevpn.app.domain.model.MAX_SERVER_PING_TIMEOUT_SECONDS
 import com.tobevpn.app.domain.model.MIN_SERVER_PING_TIMEOUT_SECONDS
 import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT
 import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_HEIGHT_FRACTION
+import com.tobevpn.app.presentation.components.InLayoutBottomSheet
 import com.tobevpn.app.presentation.components.LocalPersonalDataHidden
 import com.tobevpn.app.presentation.components.PERSONAL_DATA_MASK
 import com.tobevpn.app.presentation.components.SpinningRefreshIcon
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.rememberInLayoutSheetState
 import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
 import com.tobevpn.app.presentation.components.startEdgeFade
 import com.tobevpn.app.presentation.components.verticalFadingEdges
@@ -185,24 +185,10 @@ fun AdvancedScreen(
     val unsupportedQrText = stringResource(R.string.devices_unsupported_qr)
     val scannerUnavailableText = stringResource(R.string.devices_scanner_unavailable)
     val fallbackScanPrompt = stringResource(R.string.devices_scan_prompt)
-    var showDevicesSheet by remember { mutableStateOf(false) }
-    // Coming back from the Router section opens the devices list again, as
-    // Back from the router does on PC. Only once this screen is resumed: a
-    // back swipe draws it underneath while the finger moves, and the sheet,
-    // a window of its own, would pop up over everything at once.
-    var reopenDevicesSheet by rememberSaveable { mutableStateOf(false) }
-    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
-    LaunchedEffect(lifecycle) {
-        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
-            if (reopenDevicesSheet) {
-                reopenDevicesSheet = false
-                // One frame after the screen settled, so the sheet's own
-                // entrance does not share frames with the Back transition.
-                withFrameNanos { }
-                showDevicesSheet = true
-            }
-        }
-    }
+    // Saveable: the sheet is drawn inside this screen, so coming back from
+    // the Router section finds it open again, as Back from the router does
+    // on PC.
+    var showDevicesSheet by rememberSaveable { mutableStateOf(false) }
     var showPairingCodeInput by remember { mutableStateOf(false) }
 
     val linkedDevicesCount = linkedDevicesState.currentCount ?: linkedDevicesState.devices.size
@@ -414,10 +400,7 @@ fun AdvancedScreen(
             onClearError = { viewModel.clearLinkedDevicesError() },
             routerHere = routerHere,
             routerLink = routerLink,
-            onOpenRouter = {
-                reopenDevicesSheet = true
-                onNavigateToRouter()
-            },
+            onOpenRouter = onNavigateToRouter,
         )
     }
 
@@ -945,8 +928,7 @@ private fun LinkedDevicesBottomSheet(
     routerLink: RouterLink? = null,
     onOpenRouter: () -> Unit = {},
 ) {
-    val sheetState = rememberResistantModalBottomSheetState()
-    val sheetScope = rememberCoroutineScope()
+    val sheetState = rememberInLayoutSheetState()
     // The device whose "Disconnect" was tapped: asked first, with the
     // choice to reset the subscription link.
     var confirmingDevice by remember { mutableStateOf<LinkedDeviceDto?>(null) }
@@ -1102,17 +1084,18 @@ private fun LinkedDevicesBottomSheet(
         label = "DevicesSheetContentOffset",
     )
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
+    InLayoutBottomSheet(
+        state = sheetState,
+        onDismiss = onDismiss,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         dragHandle = {
             AppScaledContent {
-                BottomSheetDefaults.DragHandle()
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    BottomSheetDefaults.DragHandle()
+                }
             }
         },
         containerColor = sheetContainerColor,
-        contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {
         val modalDensity = LocalDensity.current
         val sheetBodyHeight = with(modalDensity) {
@@ -1317,12 +1300,9 @@ private fun LinkedDevicesBottomSheet(
                                     // The sheet slides away first, then the Router
                                     // section comes in; it slides back on return.
                                     onClick = {
-                                        // The sheet slides down, and the Router
-                                        // screen comes in right after it.
-                                        sheetScope.launch {
-                                            sheetState.hide()
-                                            onOpenRouter()
-                                        }
+                                        // The sheet is part of this screen: it
+                                        // leaves with it and is there on return.
+                                        onOpenRouter()
                                     },
                                 )
                             }
