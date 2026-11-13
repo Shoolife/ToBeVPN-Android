@@ -124,3 +124,15 @@ class RouterDetector @Inject constructor(
         }
     }
 }
+
+/**
+ * The account lists a router by the model it reports itself, which can be
+ * written differently from its login page ("SNR SNR-CPE-AX2" against
+ * "SNR-CPE-AX2"): compared by letters and digits, one within the other.
+ */
+fun sameRouterModel(listed: String?, here: String?): Boolean {
+    fun norm(value: String?) = value.orEmpty().lowercase().filter { it in 'a'..'z' || it in '0'..'9' }
+    val a = norm(listed)
+    val b = norm(here)
+    return a.length >= 3 && b.length >= 3 && (a.contains(b) || b.contains(a))
+}

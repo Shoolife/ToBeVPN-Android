@@ -159,7 +159,7 @@ class RouterViewModel @Inject constructor(
             }
             val info = detection.await()
             val models = accountRouters.await()
-            val installedByAnother = info.model != null && models.any { it.equals(info.model, ignoreCase = true) }
+            val installedByAnother = models.any { com.tobevpn.app.router.sameRouterModel(it, info.model) }
             _state.update { it.copy(installedByAnother = installedByAnother) }
             // A refresh that answers at once still shows one full turn of
             // its icon, as on PC (and the devices list).
