@@ -103,7 +103,16 @@ class RouterSsh @Inject constructor(
         jsch.addIdentity(keyComment, keyFileBytes(), null, null)
         val session = jsch.getSession(user, host, 22).apply { configure(network) }
         try {
-            connect(session)
+            try {
+                connect(session)
+            } catch (error: RouterException) {
+                // With the app's key there is no password to get wrong: the
+                // router no longer takes the key (removed from it).
+                if (error.message == "wrong router login or password") {
+                    throw RouterException("router rejected the app key", error)
+                }
+                throw error
+            }
             block(RouterShell(session))
         } finally {
             session.disconnect()

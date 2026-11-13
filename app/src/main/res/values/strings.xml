@@ -931,4 +931,5 @@
     <string name="router_rename_save">Save</string>
     <string name="router_name_placeholder">For example, Home or Cottage</string>
     <string name="router_rename_explain">The name is kept on the router itself: every ToBeVPN app connected to it shows it. An empty field brings back the router\'s model.</string>
+    <string name="router_reconnect_description">The phone lost access to the router. Connect it again — the router password is needed once. If the VPN already works on the router, it stays as it is and can be managed from here.</string>
 </resources>

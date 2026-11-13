@@ -70,6 +70,12 @@ data class RouterUiState(
     val update: com.tobevpn.app.router.RouterUpdate? = null,
     /** The update dialog, while it is open. */
     val updating: UpdateUi? = null,
+    /**
+     * The router no longer takes this phone's key (removed from it, e.g.
+     * when ToBeVPN was removed or reinstalled from another device): it is
+     * connected again with its password, as on PC.
+     */
+    val accessLost: Boolean = false,
 ) {
     data class Notice(val id: Long, val text: String)
 
@@ -163,8 +169,9 @@ class RouterViewModel @Inject constructor(
             // ToBeVPN from another device.
             val detection = async { repository.detect() }
             val accountRouters = async { accountRouterModels() }
+            var lost = false
             if (here != null) {
-                runRouter {
+                runRouter(onError = { error -> lost = isAccessLost(error); !lost }) {
                     val status = repository.status()
                     _state.update { it.copy(status = status, link = repository.link.value) }
                     if (status.installed) {
@@ -186,7 +193,15 @@ class RouterViewModel @Inject constructor(
             // its icon, as on PC (and the devices list).
             if (!initial) awaitWholeTurns(startedAt)
             _state.update {
-                it.copy(info = info, link = repository.link.value, loading = false, checking = false, refreshing = false)
+                it.copy(
+                    info = info,
+                    link = repository.link.value,
+                    loading = false,
+                    checking = false,
+                    refreshing = false,
+                    accessLost = lost,
+                    status = if (lost) null else it.status,
+                )
             }
         }
     }
@@ -630,14 +645,20 @@ class RouterViewModel @Inject constructor(
         }
     }
 
-    private suspend fun runRouter(block: suspend () -> Unit) {
+    /** Runs a router call; a failure is shown in red unless [onError] says otherwise. */
+    private suspend fun runRouter(onError: (Exception) -> Boolean = { true }, block: suspend () -> Unit) {
         try {
             block()
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            _state.update { it.copy(error = errorText(error)) }
+            if (onError(error)) _state.update { it.copy(error = errorText(error)) }
         }
+    }
+
+    private fun isAccessLost(error: Exception): Boolean {
+        val raw = error.message.orEmpty()
+        return "rejected the app key" in raw || "not paired" in raw
     }
 
     private fun errorText(error: Exception): String {

@@ -299,7 +299,9 @@ fun RouterScreen(
                 return@LazyColumn
             }
             val installed = state.paired && status?.installed == true
-            if (!installed && !state.checking) {
+            // Nothing to say about installing on a router that already runs
+            // ToBeVPN: its card asks to connect to it (as on PC).
+            if (!installed && !state.checking && !state.accessLost) {
                 item { StatusText(state) }
             }
             state.error?.let { error ->
@@ -307,7 +309,7 @@ fun RouterScreen(
             }
             when {
                 state.info?.gateway == null -> Unit
-                !state.paired -> {
+                !state.paired || state.accessLost -> {
                     item { SectionTitle(stringResource(R.string.router_vpn_section)) }
                     item { InstallCard(state = state, onPair = viewModel::pair) }
                 }
@@ -548,12 +550,19 @@ private fun StatusText(state: RouterUiState) {
 @Composable
 private fun InstallCard(state: RouterUiState, onPair: (String, String) -> Unit) {
     var formOpen by rememberSaveable { mutableStateOf(false) }
-    val canInstall = state.info?.firmware != null || state.installedByAnother
+    // The router took ToBeVPN from another device, or no longer takes this
+    // phone's key: logging in connects to it (nothing is reinstalled).
+    val reconnect = state.installedByAnother || state.accessLost
+    val canInstall = state.info?.firmware != null || reconnect
     RouterCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
                 stringResource(
-                    if (state.installedByAnother) R.string.router_connect_description else R.string.router_vpn_description,
+                    when {
+                        state.installedByAnother -> R.string.router_connect_description
+                        state.accessLost -> R.string.router_reconnect_description
+                        else -> R.string.router_vpn_description
+                    },
                 ),
                 style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
             )
@@ -574,7 +583,7 @@ private fun InstallCard(state: RouterUiState, onPair: (String, String) -> Unit) 
                     busy = state.busy,
                     onPair = onPair,
                     // As on PC: connecting to a router without ToBeVPN checks it.
-                    label = stringResource(if (state.installedByAnother) R.string.router_connect_button else R.string.router_check),
+                    label = stringResource(if (reconnect) R.string.router_connect_button else R.string.router_check),
                 )
             } else {
                 Button(
@@ -585,13 +594,13 @@ private fun InstallCard(state: RouterUiState, onPair: (String, String) -> Unit) 
                 ) {
                     Text(
                         stringResource(
-                            if (state.installedByAnother) R.string.router_connect_button else R.string.router_install,
+                            if (reconnect) R.string.router_connect_button else R.string.router_install,
                         ),
                     )
                 }
             }
             }
-            if (!canInstall && !state.installedByAnother) {
+            if (!canInstall && !reconnect) {
                 Text(
                     stringResource(R.string.router_install_unsupported),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
@@ -1876,8 +1885,10 @@ private fun routerPhase(state: RouterUiState): String {
     return when {
         state.loading -> "loading"
         state.info?.gateway == null -> "away"
-        !state.paired -> "unpaired"
+        !state.paired || state.accessLost -> "unpaired"
         state.refreshing -> "refreshing"
+        // The router did not answer: its error, not an endless loader.
+        status == null && state.error != null -> "failed"
         status == null -> "loading"
         // The first check of a router without the VPN: still waiting.
         !status.installed && state.install.check == null && state.install.error == null -> "loading"
