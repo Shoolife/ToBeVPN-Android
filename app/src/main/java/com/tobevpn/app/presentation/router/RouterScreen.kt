@@ -2,10 +2,10 @@ package com.tobevpn.app.presentation.router
 
 import androidx.compose.animation.AnimatedVisibility
 import com.tobevpn.app.presentation.components.BrandLoader
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -149,6 +149,15 @@ fun RouterScreen(
     var contentShown by rememberSaveable { mutableStateOf(false) }
     if (entered) contentShown = true
     var picking by remember { mutableStateOf<RouterDevice?>(null) }
+    // Not installed: the router is checked at once, under the loader, and
+    // the phone's server is picked for it once the server list is there.
+    val notInstalled = state.paired && state.status?.installed == false && !state.refreshing
+    LaunchedEffect(notInstalled) {
+        if (notInstalled && state.install.check == null && !state.install.checking) viewModel.checkRouter()
+    }
+    LaunchedEffect(notInstalled, state.servers.isNotEmpty()) {
+        if (notInstalled && state.servers.isNotEmpty()) viewModel.ensureInstallServer()
+    }
     var pickingInstallServer by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -178,12 +187,6 @@ fun RouterScreen(
             )
         },
     ) { padding ->
-        if (state.loading) {
-            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
-            }
-            return@Scaffold
-        }
         val status = state.status
         val network = state.network
         val contentAlpha by animateFloatAsState(
@@ -191,7 +194,37 @@ fun RouterScreen(
             animationSpec = tween(360),
             label = "router-content",
         )
-        Column(Modifier.fillMaxSize().padding(padding)) {
+        // One loader, the app's own, for all the waiting (finding the
+        // router, reading it, checking it): it keeps turning in one place
+        // and fades out as the result fades in, rather than a chain of
+        // different spinners replacing each other.
+        val waiting = routerPhase(state) == "loading"
+        val loaderAlpha by animateFloatAsState(
+            targetValue = if (waiting) 1f else 0f,
+            animationSpec = tween(if (waiting) 300 else 420, easing = FastOutSlowInEasing),
+            label = "router-loader",
+        )
+        val headerAlpha by animateFloatAsState(
+            targetValue = if (state.loading) 0f else 1f,
+            animationSpec = tween(420, easing = FastOutSlowInEasing),
+            label = "router-header",
+        )
+        Box(Modifier.fillMaxSize().padding(padding)) {
+        if (loaderAlpha > 0f) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.align(Alignment.Center).graphicsLayer { alpha = loaderAlpha },
+            ) {
+                BrandLoader(Modifier.size(84.dp))
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    stringResource(R.string.router_step_check),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (!state.loading) Column(Modifier.fillMaxSize().graphicsLayer { alpha = headerAlpha }) {
         // A gap under the router card: the list's upper edge (its fade and
         // arrow) starts below it rather than against it.
         Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)) { RouterHeader(state) }
@@ -204,11 +237,18 @@ fun RouterScreen(
         AnimatedContent(
             targetState = state,
             contentKey = { routerPhase(it) },
-            transitionSpec = { fadeIn(tween(360)) togetherWith fadeOut(tween(360)) },
+            // The old view leaves quickly, the new one comes in slowly and
+            // evenly after it: never two half-visible screens over each other.
+            transitionSpec = {
+                fadeIn(tween(420, delayMillis = 120, easing = FastOutSlowInEasing)) togetherWith
+                    fadeOut(tween(220, easing = FastOutSlowInEasing))
+            },
             label = "router-phase",
         ) { state ->
         val status = state.status
         val listState = rememberLazyListState()
+        // While waiting, the loader above stands alone.
+        if (routerPhase(state) == "loading") return@AnimatedContent
         Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
@@ -239,13 +279,7 @@ fun RouterScreen(
                     item { SectionTitle(stringResource(R.string.router_vpn_section)) }
                     item { InstallCard(state = state, onPair = viewModel::pair) }
                 }
-                status == null -> if (state.checking) {
-                    item {
-                        Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                            CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 2.5.dp)
-                        }
-                    }
-                }
+                status == null -> Unit
                 !status.installed -> {
                     item { SectionTitle(stringResource(R.string.router_vpn_section)) }
                     item {
@@ -258,10 +292,6 @@ fun RouterScreen(
                             },
                             onAutostart = viewModel::setInstallAutostart,
                             onInstall = viewModel::installVpn,
-                            onReady = {
-                                viewModel.ensureInstallServer()
-                                if (state.install.check == null && !state.install.checking) viewModel.checkRouter()
-                            },
                         )
                     }
                 }
@@ -296,6 +326,7 @@ fun RouterScreen(
                     }
                 }
             }
+        }
         }
         }
         }
@@ -1280,10 +1311,8 @@ private fun InstallPanel(
     onPickServer: () -> Unit,
     onAutostart: (Boolean) -> Unit,
     onInstall: () -> Unit,
-    onReady: () -> Unit,
 ) {
     val install = state.install
-    LaunchedEffect(state.servers.isNotEmpty()) { if (state.servers.isNotEmpty()) onReady() }
     RouterCard {
         Column(
             Modifier.padding(16.dp).animateContentSize(tween(320)),
@@ -1294,34 +1323,9 @@ private fun InstallPanel(
                 style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
             )
             val check = install.check
-            // While the router is checked, the app's own loader; the result
-            // fades in in its place and the card grows to it smoothly.
-            AnimatedContent(
-                targetState = check,
-                contentKey = { it != null },
-                transitionSpec = {
-                    (fadeIn(tween(320, delayMillis = 80)) togetherWith fadeOut(tween(200)))
-                        .using(SizeTransform(clip = false) { _, _ -> tween(360) })
-                },
-                label = "router-check",
-            ) { result ->
-                if (result == null) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                    ) {
-                        BrandLoader(Modifier.size(84.dp))
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            stringResource(R.string.router_step_check),
-                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                } else {
-                    CompatibilityCard(result)
-                }
-            }
+            // The first check runs under the screen's loader; the card comes
+            // with its result.
+            check?.let { CompatibilityCard(it) }
             if (check?.ok == true) {
                 // As on PC: the router gets this phone's server; devices are
                 // given theirs on this screen after the install.
@@ -1359,7 +1363,7 @@ private fun InstallPanel(
                         shape = RoundedCornerShape(13.dp),
                         modifier = Modifier.heightIn(min = 48.dp),
                     ) { Text(stringResource(R.string.router_install)) }
-                    check != null -> OutlinedButton(
+                    check != null || install.error != null -> OutlinedButton(
                         onClick = onCheck,
                         enabled = !busy,
                         shape = RoundedCornerShape(13.dp),
@@ -1567,10 +1571,13 @@ private fun InstallLog(lines: List<com.tobevpn.app.router.InstallLogLine>) {
 private fun routerPhase(state: RouterUiState): String {
     val status = state.status
     return when {
+        state.loading -> "loading"
         state.info?.gateway == null -> "away"
         !state.paired -> "unpaired"
         state.refreshing -> "refreshing"
         status == null -> "loading"
+        // The first check of a router without the VPN: still waiting.
+        !status.installed && state.install.check == null && state.install.error == null -> "loading"
         !status.installed -> "install"
         else -> "installed"
     }
