@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -85,11 +86,16 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.presentation.components.EDGE_FADE_LENGTH
 import com.tobevpn.app.presentation.components.SpinningRefreshIcon
+import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.countryFlagForUi
+import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
 import com.tobevpn.app.presentation.components.serverDisplayName
+import com.tobevpn.app.presentation.components.startEdgeFade
+import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.BrandSoftCardFill
 import com.tobevpn.app.presentation.theme.LocalAppDarkTheme
@@ -157,10 +163,22 @@ fun RouterScreen(
         )
         Column(Modifier.fillMaxSize().padding(padding)) {
         Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) { RouterHeader(state) }
+        // Fades and arrows at the edges with more content, as on the other
+        // screens; they follow the scroll over the fade's height.
+        val listState = rememberLazyListState()
+        val topFadeAlpha = listState.startEdgeFade()
+        val bottomFadeAlpha = listState.endEdgeFade()
+        Box(Modifier.fillMaxSize()) {
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = contentAlpha },
+                .graphicsLayer { alpha = contentAlpha }
+                .verticalFadingEdges(
+                    topAlpha = topFadeAlpha,
+                    bottomAlpha = bottomFadeAlpha,
+                    fadeHeight = EDGE_FADE_LENGTH,
+                ),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -217,6 +235,21 @@ fun RouterScreen(
                     }
                 }
             }
+        }
+            VerticalScrollEdgeArrow(
+                alpha = topFadeAlpha,
+                isTop = true,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 2.dp),
+            )
+            VerticalScrollEdgeArrow(
+                alpha = bottomFadeAlpha,
+                isTop = false,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 2.dp),
+            )
         }
         }
     }
