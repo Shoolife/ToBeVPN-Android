@@ -82,6 +82,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -149,7 +150,6 @@ import com.tobevpn.app.util.DeviceQrScanParser
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.util.TelegramLinks
 import kotlin.math.roundToInt
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 
@@ -171,7 +171,9 @@ fun AdvancedScreen(
     // The device list is fetched with the screen, so the sheet opens with it.
     val signedIn = authState is AuthState.Authenticated
     LaunchedEffect(signedIn) {
-        if (signedIn) viewModel.refreshLinkedDevices()
+        // Not again on every return from the Router section: a fresh list is
+        // kept, so the sheet does not rebuild in the middle of its animation.
+        if (signedIn) viewModel.refreshLinkedDevicesIfStale()
     }
     val appFilterState by viewModel.appFilterSummary.collectAsStateWithLifecycle()
     val emailSaveResult by viewModel.emailSaveResult.collectAsStateWithLifecycle()
@@ -194,6 +196,9 @@ fun AdvancedScreen(
         lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
             if (reopenDevicesSheet) {
                 reopenDevicesSheet = false
+                // One frame after the screen settled, so the sheet's own
+                // entrance does not share frames with the Back transition.
+                withFrameNanos { }
                 showDevicesSheet = true
             }
         }
@@ -1312,12 +1317,10 @@ private fun LinkedDevicesBottomSheet(
                                     // The sheet slides away first, then the Router
                                     // section comes in; it slides back on return.
                                     onClick = {
-                                        // The screen starts coming in while the
-                                        // sheet is still sliding down: one
-                                        // continuous motion, no pause between.
-                                        sheetScope.launch { sheetState.hide() }
+                                        // The sheet slides down, and the Router
+                                        // screen comes in right after it.
                                         sheetScope.launch {
-                                            delay(SHEET_TO_SCREEN_OVERLAP_MS)
+                                            sheetState.hide()
                                             onOpenRouter()
                                         }
                                     },
@@ -2222,6 +2225,3 @@ private fun RouterHereCard(title: String, meta: String, onClick: () -> Unit) {
         }
     }
 }
-
-/** How long the devices sheet slides alone before the Router screen comes in. */
-private const val SHEET_TO_SCREEN_OVERLAP_MS = 140L

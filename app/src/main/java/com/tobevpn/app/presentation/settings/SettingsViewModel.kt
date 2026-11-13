@@ -338,10 +338,19 @@ class SettingsViewModel @Inject constructor(
     private val _linkedDevicesState = MutableStateFlow(LinkedDevicesUiState())
     val linkedDevicesState: StateFlow<LinkedDevicesUiState> = _linkedDevicesState.asStateFlow()
     private var linkedDevicesRefreshJob: Job? = null
+    private var linkedDevicesLoadedAt = 0L
+
+    /** Loads the devices unless a list from the last half minute is shown. */
+    fun refreshLinkedDevicesIfStale() {
+        val fresh = _linkedDevicesState.value.hasLoaded &&
+            SystemClock.elapsedRealtime() - linkedDevicesLoadedAt < LINKED_DEVICES_FRESH_MS
+        if (!fresh) refreshLinkedDevices()
+    }
 
     private companion object {
         const val TAG = "SettingsViewModel"
         const val MIN_DEVICES_REFRESH_FEEDBACK_MS = 900L
+        const val LINKED_DEVICES_FRESH_MS = 30_000L
     }
 
     private fun launchGuarded(
@@ -487,6 +496,7 @@ class SettingsViewModel @Inject constructor(
                 val data = response.data
                 if (response.success && data != null) {
                     awaitMinimumDevicesRefreshFeedback(refreshFeedbackStartedAt)
+                    linkedDevicesLoadedAt = SystemClock.elapsedRealtime()
                     LinkedDevicesUiState(
                         isLoading = false,
                         isRefreshing = false,
