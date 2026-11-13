@@ -145,10 +145,7 @@ class RouterViewModel @Inject constructor(
             _state.update { it.copy(installedByAnother = installedByAnother) }
             // A refresh that answers at once still shows one full turn of
             // its icon, as on PC (and the devices list).
-            if (!initial) {
-                val left = MIN_REFRESH_FEEDBACK_MS - (android.os.SystemClock.elapsedRealtime() - startedAt)
-                if (left > 0) kotlinx.coroutines.delay(left)
-            }
+            if (!initial) awaitWholeTurns(startedAt)
             _state.update {
                 it.copy(info = info, link = repository.link.value, loading = false, checking = false, refreshing = false)
             }
@@ -329,12 +326,21 @@ class RouterViewModel @Inject constructor(
             // A requested check starts from scratch, so every row shows it.
             _state.update { it.copy(pinging = true, pings = if (userRequested) emptyMap() else it.pings) }
             val pings = runCatching { repository.pingServers(_state.value.servers) }.getOrDefault(emptyMap())
-            if (userRequested) {
-                val left = MIN_REFRESH_FEEDBACK_MS - (android.os.SystemClock.elapsedRealtime() - startedAt)
-                if (left > 0) kotlinx.coroutines.delay(left)
-            }
+            awaitWholeTurns(startedAt)
             _state.update { it.copy(pings = it.pings + pings, pinging = false) }
         }
+    }
+
+    /**
+     * The refresh icon turns once per MIN_REFRESH_FEEDBACK_MS and, when told
+     * to stop, finishes its turn. A result waits for the end of the current
+     * turn, so it appears as the icon comes to rest, not before.
+     */
+    private suspend fun awaitWholeTurns(startedAt: Long) {
+        val elapsed = android.os.SystemClock.elapsedRealtime() - startedAt
+        val turns = maxOf(1L, (elapsed + MIN_REFRESH_FEEDBACK_MS - 1) / MIN_REFRESH_FEEDBACK_MS)
+        val left = turns * MIN_REFRESH_FEEDBACK_MS - elapsed
+        if (left > 0) kotlinx.coroutines.delay(left)
     }
 
     fun clearNotice(id: Long) = _state.update { if (it.notice?.id == id) it.copy(notice = null) else it }
