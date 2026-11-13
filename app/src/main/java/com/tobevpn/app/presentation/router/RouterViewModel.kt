@@ -19,7 +19,9 @@ import com.tobevpn.app.router.RouterStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -67,16 +69,19 @@ class RouterViewModel @Inject constructor(
     private val botApi: com.tobevpn.app.data.remote.BotApi,
     vpnRepository: VpnRepository,
 ) : ViewModel() {
+    // Shown at once from what is already in memory (the devices list
+    // detected the router just before); nothing here touches the system or
+    // files, so the screen's entrance animation runs on a free main thread.
     private val _state = MutableStateFlow(
-        repository.knownRouterHere().let { known ->
+        repository.router.value.let { known ->
+            val link = repository.link.value
+            val linkedHere = known?.gateway != null && link?.host == known.gateway
             RouterUiState(
-                // Shown at once from what is known; the router is asked in
-                // the background, as on PC.
                 loading = false,
-                checking = known != null && repository.linkHere() != null,
-                link = repository.link.value,
+                checking = linkedHere,
+                link = link,
                 info = known,
-                paired = known != null && repository.linkHere() != null,
+                paired = linkedHere,
             )
         },
     )
@@ -98,7 +103,9 @@ class RouterViewModel @Inject constructor(
         viewModelScope.launch {
             val startedAt = android.os.SystemClock.elapsedRealtime()
             _state.update { it.copy(refreshing = !initial, error = null) }
-            val here = repository.linkHere()
+            val known = if (initial) withContext(Dispatchers.IO) { repository.knownRouterHere() } else null
+            val here = withContext(Dispatchers.IO) { repository.linkHere() }
+            if (known != null && _state.value.info == null) _state.update { it.copy(info = known) }
             _state.update { it.copy(checking = here != null && it.status == null, paired = here != null) }
             // The login page and the router's own status are asked at once,
             // and the account's devices tell whether the router already runs
@@ -138,7 +145,7 @@ class RouterViewModel @Inject constructor(
             _state.update { it.copy(busy = true, error = null) }
             runRouter { repository.pair(host, user.trim(), password) }
             _state.update { it.copy(busy = false) }
-            if (repository.linkHere() != null) load(initial = true)
+            if (withContext(Dispatchers.IO) { repository.linkHere() } != null) load(initial = true)
         }
     }
 

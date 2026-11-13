@@ -40,19 +40,24 @@ class RouterSsh @Inject constructor(
     private val keyFile: File get() = File(dir, "ssh_ed25519")
     private val hostsFile: File get() = File(dir, "known_hosts.json")
 
-    init {
-        // Android's JCE has neither ed25519 nor X25519: BouncyCastle's
-        // lightweight implementations stand in, and JSch's Java-version
-        // detection does not apply here.
+    /**
+     * Android's JCE has neither ed25519 nor X25519: BouncyCastle's
+     * lightweight implementations stand in, and JSch's Java-version
+     * detection does not apply here. Set on first SSH use, on the IO thread:
+     * loading JSch and BouncyCastle takes a moment the UI must not wait for.
+     */
+    private val configured: Boolean by lazy {
         JSch.setConfig("xdh", "com.jcraft.jsch.bc.XDH")
         JSch.setConfig("keypairgen.eddsa", "com.jcraft.jsch.bc.KeyPairGenEdDSA")
         JSch.setConfig("keypairgen_fromprivate.eddsa", "com.jcraft.jsch.bc.KeyPairGenEdDSA")
         JSch.setConfig("ssh-ed25519", "com.jcraft.jsch.bc.SignatureEd25519")
         JSch.setConfig("ssh-ed448", "com.jcraft.jsch.bc.SignatureEd448")
+        true
     }
 
     /** Logs in with the password once and installs this app's key on the router. */
     suspend fun pair(network: Network?, host: String, user: String, password: String) = withContext(Dispatchers.IO) {
+        check(configured)
         val jsch = JSch()
         val seen = arrayOfNulls<String>(1)
         jsch.setHostKeyRepository(PinnedHosts(expected = null, seen = seen))
@@ -90,6 +95,7 @@ class RouterSsh @Inject constructor(
         user: String,
         block: (RouterShell) -> T,
     ): T = withContext(Dispatchers.IO) {
+        check(configured)
         val expected = knownHosts().optString(host).takeIf { it.isNotEmpty() }
             ?: throw RouterException("router is not paired")
         val jsch = JSch()

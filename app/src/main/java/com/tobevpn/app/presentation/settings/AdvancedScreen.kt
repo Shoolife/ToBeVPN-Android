@@ -149,6 +149,7 @@ import com.tobevpn.app.util.DeviceQrScanParser
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.util.TelegramLinks
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 
@@ -1311,8 +1312,12 @@ private fun LinkedDevicesBottomSheet(
                                     // The sheet slides away first, then the Router
                                     // section comes in; it slides back on return.
                                     onClick = {
+                                        // The screen starts coming in while the
+                                        // sheet is still sliding down: one
+                                        // continuous motion, no pause between.
+                                        sheetScope.launch { sheetState.hide() }
                                         sheetScope.launch {
-                                            sheetState.hide()
+                                            delay(SHEET_TO_SCREEN_OVERLAP_MS)
                                             onOpenRouter()
                                         }
                                     },
@@ -2217,3 +2222,6 @@ private fun RouterHereCard(title: String, meta: String, onClick: () -> Unit) {
         }
     }
 }
+
+/** How long the devices sheet slides alone before the Router screen comes in. */
+private const val SHEET_TO_SCREEN_OVERLAP_MS = 140L
