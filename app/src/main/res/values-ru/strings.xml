@@ -928,4 +928,16 @@
     <string name="router_traffic_month">За месяц</string>
     <string name="router_unit_mb">МБ</string>
     <string name="router_unit_gb">ГБ</string>
+    <string name="router_update_available">Доступно обновление VPN на роутере</string>
+    <string name="router_update_button">Обновить</string>
+    <string name="router_update_xray_versions">Xray %1$s → %2$s</string>
+    <string name="router_update_xray_version">Xray %1$s</string>
+    <string name="router_update_title">Обновление VPN на роутере</string>
+    <string name="router_update_explain">Приложение скачает новые версии компонентов, проверит их и заменит на роутере. Выбор серверов и устройств сохранится. На время перезапуска, несколько секунд, устройства дома будут без интернета через VPN.</string>
+    <string name="router_update_step_download">Скачиваем и проверяем компоненты</string>
+    <string name="router_update_step_install">Обновляем роутер</string>
+    <string name="router_update_step_start">Запускаем VPN</string>
+    <string name="router_update_done_title">VPN на роутере обновлён</string>
+    <string name="router_update_done_text">Роутер работает на новых версиях компонентов, все настройки на месте.</string>
+    <string name="router_update_sites">Список российских сайтов</string>
 </resources>

@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.outlined.Download
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
@@ -311,6 +312,9 @@ fun RouterScreen(
                     ) {
                         item { WarningText(stringResource(R.string.router_server_down)) }
                     }
+                    state.update?.let { update ->
+                        item { UpdateBanner(update, enabled = !state.busy, onUpdate = viewModel::openUpdate) }
+                    }
                     item { SectionTitle(stringResource(R.string.router_traffic_title)) }
                     item { RouterTraffic(hours = state.traffic, loading = state.trafficLoading) }
                     item { SectionTitle(stringResource(R.string.router_home_network_section)) }
@@ -341,6 +345,10 @@ fun RouterScreen(
         }
         }
         }
+    }
+
+    state.updating?.let { updating ->
+        UpdateDialog(ui = updating, onConfirm = viewModel::runUpdate, onClose = viewModel::closeUpdate)
     }
 
     state.uninstall?.let { uninstall ->
@@ -1124,6 +1132,150 @@ private fun SectionTitle(text: String) {
  * Removing ToBeVPN, as on PC: a question with "Reset the subscription
  * link", then each step with its spinner, then the result, in one dialog.
  */
+/** Newer components in the app than on the router: offered with a button, as on PC. */
+@Composable
+private fun UpdateBanner(update: com.tobevpn.app.router.RouterUpdate, enabled: Boolean, onUpdate: () -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    val detail = when {
+        "xray" in update.components && update.xrayTarget != null -> update.xrayCurrent
+            ?.let { stringResource(R.string.router_update_xray_versions, it, update.xrayTarget) }
+            ?: stringResource(R.string.router_update_xray_version, update.xrayTarget)
+        "sites" in update.components -> stringResource(R.string.router_update_sites)
+        else -> null
+    }
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(accent.copy(alpha = 0.14f))
+            .padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 10.dp),
+    ) {
+        Icon(Icons.Outlined.Download, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                stringResource(R.string.router_update_available),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                fontWeight = FontWeight.Medium,
+            )
+            detail?.let {
+                Text(
+                    it,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Button(
+            onClick = onUpdate,
+            enabled = enabled,
+            shape = RoundedCornerShape(10.dp),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+        ) { Text(stringResource(R.string.router_update_button)) }
+    }
+}
+
+/** Updating the router's components, in the same kind of dialog as the removal. */
+@Composable
+private fun UpdateDialog(ui: UpdateUi, onConfirm: () -> Unit, onClose: () -> Unit) {
+    val dark = LocalAppDarkTheme.current
+    val working = ui.phase == UninstallUi.Phase.Working
+    AppAlertDialog(
+        onDismissRequest = { if (!working) onClose() },
+        properties = DialogProperties(dismissOnBackPress = !working, dismissOnClickOutside = !working),
+        shape = RoundedCornerShape(28.dp),
+        containerColor = if (dark) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface,
+        title = {
+            Text(
+                stringResource(
+                    if (ui.phase == UninstallUi.Phase.Done) R.string.router_update_done_title else R.string.router_update_title,
+                ),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                when (ui.phase) {
+                    UninstallUi.Phase.Confirm -> Text(
+                        stringResource(R.string.router_update_explain),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    UninstallUi.Phase.Done -> Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Check, contentDescription = null, tint = VpnGreen, modifier = Modifier.size(40.dp))
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            stringResource(R.string.router_update_done_text),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    else -> listOf(
+                        R.string.router_update_step_download,
+                        R.string.router_update_step_install,
+                        R.string.router_update_step_start,
+                    ).forEachIndexed { index, label ->
+                        val step = when {
+                            ui.phase == UninstallUi.Phase.Failed && index == ui.stage -> UninstallUi.Step.Failed
+                            index < ui.stage -> UninstallUi.Step.Done
+                            index == ui.stage -> UninstallUi.Step.Active
+                            else -> UninstallUi.Step.Pending
+                        }
+                        StepRow(stringResource(label), step)
+                    }
+                }
+                ui.error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall))
+                }
+            }
+        },
+        confirmButton = {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                when (ui.phase) {
+                    UninstallUi.Phase.Confirm, UninstallUi.Phase.Failed -> {
+                        OutlinedButton(
+                            onClick = onClose,
+                            shape = RoundedCornerShape(13.dp),
+                            modifier = Modifier.weight(1f).height(46.dp),
+                        ) {
+                            Text(stringResource(if (ui.phase == UninstallUi.Phase.Failed) R.string.router_close else R.string.cancel))
+                        }
+                        Button(
+                            onClick = onConfirm,
+                            shape = RoundedCornerShape(13.dp),
+                            modifier = Modifier.weight(1f).height(46.dp),
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (ui.phase == UninstallUi.Phase.Failed) R.string.router_retry else R.string.router_update_button,
+                                ),
+                            )
+                        }
+                    }
+                    UninstallUi.Phase.Done -> Button(
+                        onClick = onClose,
+                        shape = RoundedCornerShape(13.dp),
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                    ) { Text(stringResource(R.string.router_close)) }
+                    UninstallUi.Phase.Working -> Unit
+                }
+            }
+        },
+        dismissButton = {},
+    )
+}
+
 @Composable
 private fun UninstallDialog(
     ui: UninstallUi,
@@ -1758,6 +1910,37 @@ private fun TrafficValue(loading: Boolean, text: String, big: Boolean) {
             fontWeight = FontWeight.Bold,
             modifier = Modifier.graphicsLayer { alpha = if (loading) 0f else 1f },
         )
-        if (loading) CircularProgressIndicator(Modifier.size(if (big) 20.dp else 16.dp), strokeWidth = 2.dp)
+        if (loading) TrafficSpinner()
+    }
+}
+
+/**
+ * The spinner of the traffic being read, as on PC: a thin grey ring with a
+ * darker arc going round, the same as a server's ping being measured.
+ */
+@Composable
+private fun TrafficSpinner() {
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val turn by rememberInfiniteTransition(label = "traffic-spin").animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(800, easing = androidx.compose.animation.core.LinearEasing)),
+        label = "traffic-turn",
+    )
+    androidx.compose.foundation.Canvas(Modifier.size(18.dp)) {
+        val stroke = 2.dp.toPx()
+        val inset = stroke / 2
+        val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
+        val topLeft = Offset(inset, inset)
+        drawCircle(muted.copy(alpha = 0.3f), radius = (size.minDimension - stroke) / 2, style = androidx.compose.ui.graphics.drawscope.Stroke(stroke))
+        drawArc(
+            color = muted,
+            startAngle = turn - 135f,
+            sweepAngle = 90f,
+            useCenter = false,
+            topLeft = topLeft,
+            size = arcSize,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(stroke),
+        )
     }
 }

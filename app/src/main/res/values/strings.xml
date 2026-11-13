@@ -914,4 +914,16 @@
     <string name="router_traffic_month">This month</string>
     <string name="router_unit_mb">MB</string>
     <string name="router_unit_gb">GB</string>
+    <string name="router_update_available">An update of the VPN on the router is available</string>
+    <string name="router_update_button">Update</string>
+    <string name="router_update_xray_versions">Xray %1$s → %2$s</string>
+    <string name="router_update_xray_version">Xray %1$s</string>
+    <string name="router_update_title">Updating the VPN on the router</string>
+    <string name="router_update_explain">The app downloads the new versions of the components, checks them and replaces them on the router. Server and device choices stay. During the restart, a few seconds, home devices are without the VPN.</string>
+    <string name="router_update_step_download">Downloading and checking the components</string>
+    <string name="router_update_step_install">Updating the router</string>
+    <string name="router_update_step_start">Starting the VPN</string>
+    <string name="router_update_done_title">The VPN on the router is updated</string>
+    <string name="router_update_done_text">The router runs the new versions of its components; every setting is in place.</string>
+    <string name="router_update_sites">Russian sites list</string>
 </resources>

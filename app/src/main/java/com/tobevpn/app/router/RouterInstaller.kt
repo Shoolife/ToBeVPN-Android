@@ -47,6 +47,16 @@ data class InstallLogLine(
     val time: String = java.time.LocalTime.now().withNano(0).toString(),
 )
 
+/** Components on the router older than the ones this app carries. */
+data class RouterUpdate(
+    /** "xray", "hev-socks5-tunnel", "agent", "sites". */
+    val components: List<String>,
+    val xrayCurrent: String?,
+    val xrayTarget: String?,
+) {
+    val available: Boolean get() = components.isNotEmpty()
+}
+
 /**
  * Installs ToBeVPN on the paired router from the phone, the way the desktop
  * app does: the same checks, the same binaries checked by SHA-256 (Xray from
@@ -311,6 +321,114 @@ class RouterInstaller @Inject constructor(
             logOutput(shell.runOk("${RouterAgent.SCRIPT} start"), log)
             val status = shell.runOk("${RouterAgent.SCRIPT} status")
             logOutput(status, log)
+            progress("done")
+            RouterAgent.parseStatus(status)
+        }
+    }
+
+    // ------------------------------------------------------------ update ---
+
+    /** What differs on the router from the components this app carries. */
+    private data class Outdated(
+        val binaries: List<Binary>,
+        val xrayCurrent: String?,
+        val agent: Boolean,
+        /** The bypass is on but the router has no Russian sites list at all. */
+        val sitesMissing: Boolean,
+    )
+
+    private fun outdatedComponents(shell: RouterShell, log: (InstallLogLine) -> Unit): Outdated {
+        val machine = shell.runOk("uname -m").trim()
+        val arch = Arch.fromUname(machine) ?: throw RouterException("unsupported router CPU: $machine")
+        val binaries = listOf(xrayTarget(arch, log), hevTunnel(arch))
+        val facts = RouterAgent.keyValues(
+            shell.runOk(
+                componentFactsCommand(binaries) +
+                    "echo md5_agent=\$(md5sum ${RouterAgent.SCRIPT} 2>/dev/null | cut -d' ' -f1); " +
+                    "echo ru_direct=\$(cat ${RouterAgent.RU_DIRECT_FLAG} 2>/dev/null); " +
+                    "echo sites=\$([ -s ${RouterAgent.RU_SITES_PATH} ] && echo 1 || echo 0)",
+            ),
+        )
+        val agentMd5 = MessageDigest.getInstance("MD5").digest(agentScript()).joinToString("") { "%02x".format(it) }
+        return Outdated(
+            binaries = binaries.filter { outdated(it, facts) },
+            xrayCurrent = facts["xray_version"]?.takeIf { it.isNotEmpty() },
+            agent = facts["md5_agent"] != agentMd5,
+            // The phone's list is the smaller one: it never replaces a list
+            // the router has (the desktop app brings the fuller one).
+            sitesMissing = facts["ru_direct"]?.trim() != "0" && facts["sites"] != "1",
+        )
+    }
+
+    /** Whether the router runs older components than this app carries; nothing changes on it. */
+    suspend fun updateCheck(host: String, user: String, haveSites: Boolean): RouterUpdate = withContext(Dispatchers.IO) {
+        ssh.session(detector.homeLan()?.network, host, user) { shell ->
+            val found = outdatedComponents(shell) {}
+            val components = buildList {
+                found.binaries.forEach { add(it.name) }
+                if (found.agent) add("agent")
+                if (found.sitesMissing && haveSites) add("sites")
+            }
+            RouterUpdate(
+                components = components,
+                xrayCurrent = found.xrayCurrent,
+                xrayTarget = found.binaries.firstOrNull { it.name == "xray" }?.version,
+            )
+        }
+    }
+
+    /**
+     * Brings the router's components to this app's versions, as on PC:
+     * everything is downloaded and checked first, then the VPN is stopped,
+     * the files replaced and the VPN started again. Servers and device
+     * choices stay.
+     */
+    suspend fun update(
+        host: String,
+        user: String,
+        ruSites: ByteArray?,
+        progress: (String) -> Unit,
+        log: (InstallLogLine) -> Unit,
+    ): RouterStatus = withContext(Dispatchers.IO) {
+        progress("connect")
+        val network = detector.homeLan()?.network
+        progress("check")
+        val found = ssh.session(network, host, user) { shell ->
+            val found = outdatedComponents(shell, log)
+            if (found.binaries.isNotEmpty()) {
+                val freeKb = shell.runOk("df -k /overlay 2>/dev/null | awk 'NR==2{print \$4}'").trim().toLongOrNull() ?: 0L
+                if (freeKb < REQUIRED_FREE_KB) throw RouterException("not enough space on the router: ${freeKb / 1024} MB free")
+            }
+            found
+        }
+        val downloads = found.binaries.map { binary ->
+            progress("download:${binary.name}")
+            binary to fetch(binary, log)
+        }
+        ssh.session(network, host, user) { shell ->
+            progress("configure")
+            logOutput(shell.run("${RouterAgent.SCRIPT} stop").first, log)
+            downloads.forEach { (binary, content) ->
+                progress("upload:${binary.name}")
+                shell.writeFile("/opt/tobevpn/${binary.name}", content, "755")
+                log(InstallLogLine("info", "${binary.name}: uploaded ${content.size / 1024} KB"))
+                if (binary.name == "xray" && binary.version != null) {
+                    shell.writeFile("/opt/tobevpn/xray.version", "${binary.version}\n".toByteArray(), "644")
+                }
+            }
+            shell.writeFile(RouterAgent.SCRIPT, agentScript(), "755")
+            shell.writeFile("/etc/hotplug.d/dhcp/90-tobevpn", DHCP_HOOK.toByteArray(), "755")
+            // Rewriting the init script keeps its enabled/disabled state (rc.d link).
+            shell.writeFile("/etc/init.d/tobevpn", INIT_SCRIPT.toByteArray(), "755")
+            if (found.sitesMissing && ruSites != null) {
+                progress("upload:sites")
+                shell.writeFile(RouterAgent.RU_SITES_PATH, ruSites, "644")
+                shell.writeFile(RouterAgent.RU_SITES_DIGEST, "${RouterAgent.sha256Hex(ruSites)}\n".toByteArray(), "644")
+                log(InstallLogLine("info", "Russian sites list: ${ruSites.size / 1024} KB"))
+            }
+            progress("start")
+            logOutput(shell.runOk("${RouterAgent.SCRIPT} start"), log)
+            val status = shell.runOk("${RouterAgent.SCRIPT} status")
             progress("done")
             RouterAgent.parseStatus(status)
         }

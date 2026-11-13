@@ -66,6 +66,10 @@ data class RouterUiState(
     val traffic: List<com.tobevpn.app.router.TrafficHour> = emptyList(),
     /** The router is being asked for its traffic. */
     val trafficLoading: Boolean = false,
+    /** Newer components in this app than on the router, as on PC. */
+    val update: com.tobevpn.app.router.RouterUpdate? = null,
+    /** The update dialog, while it is open. */
+    val updating: UpdateUi? = null,
 ) {
     data class Notice(val id: Long, val text: String)
 
@@ -84,6 +88,14 @@ data class InstallUi(
     /** Current install step ("connect", "download:xray", ...). */
     val step: String? = null,
     val log: List<com.tobevpn.app.router.InstallLogLine> = emptyList(),
+    val error: String? = null,
+)
+
+/** The router update dialog: question, three steps, result (as on PC). */
+data class UpdateUi(
+    val phase: UninstallUi.Phase = UninstallUi.Phase.Confirm,
+    /** 0 download, 1 install, 2 start, 3 done. */
+    val stage: Int = 0,
     val error: String? = null,
 )
 
@@ -159,6 +171,7 @@ class RouterViewModel @Inject constructor(
                         // Traffic is read alongside, not waited for: the
                         // numbers show their spinner meanwhile.
                         refreshTraffic(maxAgeMs = if (initial) TRAFFIC_MAX_AGE_MS else 0L)
+                        checkUpdate()
                         val network = repository.devices()
                         _state.update { it.copy(network = network) }
                         migrateDefaultDevices(status, network)
@@ -336,7 +349,7 @@ class RouterViewModel @Inject constructor(
                     serverHosts = _state.value.servers.map { it.address },
                     subscriptionUrl = subscriptionUrl,
                     autostart = _state.value.install.autostart,
-                    ruSites = repository.ruSites(),
+                    ruSites = withContext(Dispatchers.IO) { repository.ruSites() },
                     // Each step is also a line of the log, as on PC.
                     progress = { step ->
                         install { it.copy(step = step, log = it.log + com.tobevpn.app.router.InstallLogLine("step", step)) }
@@ -373,6 +386,76 @@ class RouterViewModel @Inject constructor(
 
     private var routerRemoved = false
     private var removedHwid: String? = null
+
+    // ------------------------------------------------------------- update ---
+
+    private var updateCheckJob: kotlinx.coroutines.Job? = null
+
+    /** Asks the router whether it runs older components; silent on failure. */
+    private fun checkUpdate() {
+        val link = repository.link.value ?: return
+        if (updateCheckJob?.isActive == true || _state.value.updating != null) return
+        updateCheckJob = viewModelScope.launch {
+            val update = try {
+                installer.updateCheck(link.host, link.user, haveSites = withContext(Dispatchers.IO) { repository.ruSites() } != null)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+            if (update != null) _state.update { it.copy(update = update.takeIf { u -> u.available }) }
+        }
+    }
+
+    fun openUpdate() = _state.update { it.copy(updating = UpdateUi()) }
+
+    fun closeUpdate() {
+        if (_state.value.updating?.phase == UninstallUi.Phase.Working) return
+        _state.update { it.copy(updating = null) }
+    }
+
+    fun runUpdate() {
+        val link = repository.link.value ?: return
+        _state.update { it.copy(updating = UpdateUi(phase = UninstallUi.Phase.Working), busy = true) }
+        fun stage(value: Int) = _state.update { state ->
+            state.updating?.let { ui -> state.copy(updating = ui.copy(stage = maxOf(ui.stage, value))) } ?: state
+        }
+        viewModelScope.launch {
+            try {
+                val status = installer.update(
+                    host = link.host,
+                    user = link.user,
+                    ruSites = withContext(Dispatchers.IO) { repository.ruSites() },
+                    progress = { step ->
+                        when {
+                            step.startsWith("download") -> stage(0)
+                            step == "configure" || step.startsWith("upload") -> stage(1)
+                            step == "start" -> stage(2)
+                            step == "done" -> stage(3)
+                        }
+                    },
+                    log = {},
+                )
+                _state.update {
+                    it.copy(
+                        status = status,
+                        update = null,
+                        busy = false,
+                        updating = UpdateUi(phase = UninstallUi.Phase.Done, stage = 3),
+                    )
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _state.update { state ->
+                    state.copy(
+                        busy = false,
+                        updating = (state.updating ?: UpdateUi()).copy(phase = UninstallUi.Phase.Failed, error = errorText(error)),
+                    )
+                }
+            }
+        }
+    }
 
     fun openUninstall() = _state.update { it.copy(uninstall = UninstallUi()) }
 
