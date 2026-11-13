@@ -75,6 +75,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -310,7 +311,8 @@ fun AdvancedScreen(
                         .fillMaxWidth()
                         .clickable(enabled = authState is AuthState.Authenticated) {
                             showDevicesSheet = true
-                            viewModel.refreshLinkedDevices()
+                            // The screen fetched the list when it opened.
+                            viewModel.refreshLinkedDevicesIfStale()
                         }
                         .padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -929,6 +931,42 @@ private fun LinkedDevicesBottomSheet(
     onOpenRouter: () -> Unit = {},
 ) {
     val sheetState = rememberInLayoutSheetState()
+    // What the sheet shows is held while it slides in: a list or router
+    // card arriving then would rebuild and resize it mid-motion. Updates
+    // land once it stands still.
+    val settled by remember { derivedStateOf { sheetState.isSettled } }
+    var shown by remember { mutableStateOf(Triple(state, routerHere, routerLink)) }
+    if (settled) shown = Triple(state, routerHere, routerLink)
+    LinkedDevicesSheetBody(
+        state = shown.first,
+        routerHere = shown.second,
+        routerLink = shown.third,
+        sheetState = sheetState,
+        onDismiss = onDismiss,
+        onRefresh = onRefresh,
+        onScanQr = onScanQr,
+        onEnterCode = onEnterCode,
+        onDisconnect = onDisconnect,
+        onClearError = onClearError,
+        onOpenRouter = onOpenRouter,
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LinkedDevicesSheetBody(
+    state: LinkedDevicesUiState,
+    routerHere: RouterInfo?,
+    routerLink: RouterLink?,
+    sheetState: com.tobevpn.app.presentation.components.InLayoutSheetState,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit,
+    onScanQr: () -> Unit,
+    onEnterCode: () -> Unit,
+    onDisconnect: (deviceId: String, resetSubscription: Boolean) -> Unit,
+    onClearError: () -> Unit,
+    onOpenRouter: () -> Unit,
+) {
     // The device whose "Disconnect" was tapped: asked first, with the
     // choice to reset the subscription link.
     var confirmingDevice by remember { mutableStateOf<LinkedDeviceDto?>(null) }

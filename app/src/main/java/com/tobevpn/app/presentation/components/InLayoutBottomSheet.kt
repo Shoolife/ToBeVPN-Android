@@ -47,6 +47,10 @@ class InLayoutSheetState internal constructor(private val scope: kotlinx.corouti
     internal val offset = Animatable(1f)
     internal var height by mutableFloatStateOf(0f)
 
+    /** Fully open and not moving. */
+    val isSettled: Boolean
+        get() = !offset.isRunning && offset.value == 0f
+
     internal suspend fun show() = offset.animateTo(0f, tween(SHEET_MOTION_MS, easing = FastOutSlowInEasing))
 
     /** Slides the sheet away; returns when it is gone. */
