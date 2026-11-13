@@ -18,12 +18,15 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -592,7 +595,8 @@ private fun DeviceRow(
                         .joinToString(" · "),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = if (down) Color(0xFFE0A030) else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -770,13 +774,18 @@ private fun RouterControls(
             }
         }
         // Two equal buttons, as on PC: the VPN switch and the removal.
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        // A larger interface scale wraps the labels: the buttons grow with
+        // them and stay the same height.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.height(IntrinsicSize.Min),
+        ) {
             OutlinedButton(
                 onClick = onStartStop,
                 enabled = !state.busy,
                 shape = RoundedCornerShape(14.dp),
-                contentPadding = PaddingValues(horizontal = 10.dp),
-                modifier = Modifier.weight(1f).height(52.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 52.dp),
             ) {
                 if (state.busy) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -793,8 +802,8 @@ private fun RouterControls(
                 enabled = !state.busy,
                 shape = RoundedCornerShape(14.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f)),
-                contentPadding = PaddingValues(horizontal = 10.dp),
-                modifier = Modifier.weight(1f).height(52.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 52.dp),
             ) {
                 Text(
                     stringResource(R.string.router_uninstall_short),
