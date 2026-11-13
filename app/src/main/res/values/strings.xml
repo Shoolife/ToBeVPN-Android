@@ -909,4 +909,9 @@
     <string name="router_log_copy">Copy</string>
     <string name="router_log_copied">Copied</string>
     <string name="router_log_errors">errors: %1$d</string>
+    <string name="router_traffic_title">Traffic through the VPN</string>
+    <string name="router_traffic_today">Today</string>
+    <string name="router_traffic_month">This month</string>
+    <string name="router_unit_mb">MB</string>
+    <string name="router_unit_gb">GB</string>
 </resources>

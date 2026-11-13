@@ -57,7 +57,22 @@ data class RouterNetwork(val devices: List<RouterDevice>, val slots: List<Router
 /** A server in a slot (0-7); devices are sent to their server's slot. */
 data class SlotServer(val slot: Int, val server: Server)
 
+/** VPN traffic of the whole home network through the router in one hour. */
+data class TrafficHour(
+    /** Epoch seconds of the hour's start. */
+    val hour: Long,
+    val bytes: Long,
+)
+
 object RouterAgent {
+    /** `traffic` output: one "<hour epoch> <bytes>" line per hour, as on PC. */
+    fun parseTraffic(text: String): List<TrafficHour> = text.lineSequence().mapNotNull { line ->
+        val fields = line.trim().split(Regex("\\s+"))
+        val hour = fields.getOrNull(0)?.toLongOrNull() ?: return@mapNotNull null
+        val bytes = fields.getOrNull(1)?.toLongOrNull() ?: return@mapNotNull null
+        TrafficHour(hour, bytes)
+    }.toList()
+
     const val SCRIPT = "/opt/tobevpn/tobevpn-router.sh"
     const val MAX_SLOT = 7
     const val MAX_SERVERS = MAX_SLOT + 1

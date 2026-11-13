@@ -18,6 +18,7 @@ import com.tobevpn.app.router.RouterSlot
 import com.tobevpn.app.router.RouterStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -61,6 +62,10 @@ data class RouterUiState(
     /** Direct ping from home by server id; -1 = no answer. */
     val pings: Map<String, Long> = emptyMap(),
     val pinging: Boolean = false,
+    /** Home traffic through the VPN by hour, as on PC; the last read shows at once. */
+    val traffic: List<com.tobevpn.app.router.TrafficHour> = emptyList(),
+    /** The router is being asked for its traffic. */
+    val trafficLoading: Boolean = false,
 ) {
     data class Notice(val id: Long, val text: String)
 
@@ -151,6 +156,9 @@ class RouterViewModel @Inject constructor(
                     val status = repository.status()
                     _state.update { it.copy(status = status, link = repository.link.value) }
                     if (status.installed) {
+                        // Traffic is read alongside, not waited for: the
+                        // numbers show their spinner meanwhile.
+                        refreshTraffic(maxAgeMs = if (initial) TRAFFIC_MAX_AGE_MS else 0L)
                         val network = repository.devices()
                         _state.update { it.copy(network = network) }
                         migrateDefaultDevices(status, network)
@@ -488,6 +496,31 @@ class RouterViewModel @Inject constructor(
         }
     }
 
+    private var trafficJob: kotlinx.coroutines.Job? = null
+
+    /** Reads the router's traffic when the kept copy is older than [maxAgeMs]; silent on failure. */
+    fun refreshTraffic(maxAgeMs: Long = TRAFFIC_MAX_AGE_MS) {
+        val cached = repository.cachedTraffic()
+        if (cached != null && _state.value.traffic.isEmpty()) _state.update { it.copy(traffic = cached.second) }
+        if (cached != null && System.currentTimeMillis() - cached.first < maxAgeMs) return
+        if (trafficJob?.isActive == true) return
+        trafficJob = viewModelScope.launch {
+            val startedAt = android.os.SystemClock.elapsedRealtime()
+            _state.update { it.copy(trafficLoading = true) }
+            val hours = try {
+                repository.traffic()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                null
+            }
+            // A quick read still shows its spinner a moment, not as a flash.
+            val shown = android.os.SystemClock.elapsedRealtime() - startedAt
+            if (shown < TRAFFIC_MIN_LOADING_MS) delay(TRAFFIC_MIN_LOADING_MS - shown)
+            _state.update { it.copy(traffic = hours ?: it.traffic, trafficLoading = false) }
+        }
+    }
+
     private suspend fun runRouter(block: suspend () -> Unit) {
         try {
             block()
@@ -518,6 +551,8 @@ class RouterViewModel @Inject constructor(
 
     companion object {
         private const val MIN_REFRESH_FEEDBACK_MS = 900L
+        private const val TRAFFIC_MAX_AGE_MS = 60_000L
+        private const val TRAFFIC_MIN_LOADING_MS = 600L
 
         fun deviceLabel(device: RouterDevice): String =
             device.name ?: device.hostname ?: device.mac.uppercase()

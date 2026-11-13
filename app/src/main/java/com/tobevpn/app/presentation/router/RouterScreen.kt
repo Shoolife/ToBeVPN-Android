@@ -90,6 +90,8 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.Velocity
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -309,6 +311,8 @@ fun RouterScreen(
                     ) {
                         item { WarningText(stringResource(R.string.router_server_down)) }
                     }
+                    item { SectionTitle(stringResource(R.string.router_traffic_title)) }
+                    item { RouterTraffic(hours = state.traffic, loading = state.trafficLoading) }
                     item { SectionTitle(stringResource(R.string.router_home_network_section)) }
                     item {
                         HomeNetworkCard(
@@ -1611,5 +1615,149 @@ private fun routerPhase(state: RouterUiState): String {
         !status.installed && state.install.check == null && state.install.error == null -> "loading"
         !status.installed -> "install"
         else -> "installed"
+    }
+}
+
+/** As on PC: whole numbers of MB, one decimal for GB and below 1 MB. */
+@Composable
+private fun trafficBytes(bytes: Long): String {
+    val mb = stringResource(R.string.router_unit_mb)
+    val gb = stringResource(R.string.router_unit_gb)
+    val mib = 1024.0 * 1024.0
+    return when {
+        bytes >= 1024L * 1024 * 1024 -> String.format(java.util.Locale.getDefault(), "%.1f %s", bytes / (mib * 1024), gb)
+        bytes >= 1024L * 1024 || bytes == 0L -> "${Math.round(bytes / mib)} $mb"
+        else -> String.format(java.util.Locale.getDefault(), "%.1f %s", bytes / mib, mb)
+    }
+}
+
+/** VPN traffic of the home network through the router: today, month, by hour (as on PC). */
+@Composable
+private fun RouterTraffic(hours: List<com.tobevpn.app.router.TrafficHour>, loading: Boolean) {
+    val zone = java.time.ZoneId.systemDefault()
+    val now = java.time.ZonedDateTime.now(zone)
+    val dayStart = now.toLocalDate().atStartOfDay(zone).toEpochSecond()
+    val monthStart = now.toLocalDate().withDayOfMonth(1).atStartOfDay(zone).toEpochSecond()
+    val monthEnd = now.toLocalDate().withDayOfMonth(1).plusMonths(1).atStartOfDay(zone).toEpochSecond()
+    val perHour = remember(hours, dayStart) {
+        LongArray(24) { index ->
+            val start = dayStart + index * 3600L
+            hours.filter { it.hour >= start && it.hour < start + 3600L }.sumOf { it.bytes }
+        }
+    }
+    val today = perHour.sum()
+    val month = remember(hours, monthStart) { hours.filter { it.hour in monthStart until monthEnd }.sumOf { it.bytes } }
+    val peak = maxOf(perHour.maxOrNull() ?: 0L, 1L)
+    val currentHour = now.hour
+    var selected by remember { mutableStateOf<Int?>(null) }
+    val barColor = Color(0xFF9C6BFF)
+    val futureColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+
+    RouterCard {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Column(Modifier.weight(1f)) {
+                    TrafficValue(loading, trafficBytes(today), big = true)
+                    Text(
+                        stringResource(R.string.router_traffic_today),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    TrafficValue(loading, trafficBytes(month), big = false)
+                    Text(
+                        stringResource(R.string.router_traffic_month),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+            // A tap on an hour shows its traffic above the chart, as hovering does on PC.
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .pointerInput(currentHour) {
+                        detectTapGestures { offset ->
+                            val index = (offset.x / size.width * 24).toInt().coerceIn(0, 23)
+                            selected = if (selected == index || index > currentHour) null else index
+                        }
+                    },
+            ) {
+                Row(
+                    Modifier.fillMaxSize(),
+                    horizontalArrangement = Arrangement.spacedBy(3.dp),
+                    verticalAlignment = Alignment.Bottom,
+                ) {
+                    perHour.forEachIndexed { index, bytes ->
+                        val fraction = if (bytes > 0) maxOf(bytes.toFloat() / peak, 0.06f) else 0f
+                        val height by animateFloatAsState(fraction, tween(420), label = "traffic-bar")
+                        val dimmed = selected != null && selected != index
+                        Box(
+                            Modifier
+                                .weight(1f)
+                                .then(if (bytes > 0) Modifier.fillMaxHeight(height) else Modifier.height(2.dp))
+                                .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp, bottomStart = 1.dp, bottomEnd = 1.dp))
+                                .background(
+                                    if (index > currentHour) {
+                                        androidx.compose.ui.graphics.SolidColor(futureColor)
+                                    } else {
+                                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                                            listOf(barColor, barColor.copy(alpha = 0.35f)),
+                                        )
+                                    },
+                                    alpha = if (dimmed) 0.55f else 1f,
+                                ),
+                        )
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 0.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                listOf("0:00", "6:00", "12:00", "18:00", "24:00").forEach {
+                    Text(
+                        it,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelSmall),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                    )
+                }
+            }
+            AnimatedContent(
+                targetState = selected,
+                transitionSpec = {
+                    (fadeIn(tween(220)) togetherWith fadeOut(tween(160)))
+                        .using(SizeTransform(clip = false) { _, _ -> tween(300, easing = FastOutSlowInEasing) })
+                },
+                label = "traffic-hour",
+            ) { hour ->
+                if (hour != null) {
+                    val label = "%02d:00–%02d:00".format(hour, hour + 1)
+                    Text(
+                        "$label · ${trafficBytes(perHour[hour])}",
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                } else {
+                    Spacer(Modifier.fillMaxWidth().height(0.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TrafficValue(loading: Boolean, text: String, big: Boolean) {
+    val style = if (big) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium
+    Box(contentAlignment = Alignment.CenterStart) {
+        // The value keeps its place while read, so nothing moves when it comes.
+        Text(
+            text,
+            style = fixedLayoutTextStyle(style),
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.graphicsLayer { alpha = if (loading) 0f else 1f },
+        )
+        if (loading) CircularProgressIndicator(Modifier.size(if (big) 20.dp else 16.dp), strokeWidth = 2.dp)
     }
 }

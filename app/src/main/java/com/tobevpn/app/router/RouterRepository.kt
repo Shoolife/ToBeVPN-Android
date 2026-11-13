@@ -173,6 +173,28 @@ class RouterRepository @Inject constructor(
         RouterAgent.parseStatus(output)
     }.also(::remember)
 
+    /** The router's VPN traffic by hour; kept, so the screen shows it at once next time. */
+    suspend fun traffic(): List<TrafficHour> = withRouter { shell ->
+        RouterAgent.parseTraffic(shell.runOk("${RouterAgent.SCRIPT} traffic"))
+    }.also { hours ->
+        val cache = JSONObject()
+            .put("hwid", _link.value?.hwid.orEmpty())
+            .put("fetchedAt", System.currentTimeMillis())
+            .put("hours", org.json.JSONArray().apply { hours.forEach { put("${it.hour} ${it.bytes}") } })
+        prefs.edit().putString(KEY_TRAFFIC, cache.toString()).apply()
+    }
+
+    /** The traffic read last from this router and when, or null. */
+    fun cachedTraffic(): Pair<Long, List<TrafficHour>>? {
+        val cache = runCatching { JSONObject(prefs.getString(KEY_TRAFFIC, null) ?: return null) }.getOrNull() ?: return null
+        val hwid = _link.value?.hwid
+        val cachedHwid = cache.optString("hwid")
+        if (hwid != null && cachedHwid.isNotEmpty() && cachedHwid != hwid) return null
+        val array = cache.optJSONArray("hours") ?: return null
+        val text = (0 until array.length()).joinToString("\n") { array.optString(it) }
+        return cache.optLong("fetchedAt") to RouterAgent.parseTraffic(text)
+    }
+
     suspend fun devices(): RouterNetwork = withRouter { shell ->
         val output = shell.runOk("${RouterAgent.SCRIPT} devices")
         RouterNetwork(RouterAgent.parseDevices(output), RouterAgent.parseSlots(output))
@@ -335,6 +357,7 @@ class RouterRepository @Inject constructor(
         private const val KEY_LINK = "link"
         private const val PING_TIMEOUT_MS = 2_000
         private const val KEY_ROUTER = "router_here"
+        private const val KEY_TRAFFIC = "traffic"
 
         /** Slots that devices other than [exceptMac] go through. */
         fun usedSlots(network: RouterNetwork, exceptMac: String?): Set<Int> =
