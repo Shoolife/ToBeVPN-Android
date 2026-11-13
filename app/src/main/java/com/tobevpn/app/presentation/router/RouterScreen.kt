@@ -170,7 +170,9 @@ fun RouterScreen(
             label = "router-content",
         )
         Column(Modifier.fillMaxSize().padding(padding)) {
-        Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp)) { RouterHeader(state) }
+        // A gap under the router card: the list's upper edge (its fade and
+        // arrow) starts below it rather than against it.
+        Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)) { RouterHeader(state) }
         // Fades and arrows at the edges with more content, as on the other
         // screens; they follow the scroll over the fade's height.
         val listState = rememberLazyListState()
@@ -187,7 +189,7 @@ fun RouterScreen(
                     bottomAlpha = bottomFadeAlpha,
                     fadeHeight = EDGE_FADE_LENGTH,
                 ),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 32.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (!contentShown) return@LazyColumn
