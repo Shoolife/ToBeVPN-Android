@@ -98,6 +98,8 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.domain.model.Server
+import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT
+import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_HEIGHT_FRACTION
 import com.tobevpn.app.presentation.components.EDGE_FADE_LENGTH
 import com.tobevpn.app.presentation.components.InLayoutBottomSheet
 import com.tobevpn.app.presentation.components.SpinningRefreshIcon
@@ -112,8 +114,11 @@ import com.tobevpn.app.presentation.components.serverDisplayName
 import com.tobevpn.app.presentation.components.startEdgeFade
 import com.tobevpn.app.presentation.components.verticalFadingEdges
 import com.tobevpn.app.presentation.theme.AppAlertDialog
+import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.BrandSoftCardFill
+import com.tobevpn.app.presentation.theme.LocalAppBaseDensity
 import com.tobevpn.app.presentation.theme.LocalAppDarkTheme
+import com.tobevpn.app.presentation.theme.LocalAppInterfaceScale
 import com.tobevpn.app.presentation.theme.VpnGreen
 import com.tobevpn.app.router.RouterDevice
 import com.tobevpn.app.router.RouterNetwork
@@ -711,14 +716,22 @@ private fun ServerSheet(
             onChoose(choice)
         }
     }
-    val maxHeight = with(LocalDensity.current) { (LocalView.current.height * 0.93f).toDp() }
+    // The same height as the devices sheet: the whole sheet, handle
+    // included, takes at most APP_MODAL_SHEET_HEIGHT_FRACTION of the window.
+    val baseDensity = LocalAppBaseDensity.current ?: LocalDensity.current
+    val handleHeightPx = with(baseDensity) { (APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT * LocalAppInterfaceScale.current).toPx() }
+    val maxHeight = with(LocalDensity.current) {
+        (LocalView.current.height * APP_MODAL_SHEET_HEIGHT_FRACTION - handleHeightPx).coerceAtLeast(1f).toDp()
+    }
     InLayoutBottomSheet(
         state = sheetState,
         onDismiss = onDismiss,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         containerColor = if (dark) BottomSheetDefaults.ContainerColor else Color.White,
         dragHandle = {
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { BottomSheetDefaults.DragHandle() }
+            AppScaledContent {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { BottomSheetDefaults.DragHandle() }
+            }
         },
     ) {
         Column(Modifier.heightIn(max = maxHeight).navigationBarsPadding()) {
