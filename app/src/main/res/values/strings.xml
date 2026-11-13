@@ -934,4 +934,5 @@
     <string name="router_reconnect_description">The phone lost access to the router. Connect it again — the router password is needed once. If the VPN already works on the router, it stays as it is and can be managed from here.</string>
     <string name="router_servers_loading">Loading the subscription\'s servers…</string>
     <string name="router_servers_failed">Could not get the subscription\'s servers. If the subscription link was reset on another device, refresh the subscription on the main screen and come back.</string>
+    <string name="router_unit_kb">KB</string>
 </resources>

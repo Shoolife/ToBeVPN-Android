@@ -1915,7 +1915,8 @@ private fun trafficBytes(bytes: Long): String {
     return when {
         bytes >= 1024L * 1024 * 1024 -> String.format(java.util.Locale.getDefault(), "%.1f %s", bytes / (mib * 1024), gb)
         bytes >= 1024L * 1024 || bytes == 0L -> "${Math.round(bytes / mib)} $mb"
-        else -> String.format(java.util.Locale.getDefault(), "%.1f %s", bytes / mib, mb)
+        // Under a megabyte, kilobytes: "0,0 MB" next to visible bars read as nothing.
+        else -> "${maxOf(1L, Math.round(bytes / 1024.0))} ${stringResource(R.string.router_unit_kb)}"
     }
 }
 
@@ -1935,7 +1936,9 @@ private fun RouterTraffic(hours: List<com.tobevpn.app.router.TrafficHour>, loadi
     }
     val today = perHour.sum()
     val month = remember(hours, monthStart) { hours.filter { it.hour in monthStart until monthEnd }.sumOf { it.bytes } }
-    val peak = maxOf(perHour.maxOrNull() ?: 0L, 1L)
+    // Bars are measured against at least 10 MB: a few kilobytes in an
+    // otherwise empty day stay small instead of filling the chart.
+    val peak = maxOf(perHour.maxOrNull() ?: 0L, 10L * 1024 * 1024)
     val currentHour = now.hour
     var selected by remember { mutableStateOf<Int?>(null) }
     val barColor = Color(0xFF9C6BFF)
