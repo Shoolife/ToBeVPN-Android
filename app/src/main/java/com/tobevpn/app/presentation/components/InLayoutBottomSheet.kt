@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntOffset
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -117,10 +118,15 @@ fun InLayoutBottomSheet(
     val close = { state.hideThen(onDismiss) }
     BackHandler(enabled = visible, onBack = close)
     val scope = rememberCoroutineScope()
+    // Each finger move is applied at once (undispatched), in order: a move
+    // still queued when the finger lifts would otherwise cancel the settle
+    // animation and leave the sheet stuck halfway.
     val dragState = rememberDraggableState { delta ->
         val height = state.height
         if (height > 0f) {
-            scope.launch { state.offset.snapTo((state.offset.value + delta / height).coerceIn(0f, 1f)) }
+            scope.launch(start = CoroutineStart.UNDISPATCHED) {
+                state.offset.snapTo((state.offset.value + delta / height).coerceIn(0f, 1f))
+            }
         }
     }
 
@@ -154,7 +160,7 @@ fun InLayoutBottomSheet(
                         if (fast || state.offset.value > DISMISS_FRACTION) {
                             state.hideThen(onDismiss)
                         } else {
-                            state.show()
+                            scope.launch { state.show() }
                         }
                     },
                 ),
