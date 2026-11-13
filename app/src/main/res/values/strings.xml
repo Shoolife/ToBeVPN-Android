@@ -871,4 +871,5 @@
     <string name="router_uninstall_yes">Remove</string>
     <string name="router_retry">Try again</string>
     <string name="router_close">Close</string>
+    <string name="router_ping_none">no answer</string>
 </resources>

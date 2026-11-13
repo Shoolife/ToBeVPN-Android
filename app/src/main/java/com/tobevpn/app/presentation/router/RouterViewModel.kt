@@ -56,6 +56,9 @@ data class RouterUiState(
     val notice: Notice? = null,
     /** The removal dialog, while it is open. */
     val uninstall: UninstallUi? = null,
+    /** Direct ping from home by server id; -1 = no answer. */
+    val pings: Map<String, Long> = emptyMap(),
+    val pinging: Boolean = false,
 ) {
     data class Notice(val id: Long, val text: String)
 
@@ -316,6 +319,16 @@ class RouterViewModel @Inject constructor(
             it.hwid.equals(hwid, ignoreCase = true) || it.deviceId.equals(hwid, ignoreCase = true)
         } ?: return
         authRepository.unlinkDevice(device.deviceId, resetSubscription).getOrThrow()
+    }
+
+    /** Pings the servers directly from home (the router sends them direct too). */
+    fun measurePings() {
+        if (_state.value.pinging) return
+        viewModelScope.launch {
+            _state.update { it.copy(pinging = true) }
+            val pings = runCatching { repository.pingServers(_state.value.servers) }.getOrDefault(emptyMap())
+            _state.update { it.copy(pings = it.pings + pings, pinging = false) }
+        }
     }
 
     fun clearNotice(id: Long) = _state.update { if (it.notice?.id == id) it.copy(notice = null) else it }

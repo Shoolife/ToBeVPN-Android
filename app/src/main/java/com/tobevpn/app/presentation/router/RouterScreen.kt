@@ -43,9 +43,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -71,6 +73,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -78,6 +81,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -94,12 +99,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.presentation.components.EDGE_FADE_LENGTH
+import com.tobevpn.app.presentation.components.InLayoutBottomSheet
 import com.tobevpn.app.presentation.components.SpinningRefreshIcon
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.countryFlagForUi
 import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.lazyScrollCues
+import com.tobevpn.app.presentation.components.rememberInLayoutSheetState
 import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
 import com.tobevpn.app.presentation.components.serverDisplayName
 import com.tobevpn.app.presentation.components.startEdgeFade
@@ -112,6 +119,7 @@ import com.tobevpn.app.router.RouterDevice
 import com.tobevpn.app.router.RouterNetwork
 import com.tobevpn.app.router.RouterRepository
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private const val NOTICE_VISIBLE_MS = 6_000L
 
@@ -235,7 +243,10 @@ fun RouterScreen(
                     item {
                         HomeNetworkCard(
                             state = state,
-                            onPick = { picking = it },
+                            onPick = {
+                                picking = it
+                                viewModel.measurePings()
+                            },
                             onNoticeShown = viewModel::clearNotice,
                         )
                     }
@@ -671,6 +682,12 @@ private fun ServerChip(
 
 // ---------------------------------------------------------- server sheet ---
 
+/**
+ * The server for one home device, in the same in-screen sheet as the
+ * devices and subscription sheets: it slides in and out evenly over a
+ * fading scrim. Rows are cards like the app's server list; the current
+ * choice has a green outline and check.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ServerSheet(
@@ -684,8 +701,27 @@ private fun ServerSheet(
         ?: if (device.mode == "vpn") "server:" + network.slots.firstOrNull { it.slot == device.slot }?.serverId else "direct"
     val canAdd = RouterRepository.canAddServer(state.servers, network, device.mac, state.serverLimit)
     val onRouter = network.slots.map { it.serverId }.toSet()
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberResistantModalBottomSheetState()) {
-        Column(Modifier.navigationBarsPadding()) {
+    val dark = LocalAppDarkTheme.current
+    val sheetState = rememberInLayoutSheetState()
+    val scope = rememberCoroutineScope()
+    // The sheet slides away first, then the choice is applied.
+    val choose: (String) -> Unit = { choice ->
+        scope.launch {
+            sheetState.hide()
+            onChoose(choice)
+        }
+    }
+    val maxHeight = with(LocalDensity.current) { (LocalView.current.height * 0.93f).toDp() }
+    InLayoutBottomSheet(
+        state = sheetState,
+        onDismiss = onDismiss,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        containerColor = if (dark) BottomSheetDefaults.ContainerColor else Color.White,
+        dragHandle = {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { BottomSheetDefaults.DragHandle() }
+        },
+    ) {
+        Column(Modifier.heightIn(max = maxHeight).navigationBarsPadding()) {
             Text(
                 RouterViewModel.deviceLabel(device),
                 style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
@@ -699,18 +735,23 @@ private fun ServerSheet(
                     stringResource(R.string.router_sheet_full, state.serverLimit),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 6.dp),
                 )
             }
             val serversListState = rememberLazyListState()
-            LazyColumn(state = serversListState, modifier = Modifier.lazyScrollCues(serversListState), contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
-                item {
+            LazyColumn(
+                state = serversListState,
+                modifier = Modifier.lazyScrollCues(serversListState),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                item(key = "direct") {
                     SheetRow(
                         flag = null,
                         name = stringResource(R.string.router_no_vpn),
                         selected = current == "direct",
                         enabled = true,
-                        onClick = { onChoose("direct") },
+                        onClick = { choose("direct") },
                     )
                 }
                 items(state.servers, key = { it.id }) { server ->
@@ -719,7 +760,9 @@ private fun ServerSheet(
                         name = serverDisplayName(server.name, server.country),
                         selected = current == "server:${server.id}",
                         enabled = canAdd || server.id in onRouter,
-                        onClick = { onChoose("server:${server.id}") },
+                        onClick = { choose("server:${server.id}") },
+                        ping = state.pings[server.id],
+                        pinging = state.pinging,
                     )
                 }
             }
@@ -728,26 +771,79 @@ private fun ServerSheet(
 }
 
 @Composable
-private fun SheetRow(flag: String?, name: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+private fun SheetRow(
+    flag: String?,
+    name: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    ping: Long? = null,
+    pinging: Boolean = false,
+    showPing: Boolean = flag != null,
+) {
+    val dark = LocalAppDarkTheme.current
+    val shape = RoundedCornerShape(16.dp)
+    val base = if (dark) MaterialTheme.colorScheme.surfaceContainerHigh else BrandSoftCardFill
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .then(if (selected) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)) else Modifier)
+            .clip(shape)
+            .background(if (selected) VpnGreen.copy(alpha = if (dark) 0.14f else 0.10f) else base)
+            .then(if (selected) Modifier.border(1.5.dp, VpnGreen, shape) else Modifier)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 14.dp),
+            .padding(horizontal = 14.dp, vertical = 14.dp)
+            .graphicsLayer { alpha = if (enabled) 1f else 0.4f },
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(flag ?: "—", modifier = Modifier.width(30.dp))
+        Box(Modifier.width(36.dp), contentAlignment = Alignment.CenterStart) {
+            if (flag != null) {
+                Text(flag, fontSize = 22.sp)
+            } else {
+                Icon(
+                    Icons.Filled.LinkOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+        }
         Text(
             name,
             style = fixedLayoutTextStyle(MaterialTheme.typography.bodyLarge),
-            color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (dark) MaterialTheme.colorScheme.onSurface else Color.Black,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.weight(1f),
         )
-        if (selected) Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        if (showPing) {
+            Spacer(Modifier.width(8.dp))
+            PingLabel(ping = ping, pinging = pinging)
+        }
+        if (selected) {
+            Spacer(Modifier.width(8.dp))
+            Icon(Icons.Filled.Check, contentDescription = null, tint = VpnGreen)
+        }
+    }
+}
+
+/** Direct ping from home, as on PC: green when good, amber when slow. */
+@Composable
+private fun PingLabel(ping: Long?, pinging: Boolean) {
+    when {
+        ping != null && ping >= 0 -> Text(
+            "$ping ms",
+            style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+            fontWeight = FontWeight.SemiBold,
+            color = if (ping <= 150) VpnGreen else Color(0xFFE0A030),
+        )
+        ping != null -> Text(
+            stringResource(R.string.router_ping_none),
+            style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
+            color = MaterialTheme.colorScheme.error,
+        )
+        pinging -> CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.5.dp)
+        else -> Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

@@ -885,4 +885,5 @@
     <string name="router_uninstall_yes">Удалить</string>
     <string name="router_retry">Повторить</string>
     <string name="router_close">Закрыть</string>
+    <string name="router_ping_none">нет ответа</string>
 </resources>

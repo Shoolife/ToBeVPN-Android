@@ -4,6 +4,8 @@ import android.content.Context
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.domain.model.Server
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -222,6 +224,32 @@ class RouterRepository @Inject constructor(
         }
     }
 
+    /**
+     * TCP connect time to each server through the Wi-Fi network, not the
+     * phone's VPN: the router sends ToBeVPN servers direct as well, so this
+     * is the home's own latency to them, as the desktop app measures it.
+     * Hysteria2 runs over UDP and gets no TCP ping.
+     */
+    suspend fun pingServers(servers: List<Server>): Map<String, Long> = kotlinx.coroutines.coroutineScope {
+        val network = network()
+        servers
+            .filter { it.protocol != com.tobevpn.app.domain.model.ServerProtocol.HYSTERIA2 }
+            .map { server ->
+                async(kotlinx.coroutines.Dispatchers.IO) {
+                    server.id to runCatching {
+                        val socket = network?.socketFactory?.createSocket() ?: java.net.Socket()
+                        socket.use {
+                            val started = System.nanoTime()
+                            it.connect(java.net.InetSocketAddress(server.address, server.port), PING_TIMEOUT_MS)
+                            (System.nanoTime() - started) / 1_000_000
+                        }
+                    }.getOrDefault(-1L)
+                }
+            }
+            .awaitAll()
+            .toMap()
+    }
+
     // ------------------------------------------------------------ servers ---
 
     /**
@@ -305,6 +333,7 @@ class RouterRepository @Inject constructor(
 
     companion object {
         private const val KEY_LINK = "link"
+        private const val PING_TIMEOUT_MS = 2_000
         private const val KEY_ROUTER = "router_here"
 
         /** Slots that devices other than [exceptMac] go through. */
