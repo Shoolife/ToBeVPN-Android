@@ -290,6 +290,7 @@ private fun StatusText(state: RouterUiState) {
     val info = state.info
     val text = when {
         info?.gateway == null -> stringResource(R.string.router_status_no_network)
+        state.installedByAnother -> stringResource(R.string.router_status_installed_elsewhere)
         info.model in SUPPORTED_MODELS -> stringResource(R.string.router_status_supported)
         info.firmware != null -> stringResource(R.string.router_status_openwrt_unverified)
         else -> stringResource(R.string.router_status_unknown)
@@ -311,11 +312,13 @@ private fun StatusText(state: RouterUiState) {
 @Composable
 private fun InstallCard(state: RouterUiState, onPair: (String, String) -> Unit) {
     var formOpen by rememberSaveable { mutableStateOf(false) }
-    val canInstall = state.info?.firmware != null
+    val canInstall = state.info?.firmware != null || state.installedByAnother
     RouterCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                stringResource(R.string.router_vpn_description),
+                stringResource(
+                    if (state.installedByAnother) R.string.router_connect_description else R.string.router_vpn_description,
+                ),
                 style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
             )
             if (formOpen) {
@@ -327,10 +330,14 @@ private fun InstallCard(state: RouterUiState, onPair: (String, String) -> Unit) 
                     shape = RoundedCornerShape(13.dp),
                     modifier = Modifier.fillMaxWidth().height(48.dp),
                 ) {
-                    Text(stringResource(R.string.router_install))
+                    Text(
+                        stringResource(
+                            if (state.installedByAnother) R.string.router_connect_button else R.string.router_install,
+                        ),
+                    )
                 }
             }
-            if (!canInstall) {
+            if (!canInstall && !state.installedByAnother) {
                 Text(
                     stringResource(R.string.router_install_unsupported),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),

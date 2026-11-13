@@ -870,4 +870,8 @@
     <string name="router_install">Установить VPN на роутер</string>
     <string name="router_install_unsupported">Установка доступна для роутеров на OpenWrt. Заводские прошивки (Huawei, TP-Link, роутеры провайдеров) не дают ставить программы.</string>
     <string name="refresh_hint_servers">Запустите ручную проверку серверов</string>
+    <string name="router_status_installed_elsewhere">ToBeVPN уже установлен на этом роутере с другого устройства.</string>
+    <string name="router_connect_description">VPN на роутере уже работает. Подключите телефон к роутеру, чтобы управлять им отсюда: выбирать сервер для каждого устройства дома, включать и выключать VPN.</string>
+    <string name="router_connect_button">Подключить роутер</string>
+    <string name="router_card_installed">ToBeVPN установлен • Ваша сеть</string>
 </resources>

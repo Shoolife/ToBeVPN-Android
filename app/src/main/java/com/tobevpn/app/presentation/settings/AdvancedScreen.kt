@@ -1302,6 +1302,9 @@ private fun LinkedDevicesBottomSheet(
                                             routerHere.model?.takeIf { it != linkedHere.name },
                                             stringResource(R.string.router_this_network),
                                         ).joinToString(" • ")
+                                        // ToBeVPN runs on it, set up from another device.
+                                        notCurrent.any { it.inferredKind() == DeviceKind.Router && isRouterHere(it) } ->
+                                            stringResource(R.string.router_card_installed)
                                         routerHere.firmware != null -> stringResource(R.string.router_card_protect_home)
                                         else -> gatewayHere
                                     },

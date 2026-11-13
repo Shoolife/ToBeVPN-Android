@@ -856,4 +856,8 @@
     <string name="router_install">Install the VPN on the router</string>
     <string name="router_install_unsupported">Installing is available for OpenWrt routers. Stock firmware (Huawei, TP-Link, ISP routers) does not allow installing software.</string>
     <string name="refresh_hint_servers">Run a manual check of the servers</string>
+    <string name="router_status_installed_elsewhere">ToBeVPN is already installed on this router from another device.</string>
+    <string name="router_connect_description">The VPN on the router already works. Connect the phone to the router to manage it from here: choose a server for each device at home, turn the VPN on and off.</string>
+    <string name="router_connect_button">Connect the router</string>
+    <string name="router_card_installed">ToBeVPN installed • Your network</string>
 </resources>

@@ -42,6 +42,12 @@ data class RouterUiState(
     val status: RouterStatus? = null,
     val network: RouterNetwork? = null,
     val servers: List<Server> = emptyList(),
+    /**
+     * The account already has this network's router (same model, linked as
+     * a router): ToBeVPN is installed on it from another device, and this
+     * phone only needs to connect to it.
+     */
+    val installedByAnother: Boolean = false,
     val savingMac: String? = null,
     val error: String? = null,
     /** A short notice after a device's VPN changed; it hides by itself. */
@@ -58,6 +64,7 @@ data class RouterUiState(
 class RouterViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: RouterRepository,
+    private val botApi: com.tobevpn.app.data.remote.BotApi,
     vpnRepository: VpnRepository,
 ) : ViewModel() {
     private val _state = MutableStateFlow(
@@ -93,8 +100,11 @@ class RouterViewModel @Inject constructor(
             _state.update { it.copy(refreshing = !initial, error = null) }
             val here = repository.linkHere()
             _state.update { it.copy(checking = here != null && it.status == null, paired = here != null) }
-            // The login page and the router's own status are asked at once.
+            // The login page and the router's own status are asked at once,
+            // and the account's devices tell whether the router already runs
+            // ToBeVPN from another device.
             val detection = async { repository.detect() }
+            val accountRouters = async { accountRouterModels() }
             if (here != null) {
                 runRouter {
                     val status = repository.status()
@@ -107,6 +117,9 @@ class RouterViewModel @Inject constructor(
                 }
             }
             val info = detection.await()
+            val models = accountRouters.await()
+            val installedByAnother = info.model != null && models.any { it.equals(info.model, ignoreCase = true) }
+            _state.update { it.copy(installedByAnother = installedByAnother) }
             // A refresh that answers at once still shows one full turn of
             // its icon, as on PC (and the devices list).
             if (!initial) {
@@ -203,6 +216,17 @@ class RouterViewModel @Inject constructor(
             _state.update { it.copy(savingMac = null) }
         }
     }
+
+    /** Models of the routers linked to the account (they fetch with a "/router/" User-Agent). */
+    private suspend fun accountRouterModels(): List<String> = runCatching {
+        botApi.getDevices().data?.devices.orEmpty()
+            .filter { device ->
+                device.deviceType.equals("router", ignoreCase = true) ||
+                    device.userAgent.orEmpty().contains("/router/", ignoreCase = true) ||
+                    device.platform.equals("openwrt", ignoreCase = true)
+            }
+            .mapNotNull { it.deviceModel?.trim()?.takeIf(String::isNotEmpty) }
+    }.getOrDefault(emptyList())
 
     fun clearNotice(id: Long) = _state.update { if (it.notice?.id == id) it.copy(notice = null) else it }
 
