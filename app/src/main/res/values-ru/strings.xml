@@ -827,7 +827,7 @@
     <string name="router_status_failed">Ошибка</string>
     <string name="router_status_not_installed">Не установлен</string>
     <string name="router_login">Логин роутера</string>
-    <string name="router_login_placeholder">Логин от веб-интерфейса роутера, обычно %1$s</string>
+    <string name="router_login_placeholder">Логин от веб-интерфейса роутера</string>
     <string name="router_password">Пароль роутера</string>
     <string name="router_password_placeholder">Пароль от веб-интерфейса роутера</string>
     <string name="router_password_hint">Пароль нужен один раз: приложение добавит на роутер свой ключ доступа и пароль не сохраняет.</string>

@@ -546,7 +546,7 @@ private fun PairForm(busy: Boolean, onPair: (String, String) -> Unit, label: Str
                 value = user,
                 onValueChange = { user = it },
                 label = { Text(stringResource(R.string.router_login)) },
-                placeholder = { Text(stringResource(R.string.router_login_placeholder, "root")) },
+                placeholder = { Text(stringResource(R.string.router_login_placeholder)) },
                 singleLine = true,
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),

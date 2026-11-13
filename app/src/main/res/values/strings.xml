@@ -813,7 +813,7 @@
     <string name="router_status_failed">Error</string>
     <string name="router_status_not_installed">Not installed</string>
     <string name="router_login">Router login</string>
-    <string name="router_login_placeholder">Login of the router\'s web interface, usually %1$s</string>
+    <string name="router_login_placeholder">Login of the router\'s web interface</string>
     <string name="router_password">Router password</string>
     <string name="router_password_placeholder">Password of the router\'s web interface</string>
     <string name="router_password_hint">The password is needed once: the app adds its own access key to the router and does not store the password.</string>
