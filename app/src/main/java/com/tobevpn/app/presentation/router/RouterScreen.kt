@@ -3,6 +3,7 @@ package com.tobevpn.app.presentation.router
 import androidx.compose.animation.AnimatedVisibility
 import com.tobevpn.app.presentation.components.BrandLoader
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -489,7 +490,19 @@ private fun InstallCard(state: RouterUiState, onPair: (String, String) -> Unit) 
                 ),
                 style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
             )
-            if (formOpen) {
+            // The button gives way to the form slowly: it fades out, the card
+            // grows evenly to the form's height, and the fields fade in.
+            AnimatedContent(
+                targetState = formOpen,
+                transitionSpec = {
+                    (fadeIn(tween(380, delayMillis = 140, easing = FastOutSlowInEasing)) togetherWith
+                        fadeOut(tween(160, easing = FastOutSlowInEasing)))
+                        .using(SizeTransform(clip = false) { _, _ -> tween(420, easing = FastOutSlowInEasing) })
+                },
+                contentAlignment = Alignment.TopCenter,
+                label = "router-pair-form",
+            ) { open ->
+            if (open) {
                 PairForm(
                     busy = state.busy,
                     onPair = onPair,
@@ -509,6 +522,7 @@ private fun InstallCard(state: RouterUiState, onPair: (String, String) -> Unit) 
                         ),
                     )
                 }
+            }
             }
             if (!canInstall && !state.installedByAnother) {
                 Text(
