@@ -26,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -47,9 +48,9 @@ class InLayoutSheetState internal constructor(private val scope: kotlinx.corouti
     internal val offset = Animatable(1f)
     internal var height by mutableFloatStateOf(0f)
 
-    /** Fully open and not moving. */
+    /** Not sliding (open, or waiting hidden below the screen). */
     val isSettled: Boolean
-        get() = !offset.isRunning && offset.value == 0f
+        get() = !offset.isRunning
 
     internal suspend fun show() = offset.animateTo(0f, tween(SHEET_MOTION_MS, easing = FastOutSlowInEasing))
 
@@ -81,23 +82,39 @@ fun rememberInLayoutSheetState(): InLayoutSheetState {
 fun InLayoutBottomSheet(
     state: InLayoutSheetState,
     onDismiss: () -> Unit,
+    /**
+     * False keeps the sheet composed below the screen, ready: opening it
+     * then is only the slide. Its first composition and drawing happen
+     * before it is needed, not at the start of the motion.
+     */
+    visible: Boolean = true,
     shape: Shape,
     containerColor: Color,
     modifier: Modifier = Modifier,
     dragHandle: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
-    var shownBefore by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (shownBefore) {
-            state.offset.snapTo(0f)
-        } else {
-            shownBefore = true
-            state.show()
+    // Open when the screen was left: it is simply there again on return.
+    var openBefore by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(visible) {
+        when {
+            !visible -> {
+                openBefore = false
+                state.offset.snapTo(1f)
+            }
+            openBefore -> state.offset.snapTo(0f)
+            else -> {
+                openBefore = true
+                // A frame or two to lay out and draw anything new below the
+                // screen; the slide starts after them, from its first step.
+                withFrameNanos { }
+                withFrameNanos { }
+                state.show()
+            }
         }
     }
     val close = { state.hideThen(onDismiss) }
-    BackHandler(onBack = close)
+    BackHandler(enabled = visible, onBack = close)
     val scope = rememberCoroutineScope()
     val dragState = rememberDraggableState { delta ->
         val height = state.height
@@ -107,16 +124,19 @@ fun InLayoutBottomSheet(
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color.Black.copy(alpha = SCRIM_ALPHA * (1f - state.offset.value)))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = close,
-                ),
-        )
+        // No scrim (nor its touch catcher) while the sheet waits hidden.
+        if (visible || state.offset.isRunning) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = SCRIM_ALPHA * (1f - state.offset.value)))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = close,
+                    ),
+            )
+        }
         Surface(
             shape = shape,
             color = containerColor,

@@ -151,6 +151,7 @@ import com.tobevpn.app.util.DeviceQrScanParser
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.util.TelegramLinks
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 
@@ -389,8 +390,16 @@ fun AdvancedScreen(
         }
     }
 
-    if (showDevicesSheet && authState is AuthState.Authenticated) {
+    // The sheet is composed hidden a moment after this screen came in, so
+    // the first "Devices" tap only slides it in.
+    var devicesSheetReady by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(DEVICES_SHEET_WARMUP_MS)
+        devicesSheetReady = true
+    }
+    if ((showDevicesSheet || devicesSheetReady) && authState is AuthState.Authenticated) {
         LinkedDevicesBottomSheet(
+            visible = showDevicesSheet,
             state = linkedDevicesState,
             onDismiss = { showDevicesSheet = false },
             onRefresh = { viewModel.refreshLinkedDevices(userRequested = true) },
@@ -919,6 +928,7 @@ private fun PairingCodeInputDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LinkedDevicesBottomSheet(
+    visible: Boolean,
     state: LinkedDevicesUiState,
     onDismiss: () -> Unit,
     onRefresh: () -> Unit,
@@ -949,6 +959,7 @@ private fun LinkedDevicesBottomSheet(
         onDisconnect = onDisconnect,
         onClearError = onClearError,
         onOpenRouter = onOpenRouter,
+        visible = visible,
     )
 }
 
@@ -966,6 +977,7 @@ private fun LinkedDevicesSheetBody(
     onDisconnect: (deviceId: String, resetSubscription: Boolean) -> Unit,
     onClearError: () -> Unit,
     onOpenRouter: () -> Unit,
+    visible: Boolean,
 ) {
     // The device whose "Disconnect" was tapped: asked first, with the
     // choice to reset the subscription link.
@@ -1125,6 +1137,7 @@ private fun LinkedDevicesSheetBody(
     InLayoutBottomSheet(
         state = sheetState,
         onDismiss = onDismiss,
+        visible = visible,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         dragHandle = {
             AppScaledContent {
@@ -2243,3 +2256,6 @@ private fun RouterHereCard(title: String, meta: String, onClick: () -> Unit) {
         }
     }
 }
+
+/** After this screen's own transition, the devices sheet is prepared hidden. */
+private const val DEVICES_SHEET_WARMUP_MS = 1_200L
