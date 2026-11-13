@@ -185,6 +185,7 @@ fun RouterScreen(
         }
     }
     LaunchedEffect(notInstalled, state.servers.isNotEmpty()) {
+        if (notInstalled && state.servers.isEmpty()) viewModel.ensureServers()
         if (notInstalled && state.servers.isNotEmpty()) viewModel.ensureInstallServer()
     }
     var pickingInstallServer by remember { mutableStateOf(false) }
@@ -1683,6 +1684,14 @@ private fun InstallPanel(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+            // As on PC: a greyed-out button always says why.
+            if (check?.ok == true && state.servers.isEmpty()) {
+                Text(
+                    stringResource(if (state.serversFailed) R.string.router_servers_failed else R.string.router_servers_loading),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = if (state.serversFailed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             if (install.log.isNotEmpty()) InstallLog(install.log)
         }

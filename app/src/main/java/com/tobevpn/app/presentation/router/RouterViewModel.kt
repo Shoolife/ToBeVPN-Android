@@ -76,6 +76,10 @@ data class RouterUiState(
      * connected again with its password, as on PC.
      */
     val accessLost: Boolean = false,
+    /** No servers on the phone yet: the subscription is read again. */
+    val serversLoading: Boolean = false,
+    /** The subscription gave no servers (e.g. its link was reset elsewhere). */
+    val serversFailed: Boolean = false,
 ) {
     data class Notice(val id: Long, val text: String)
 
@@ -124,7 +128,7 @@ class RouterViewModel @Inject constructor(
     private val installer: com.tobevpn.app.router.RouterInstaller,
     private val sessionDao: com.tobevpn.app.data.local.dao.SessionDao,
     private val prefsDataStore: com.tobevpn.app.data.local.PrefsDataStore,
-    vpnRepository: VpnRepository,
+    private val vpnRepository: VpnRepository,
 ) : ViewModel() {
     // Shown at once from what is already in memory (the devices list
     // detected the router just before); nothing here touches the system or
@@ -319,6 +323,25 @@ class RouterViewModel @Inject constructor(
             } catch (error: Exception) {
                 install { it.copy(checking = false, error = errorText(error)) }
             }
+        }
+    }
+
+    private var serversJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * The install needs a server; with none on the phone (its subscription
+     * link was reset from another device, or never loaded) the subscription
+     * is fetched again from the account, so the install is not left with a
+     * greyed-out button and no word why.
+     */
+    fun ensureServers() {
+        if (_state.value.servers.isNotEmpty() || serversJob?.isActive == true) return
+        serversJob = viewModelScope.launch {
+            _state.update { it.copy(serversLoading = true, serversFailed = false) }
+            runCatching { authRepository.syncSubscription(force = true) }
+            val result = runCatching { vpnRepository.refreshServers(forceRefresh = true) }.getOrNull()
+            val found = result?.getOrNull().orEmpty().any { it.isAvailable }
+            _state.update { it.copy(serversLoading = false, serversFailed = !found && it.servers.isEmpty()) }
         }
     }
 
