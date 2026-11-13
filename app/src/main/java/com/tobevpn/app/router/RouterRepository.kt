@@ -316,7 +316,7 @@ class RouterRepository @Inject constructor(
     private var ruSitesCache: ByteArray? = null
 
     /** The app's geosite.dat cut down to its Russian categories, once per process. */
-    private fun ruSites(): ByteArray? = ruSitesCache ?: runCatching {
+    internal fun ruSites(): ByteArray? = ruSitesCache ?: runCatching {
         context.assets.open("geosite.dat").use { RouterAgent.trimGeosite(it, RouterAgent.RU_DIRECT_DOMAIN_GROUPS) }
     }.getOrNull()?.also { ruSitesCache = it }
 

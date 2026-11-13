@@ -163,3 +163,25 @@ class RouterAgentTest {
         )
     }
 }
+
+class RouterInstallerTest {
+    @Test
+    fun routerIdMatchesTheDesktopApp() {
+        // Python: uuid.uuid5(uuid.NAMESPACE_OID, "tobevpn-router:D4:AB:61:46:28:00"),
+        // the same as Rust's Uuid::new_v5(&NAMESPACE_OID, ...).
+        assertEquals(
+            "befe0dc8-f668-5434-847a-1d108ce7d224",
+            RouterInstaller.uuidV5(
+                java.util.UUID.fromString("6ba7b812-9dad-11d1-80b4-00c04fd430c8"),
+                "tobevpn-router:D4:AB:61:46:28:00",
+            ).toString(),
+        )
+    }
+
+    @Test
+    fun comparesXrayVersions() {
+        assertTrue(RouterInstaller.compareVersions(RouterInstaller.versionTuple("26.11.2"), RouterInstaller.versionTuple("26.10.31")) > 0)
+        assertEquals(emptyList<Int>(), RouterInstaller.versionTuple("v26.1"))
+        assertEquals(0, RouterInstaller.compareVersions(listOf(26, 10), listOf(26, 10, 0)))
+    }
+}

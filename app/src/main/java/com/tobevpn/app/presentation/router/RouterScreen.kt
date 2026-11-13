@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,6 +43,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.outlined.Router
@@ -113,6 +115,7 @@ import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheet
 import com.tobevpn.app.presentation.components.serverDisplayName
 import com.tobevpn.app.presentation.components.startEdgeFade
 import com.tobevpn.app.presentation.components.verticalFadingEdges
+import com.tobevpn.app.presentation.components.verticalScrollWithCues
 import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.AppScaledContent
 import com.tobevpn.app.presentation.theme.BrandSoftCardFill
@@ -141,6 +144,7 @@ fun RouterScreen(
     var contentShown by rememberSaveable { mutableStateOf(false) }
     if (entered) contentShown = true
     var picking by remember { mutableStateOf<RouterDevice?>(null) }
+    var pickingInstallServer by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -234,7 +238,22 @@ fun RouterScreen(
                 }
                 !status.installed -> {
                     item { SectionTitle(stringResource(R.string.router_vpn_section)) }
-                    item { HintCard(stringResource(R.string.router_not_installed_phone)) }
+                    item {
+                        InstallPanel(
+                            state = state,
+                            onCheck = viewModel::checkRouter,
+                            onPickServer = {
+                                pickingInstallServer = true
+                                viewModel.measurePings()
+                            },
+                            onAutostart = viewModel::setInstallAutostart,
+                            onInstall = viewModel::installVpn,
+                            onReady = {
+                                viewModel.ensureInstallServer()
+                                if (state.install.check == null && !state.install.checking) viewModel.checkRouter()
+                            },
+                        )
+                    }
                 }
                 else -> {
                     if (status.failed) {
@@ -292,6 +311,23 @@ fun RouterScreen(
             canResetLink = state.status?.hwid != null || state.link?.hwid != null,
             onConfirm = viewModel::uninstall,
             onClose = viewModel::closeUninstall,
+        )
+    }
+
+    if (pickingInstallServer) {
+        ServerPickerSheet(
+            title = stringResource(R.string.router_install_server),
+            current = state.install.serverId?.let { "server:$it" },
+            showDirect = false,
+            isEnabled = { true },
+            note = null,
+            state = state,
+            onChoose = { choice ->
+                pickingInstallServer = false
+                viewModel.setInstallServer(choice.removePrefix("server:"))
+            },
+            onDismiss = { pickingInstallServer = false },
+            onRefresh = { viewModel.measurePings(userRequested = true) },
         )
     }
 
@@ -421,7 +457,12 @@ private fun InstallCard(state: RouterUiState, onPair: (String, String) -> Unit) 
                 style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
             )
             if (formOpen) {
-                PairForm(busy = state.busy, onPair = onPair)
+                PairForm(
+                    busy = state.busy,
+                    onPair = onPair,
+                    // As on PC: connecting to a router without ToBeVPN checks it.
+                    label = stringResource(if (state.installedByAnother) R.string.router_connect_button else R.string.router_check),
+                )
             } else {
                 Button(
                     onClick = { formOpen = true },
@@ -448,7 +489,7 @@ private fun InstallCard(state: RouterUiState, onPair: (String, String) -> Unit) 
 }
 
 @Composable
-private fun PairForm(busy: Boolean, onPair: (String, String) -> Unit) {
+private fun PairForm(busy: Boolean, onPair: (String, String) -> Unit, label: String) {
     var user by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var visible by remember { mutableStateOf(false) }
@@ -498,7 +539,7 @@ private fun PairForm(busy: Boolean, onPair: (String, String) -> Unit) {
                 if (busy) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
-                    Text(stringResource(R.string.router_pair_button))
+                    Text(label)
                 }
             }
         }
@@ -708,6 +749,33 @@ private fun ServerSheet(
         ?: if (device.mode == "vpn") "server:" + network.slots.firstOrNull { it.slot == device.slot }?.serverId else "direct"
     val canAdd = RouterRepository.canAddServer(state.servers, network, device.mac, state.serverLimit)
     val onRouter = network.slots.map { it.serverId }.toSet()
+    ServerPickerSheet(
+        title = RouterViewModel.deviceLabel(device),
+        current = current,
+        showDirect = true,
+        isEnabled = { canAdd || it.id in onRouter },
+        note = if (canAdd) null else stringResource(R.string.router_sheet_full, state.serverLimit),
+        state = state,
+        onChoose = onChoose,
+        onDismiss = onDismiss,
+        onRefresh = onRefresh,
+    )
+}
+
+/** The server list sheet: for a home device, or the router's own server when installing. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ServerPickerSheet(
+    title: String,
+    current: String?,
+    showDirect: Boolean,
+    isEnabled: (Server) -> Boolean,
+    note: String?,
+    state: RouterUiState,
+    onChoose: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onRefresh: () -> Unit,
+) {
     val dark = LocalAppDarkTheme.current
     val sheetState = rememberInLayoutSheetState()
     val scope = rememberCoroutineScope()
@@ -744,7 +812,7 @@ private fun ServerSheet(
                 modifier = Modifier.padding(start = 24.dp, end = 12.dp),
             ) {
                 Text(
-                    RouterViewModel.deviceLabel(device),
+                    title,
                     style = fixedLayoutTextStyle(MaterialTheme.typography.titleLarge),
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
@@ -758,9 +826,9 @@ private fun ServerSheet(
                     )
                 }
             }
-            if (!canAdd) {
+            if (note != null) {
                 Text(
-                    stringResource(R.string.router_sheet_full, state.serverLimit),
+                    note,
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 6.dp),
@@ -773,7 +841,7 @@ private fun ServerSheet(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                item(key = "direct") {
+                if (showDirect) item(key = "direct") {
                     SheetRow(
                         flag = null,
                         name = stringResource(R.string.router_no_vpn),
@@ -787,7 +855,7 @@ private fun ServerSheet(
                         flag = countryFlagForUi(server.country, server.name),
                         name = serverDisplayName(server.name, server.country),
                         selected = current == "server:${server.id}",
-                        enabled = canAdd || server.id in onRouter,
+                        enabled = isEnabled(server),
                         onClick = { choose("server:${server.id}") },
                         ping = state.pings[server.id],
                         pinging = state.pinging,
@@ -1197,6 +1265,186 @@ private fun RouterSkeleton(installed: Boolean) {
         } else {
             SectionTitle(stringResource(R.string.router_vpn_section))
             panel(2)
+        }
+    }
+}
+
+// ---------------------------------------------------------------- install ---
+
+/**
+ * Installing from the phone, as on PC: the router's check (fits or not,
+ * and why), then the router's server, autostart and the install, with its
+ * steps and a detailed log.
+ */
+@Composable
+private fun InstallPanel(
+    state: RouterUiState,
+    onCheck: () -> Unit,
+    onPickServer: () -> Unit,
+    onAutostart: (Boolean) -> Unit,
+    onInstall: () -> Unit,
+    onReady: () -> Unit,
+) {
+    val install = state.install
+    LaunchedEffect(state.servers.isNotEmpty()) { if (state.servers.isNotEmpty()) onReady() }
+    RouterCard {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            val check = install.check
+            when {
+                install.checking && check == null -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Text(stringResource(R.string.router_step_check), style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium))
+                }
+                check != null -> CompatibilityCard(check)
+            }
+            install.error?.let {
+                Text(it, color = MaterialTheme.colorScheme.error, style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall))
+            }
+            if (check?.ok == true) {
+                val server = state.servers.firstOrNull { it.id == install.serverId }
+                Text(
+                    stringResource(R.string.router_install_server),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                ServerChip(
+                    server = server,
+                    fallbackName = null,
+                    vpn = true,
+                    saving = false,
+                    enabled = !install.installing,
+                    onClick = onPickServer,
+                )
+                SwitchRow(stringResource(R.string.router_autostart), install.autostart, !install.installing, onAutostart)
+                if (install.installing) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Text(stepText(install.step), style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium))
+                    }
+                } else {
+                    Button(
+                        onClick = onInstall,
+                        enabled = server != null,
+                        shape = RoundedCornerShape(13.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                    ) { Text(stringResource(R.string.router_install)) }
+                }
+            } else if (check != null && !install.checking) {
+                OutlinedButton(
+                    onClick = onCheck,
+                    shape = RoundedCornerShape(13.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) { Text(stringResource(R.string.router_check_again)) }
+            }
+            if (install.log.isNotEmpty()) InstallLog(install.log)
+        }
+    }
+}
+
+@Composable
+private fun stepText(step: String?): String = stringResource(
+    when {
+        step == null || step == "connect" -> R.string.router_step_connect
+        step == "check" -> R.string.router_step_check
+        step == "tun" -> R.string.router_step_tun
+        step.startsWith("download") -> R.string.router_step_download
+        step.startsWith("upload") -> R.string.router_step_upload
+        step == "configure" -> R.string.router_step_configure
+        step == "start" -> R.string.router_step_start
+        else -> R.string.router_step_done
+    },
+)
+
+/** The check's verdict and what it found, as on PC. */
+@Composable
+private fun CompatibilityCard(check: com.tobevpn.app.router.RouterCheck) {
+    val color = if (check.ok) VpnGreen else MaterialTheme.colorScheme.error
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (check.ok) Icons.Filled.Check else Icons.Filled.Close,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(20.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                stringResource(if (check.ok) R.string.router_check_ok else R.string.router_check_bad),
+                color = color,
+                fontWeight = FontWeight.SemiBold,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+            )
+        }
+        @Composable
+        fun fact(label: Int, value: String, bad: Boolean = false) {
+            Row {
+                Text(
+                    stringResource(label),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.width(120.dp),
+                )
+                Text(
+                    value,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = if (bad) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                )
+            }
+        }
+        if (check.firmware.isNotBlank()) fact(R.string.router_check_firmware, listOf(check.model, check.firmware).filter { it.isNotBlank() }.joinToString(" · "))
+        fact(R.string.router_check_cpu, check.machine, bad = !check.cpuOk)
+        fact(
+            R.string.router_check_memory,
+            stringResource(R.string.router_check_memory_value, check.memoryTotalMb, check.memoryFreeMb),
+            bad = "memory_total" in check.problems || "memory_free" in check.problems,
+        )
+        fact(R.string.router_check_space, stringResource(R.string.router_check_space_value, check.spaceFreeMb), bad = "space" in check.problems)
+        fact(R.string.router_check_firewall, check.firewall, bad = "firewall" in check.problems)
+        if (check.packages.isNotEmpty()) {
+            fact(R.string.router_check_packages, check.packages.joinToString(", "), bad = "packages" in check.problems)
+        }
+    }
+}
+
+/** The install's detailed log, expandable, errors in red. */
+@Composable
+private fun InstallLog(lines: List<com.tobevpn.app.router.InstallLogLine>) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    Column {
+        Text(
+            stringResource(if (open) R.string.router_log_hide else R.string.router_log_show, lines.size),
+            color = MaterialTheme.colorScheme.primary,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { open = !open }
+                .padding(vertical = 6.dp),
+        )
+        AnimatedVisibility(visible = open, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 280.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    .verticalScrollWithCues(rememberScrollState())
+                    .padding(10.dp),
+            ) {
+                lines.forEach { line ->
+                    Text(
+                        line.text,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                        color = when (line.level) {
+                            "error" -> MaterialTheme.colorScheme.error
+                            "warn" -> Color(0xFFE0A030)
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    )
+                }
+            }
         }
     }
 }

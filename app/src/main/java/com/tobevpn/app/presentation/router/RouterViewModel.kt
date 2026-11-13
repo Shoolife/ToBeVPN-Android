@@ -56,6 +56,8 @@ data class RouterUiState(
     val notice: Notice? = null,
     /** The removal dialog, while it is open. */
     val uninstall: UninstallUi? = null,
+    /** The router check and the install, while ToBeVPN is not on the router. */
+    val install: InstallUi = InstallUi(),
     /** Direct ping from home by server id; -1 = no answer. */
     val pings: Map<String, Long> = emptyMap(),
     val pinging: Boolean = false,
@@ -66,6 +68,19 @@ data class RouterUiState(
     val serverLimit: Int
         get() = status?.let { RouterAgent.serverLimit(it, network?.slots?.size ?: 0) } ?: RouterAgent.MAX_SERVERS
 }
+
+data class InstallUi(
+    val checking: Boolean = false,
+    val check: com.tobevpn.app.router.RouterCheck? = null,
+    /** Server for the router (slot 0); null = the default pick. */
+    val serverId: String? = null,
+    val autostart: Boolean = true,
+    val installing: Boolean = false,
+    /** Current install step ("connect", "download:xray", ...). */
+    val step: String? = null,
+    val log: List<com.tobevpn.app.router.InstallLogLine> = emptyList(),
+    val error: String? = null,
+)
 
 data class UninstallUi(
     val phase: Phase = Phase.Confirm,
@@ -83,6 +98,9 @@ class RouterViewModel @Inject constructor(
     private val repository: RouterRepository,
     private val botApi: com.tobevpn.app.data.remote.BotApi,
     private val authRepository: com.tobevpn.app.data.repository.AuthRepository,
+    private val installer: com.tobevpn.app.router.RouterInstaller,
+    private val sessionDao: com.tobevpn.app.data.local.dao.SessionDao,
+    private val prefsDataStore: com.tobevpn.app.data.local.PrefsDataStore,
     vpnRepository: VpnRepository,
 ) : ViewModel() {
     // Shown at once from what is already in memory (the devices list
@@ -248,6 +266,89 @@ class RouterViewModel @Inject constructor(
             .mapNotNull { it.deviceModel?.trim()?.takeIf(String::isNotEmpty) }
     }.getOrDefault(emptyList())
 
+    // ------------------------------------------------------------ install ---
+
+    private fun install(change: (InstallUi) -> InstallUi) = _state.update { it.copy(install = change(it.install)) }
+
+    /** Checks the paired router (CPU, memory, space, firewall, packages), changing nothing. */
+    fun checkRouter() {
+        val link = repository.link.value ?: return
+        viewModelScope.launch {
+            install { it.copy(checking = true, error = null) }
+            try {
+                val check = installer.check(link.host, link.user)
+                install { it.copy(check = check, checking = false) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                install { it.copy(checking = false, error = errorText(error)) }
+            }
+        }
+    }
+
+    fun setInstallServer(serverId: String) = install { it.copy(serverId = serverId) }
+
+    /** Picks the default server for the install once the server list is there. */
+    fun ensureInstallServer() {
+        if (_state.value.install.serverId != null) return
+        viewModelScope.launch {
+            defaultInstallServer()?.let { server -> install { if (it.serverId == null) it.copy(serverId = server.id) else it } }
+        }
+    }
+    fun setInstallAutostart(enabled: Boolean) = install { it.copy(autostart = enabled) }
+
+    /**
+     * The router's server unless chosen: the one this phone uses (known to
+     * work here), else the fastest answer, else the first.
+     */
+    suspend fun defaultInstallServer(): com.tobevpn.app.domain.model.Server? {
+        val servers = _state.value.servers
+        val selected = runCatching { prefsDataStore.getSelectedServerId() }.getOrNull()
+        return servers.firstOrNull { it.id == selected }
+            ?: servers.filter { (_state.value.pings[it.id] ?: -1) >= 0 }.minByOrNull { _state.value.pings[it.id]!! }
+            ?: servers.firstOrNull()
+    }
+
+    fun installVpn() {
+        val link = repository.link.value ?: return
+        viewModelScope.launch {
+            install { it.copy(installing = true, step = "connect", log = emptyList(), error = null) }
+            try {
+                val server = _state.value.install.serverId?.let { id -> _state.value.servers.firstOrNull { it.id == id } }
+                    ?: defaultInstallServer()
+                    ?: throw RouterException("server-missing")
+                val shortUuid = sessionDao.getSession()?.shortUuid?.takeIf { it.isNotBlank() }
+                    ?: throw RouterException("no subscription")
+                val subscriptionUrl = java.net.URI(com.tobevpn.app.BuildConfig.SUBSCRIPTION_BASE_URL)
+                    .resolve(java.net.URLEncoder.encode(shortUuid, "UTF-8")).toString()
+                val status = installer.install(
+                    host = link.host,
+                    user = link.user,
+                    servers = listOf(com.tobevpn.app.router.SlotServer(0, server)),
+                    serverHosts = _state.value.servers.map { it.address },
+                    subscriptionUrl = subscriptionUrl,
+                    autostart = _state.value.install.autostart,
+                    ruSites = repository.ruSites(),
+                    progress = { step -> install { it.copy(step = step) } },
+                    log = { line -> install { it.copy(log = it.log + line) } },
+                )
+                install { it.copy(installing = false, step = null) }
+                _state.update { it.copy(status = status, installedByAnother = false) }
+                load(initial = true)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                install {
+                    it.copy(
+                        installing = false,
+                        error = errorText(error),
+                        log = it.log + com.tobevpn.app.router.InstallLogLine("error", error.message.orEmpty()),
+                    )
+                }
+            }
+        }
+    }
+
     // ------------------------------------------------------------ removal ---
 
     private var routerRemoved = false
@@ -393,6 +494,10 @@ class RouterViewModel @Inject constructor(
             "host key changed" in raw -> R.string.router_error_host_key
             "not paired" in raw || "rejected the app key" in raw -> R.string.router_error_unpaired
             raw == "slots-full" -> R.string.router_error_slots_full
+            "unsupported router CPU" in raw -> R.string.router_error_unsupported
+            "too little memory" in raw || "not enough free memory" in raw -> R.string.router_error_memory
+            "not enough space" in raw -> R.string.router_error_space
+            "could not install" in raw || "has no package manager" in raw -> R.string.router_error_packages
             raw == "server-missing" -> R.string.router_error_server_missing
             else -> null
         }
