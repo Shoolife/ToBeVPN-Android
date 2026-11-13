@@ -92,6 +92,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -153,11 +154,13 @@ import com.tobevpn.app.domain.model.UsageInfo
 import com.tobevpn.app.domain.model.UserPlan
 import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_DRAG_HANDLE_HEIGHT
 import com.tobevpn.app.presentation.components.APP_MODAL_SHEET_HEIGHT_FRACTION
+import com.tobevpn.app.presentation.components.InLayoutBottomSheet
 import com.tobevpn.app.presentation.components.SubscriptionExpiryUrgency
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.countryFlagForUi
 import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.rememberInLayoutSheetState
 import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
 import com.tobevpn.app.presentation.components.serverDisplayName
@@ -2234,7 +2237,26 @@ private fun SubscriptionBottomSheet(
 ) {
     val context = LocalContext.current
     val isDarkTheme = LocalAppDarkTheme.current
-    val sheetState = rememberResistantModalBottomSheetState()
+    // Drawn inside the main screen, not in a window of its own: it slides in
+    // and out slowly and evenly, like the devices sheet.
+    val sheetState = rememberInLayoutSheetState()
+    // Plans and limits that arrive while the sheet slides are applied once
+    // it stands still: rebuilding the plans mid-motion made it stutter.
+    val sheetSettled by remember { derivedStateOf { sheetState.isSettled } }
+    val incoming = SubscriptionSheetInputs(
+        authState, trafficResetAt, rubToUsdRate, purchasePlans,
+        purchasePlansFromCache, purchasePlansLoading, purchasePlansLoaded, currentLimits,
+    )
+    var held by remember { mutableStateOf(incoming) }
+    if (sheetSettled) held = incoming
+    @Suppress("NAME_SHADOWING") val authState = held.authState
+    @Suppress("NAME_SHADOWING") val trafficResetAt = held.trafficResetAt
+    @Suppress("NAME_SHADOWING") val rubToUsdRate = held.rubToUsdRate
+    @Suppress("NAME_SHADOWING") val purchasePlans = held.purchasePlans
+    @Suppress("NAME_SHADOWING") val purchasePlansFromCache = held.purchasePlansFromCache
+    @Suppress("NAME_SHADOWING") val purchasePlansLoading = held.purchasePlansLoading
+    @Suppress("NAME_SHADOWING") val purchasePlansLoaded = held.purchasePlansLoaded
+    @Suppress("NAME_SHADOWING") val currentLimits = held.currentLimits
     val hostViewHeightPx = LocalView.current.height
     val baseDensity = LocalAppBaseDensity.current ?: LocalDensity.current
     val interfaceScale = LocalAppInterfaceScale.current
@@ -2281,13 +2303,15 @@ private fun SubscriptionBottomSheet(
         label = "SubscriptionSheetContentOffset",
     )
 
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = sheetState,
+    InLayoutBottomSheet(
+        state = sheetState,
+        onDismiss = onDismiss,
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         dragHandle = {
             AppScaledContent {
-                androidx.compose.material3.BottomSheetDefaults.DragHandle()
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.BottomSheetDefaults.DragHandle()
+                }
             }
         },
         // Pure white sheet on light theme so it reads as a clean modal
@@ -2298,7 +2322,6 @@ private fun SubscriptionBottomSheet(
         } else {
             Color.White
         },
-        contentWindowInsets = { WindowInsets(0, 0, 0, 0) },
     ) {
         val modalDensity = LocalDensity.current
         val sheetBodyHeight = with(modalDensity) {
@@ -3802,3 +3825,15 @@ private fun countryName(code: String): String = when (code.uppercase()) {
     "UN" -> stringResource(R.string.country_UN)
     else -> code
 }
+
+/** What the subscription sheet shows, held while it slides. */
+private data class SubscriptionSheetInputs(
+    val authState: AuthState,
+    val trafficResetAt: Long?,
+    val rubToUsdRate: Double?,
+    val purchasePlans: com.tobevpn.app.data.remote.dto.PurchasePlansDto?,
+    val purchasePlansFromCache: Boolean,
+    val purchasePlansLoading: Boolean,
+    val purchasePlansLoaded: Boolean,
+    val currentLimits: CurrentPlanLimits?,
+)
