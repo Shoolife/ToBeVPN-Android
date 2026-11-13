@@ -188,6 +188,17 @@ android {
                 "proguard-rules.pro"
             )
         }
+        // Release code (R8, no debugging) under the debug build's id and
+        // signature: installs over it with the same data, for checking
+        // animation smoothness and R8 rules as users get them.
+        create("fastDebug") {
+            initWith(getByName("release"))
+            matchingFallbacks += listOf("release")
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-fast"
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+        }
         create("playRelease") {
             initWith(getByName("release"))
             matchingFallbacks += listOf("release")
