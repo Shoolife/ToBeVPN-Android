@@ -663,14 +663,32 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Starts a refresh, keeping what is shown: the subscription sheet opens
+     * with the last plans at full height and swaps in fresh ones when they
+     * come, instead of a short "loading" sheet that then grows.
+     */
     private fun beginPurchaseRefresh(): Int {
         val request = ++purchaseLoadRequest
-        _purchasePlans.value = null
-        _purchasePlansFromCache.value = false
-        _purchasePlansLoaded.value = false
-        _currentLimits.value = null
         _purchasePlansLoading.value = true
         return request
+    }
+
+    /**
+     * The plans saved last time, shown before the network answers (also on
+     * the first opening after start). No request is made here.
+     */
+    fun warmPurchasePlansFromCache() {
+        if (_purchasePlans.value != null) return
+        launchGuarded("Purchase plans warm-up") {
+            val authenticated = authRepository.getAuthStateSnapshot() as? AuthState.Authenticated
+                ?: return@launchGuarded
+            if (_purchasePlans.value != null) return@launchGuarded
+            loadCachedPurchasePlanShape(authenticated.telegramId)?.let { cached ->
+                _purchasePlans.value = cached
+                _purchasePlansFromCache.value = true
+            }
+        }
     }
 
     private fun clearPurchaseState() {

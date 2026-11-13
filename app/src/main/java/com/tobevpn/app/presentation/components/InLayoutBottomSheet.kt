@@ -1,6 +1,7 @@
 package com.tobevpn.app.presentation.components
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -158,7 +159,9 @@ fun InLayoutBottomSheet(
                     },
                 ),
         ) {
-            Column {
+            // A height change (content arriving) is followed at the same
+            // even pace as the slide, never a jump.
+            Column(Modifier.animateContentSize(tween(SHEET_MOTION_MS, easing = FastOutSlowInEasing))) {
                 dragHandle()
                 content()
             }

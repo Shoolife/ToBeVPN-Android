@@ -1112,27 +1112,8 @@ private fun LinkedDevicesSheetBody(
     }
     val otherDevicesTopFadeAlpha = otherDevicesScrollState.startEdgeFade(enabled = !refreshActive)
     val otherDevicesBottomFadeAlpha = otherDevicesScrollState.endEdgeFade(enabled = !refreshActive)
-    var sheetContentVisible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        sheetContentVisible = true
-    }
-    val sheetContentAlpha by animateFloatAsState(
-        targetValue = if (sheetContentVisible) 1f else 0f,
-        animationSpec = tween(
-            durationMillis = 280,
-            delayMillis = 60,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "DevicesSheetContentAlpha",
-    )
-    val sheetContentOffset by animateDpAsState(
-        targetValue = if (sheetContentVisible) 0.dp else 18.dp,
-        animationSpec = tween(
-            durationMillis = 450,
-            easing = FastOutSlowInEasing,
-        ),
-        label = "DevicesSheetContentOffset",
-    )
+    // The content moves with the sheet as one piece: its own fade and
+    // offset made a second motion after the sheet had nearly stopped.
 
     InLayoutBottomSheet(
         state = sheetState,
@@ -1163,8 +1144,6 @@ private fun LinkedDevicesSheetBody(
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
-                        .offset(y = sheetContentOffset)
-                        .alpha(sheetContentAlpha)
                         .navigationBarsPadding()
                         .padding(bottom = 8.dp),
                 ) {
