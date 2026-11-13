@@ -133,6 +133,26 @@ class RouterRepository @Inject constructor(
         saveLink(RouterLink(host = host, user = user, model = _router.value?.model))
     }
 
+    /**
+     * Removes ToBeVPN from the router, as the desktop app does: the agent
+     * undoes its routing and deletes its files and the apps' keys, and only
+     * the packages the install added (kmod-tun, curl) are removed. The
+     * router's own settings stay. This phone then forgets the router.
+     */
+    suspend fun uninstall() {
+        withRouter { shell ->
+            shell.runOk(
+                "added=\$(cat /opt/tobevpn/packages 2>/dev/null); ${RouterAgent.SCRIPT} uninstall; " +
+                    "if [ -n \"\$added\" ]; then if command -v apk >/dev/null 2>&1; then apk del \$added; " +
+                    "else opkg remove \$added; fi; fi >/dev/null 2>&1; " +
+                    // An older agent removes only the computer's key; the
+                    // phones' keys go too.
+                    "sed -i '/ tobevpn-[a-z0-9-]*router/d' /etc/dropbear/authorized_keys ~/.ssh/authorized_keys 2>/dev/null; true",
+            )
+        }
+        unlink()
+    }
+
     /** Forgets the router on this phone (its key stays until uninstall). */
     fun unlink() {
         _link.value?.let { ssh.forget(it.host) }

@@ -874,4 +874,15 @@
     <string name="router_connect_description">VPN на роутере уже работает. Подключите телефон к роутеру, чтобы управлять им отсюда: выбирать сервер для каждого устройства дома, включать и выключать VPN.</string>
     <string name="router_connect_button">Подключить роутер</string>
     <string name="router_card_installed">ToBeVPN установлен • Ваша сеть</string>
+    <string name="router_uninstall_short">Удалить с роутера</string>
+    <string name="router_uninstall">Удалить ToBeVPN с роутера</string>
+    <string name="router_uninstall_explain">VPN на роутере выключится, и все устройства дома пойдут в интернет напрямую. С роутера удалятся файлы ToBeVPN, а сам роутер отключится от аккаунта и перестанет занимать место в лимите устройств. Настройки роутера не меняются.</string>
+    <string name="router_uninstall_step_router">Удаляем ToBeVPN с роутера</string>
+    <string name="router_uninstall_step_account">Отключаем роутер от аккаунта</string>
+    <string name="router_uninstall_done_title">ToBeVPN удалён</string>
+    <string name="router_uninstall_done_text">Роутер работает как раньше, без VPN. Установить ToBeVPN снова можно в любой момент.</string>
+    <string name="router_uninstall_account_failed">ToBeVPN с роутера удалён, но отключить роутер от аккаунта не удалось: %1$s. Можно повторить или отключить его позже в «Устройствах».</string>
+    <string name="router_uninstall_yes">Удалить</string>
+    <string name="router_retry">Повторить</string>
+    <string name="router_close">Закрыть</string>
 </resources>

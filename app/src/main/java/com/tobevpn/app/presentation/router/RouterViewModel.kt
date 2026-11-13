@@ -54,6 +54,8 @@ data class RouterUiState(
     val error: String? = null,
     /** A short notice after a device's VPN changed; it hides by itself. */
     val notice: Notice? = null,
+    /** The removal dialog, while it is open. */
+    val uninstall: UninstallUi? = null,
 ) {
     data class Notice(val id: Long, val text: String)
 
@@ -62,11 +64,22 @@ data class RouterUiState(
         get() = status?.let { RouterAgent.serverLimit(it, network?.slots?.size ?: 0) } ?: RouterAgent.MAX_SERVERS
 }
 
+data class UninstallUi(
+    val phase: Phase = Phase.Confirm,
+    val routerStep: Step = Step.Pending,
+    val accountStep: Step = Step.Pending,
+    val error: String? = null,
+) {
+    enum class Phase { Confirm, Working, Done, Failed }
+    enum class Step { Pending, Active, Done, Failed }
+}
+
 @HiltViewModel
 class RouterViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: RouterRepository,
     private val botApi: com.tobevpn.app.data.remote.BotApi,
+    private val authRepository: com.tobevpn.app.data.repository.AuthRepository,
     vpnRepository: VpnRepository,
 ) : ViewModel() {
     // Shown at once from what is already in memory (the devices list
@@ -234,6 +247,76 @@ class RouterViewModel @Inject constructor(
             }
             .mapNotNull { it.deviceModel?.trim()?.takeIf(String::isNotEmpty) }
     }.getOrDefault(emptyList())
+
+    // ------------------------------------------------------------ removal ---
+
+    private var routerRemoved = false
+    private var removedHwid: String? = null
+
+    fun openUninstall() = _state.update { it.copy(uninstall = UninstallUi()) }
+
+    /** Closes the dialog; after a removal the screen shows the router without ToBeVPN. */
+    fun closeUninstall() {
+        val removed = routerRemoved
+        _state.update { it.copy(uninstall = null) }
+        if (removed) {
+            routerRemoved = false
+            _state.update {
+                it.copy(paired = false, status = null, network = null, installedByAnother = false, link = null)
+            }
+            load(initial = true)
+        }
+    }
+
+    /**
+     * Removes ToBeVPN from the router, then takes the router off the account
+     * (with or without a new subscription link). A failed account step can
+     * be retried without touching the router again.
+     */
+    fun uninstall(resetSubscription: Boolean) {
+        viewModelScope.launch {
+            _state.update { it.copy(uninstall = UninstallUi(phase = UninstallUi.Phase.Working)) }
+            fun step(change: (UninstallUi) -> UninstallUi) =
+                _state.update { state -> state.copy(uninstall = state.uninstall?.let(change)) }
+            try {
+                if (!routerRemoved) {
+                    step { it.copy(routerStep = UninstallUi.Step.Active) }
+                    removedHwid = _state.value.status?.hwid ?: repository.link.value?.hwid
+                    repository.uninstall()
+                    routerRemoved = true
+                }
+                step { it.copy(routerStep = UninstallUi.Step.Done, accountStep = UninstallUi.Step.Active) }
+                unlinkFromAccount(removedHwid, resetSubscription)
+                step { it.copy(accountStep = UninstallUi.Step.Done, phase = UninstallUi.Phase.Done) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                val message = if (routerRemoved) {
+                    context.getString(R.string.router_uninstall_account_failed, error.message.orEmpty().take(200))
+                } else {
+                    errorText(error)
+                }
+                step {
+                    it.copy(
+                        phase = UninstallUi.Phase.Failed,
+                        error = message,
+                        routerStep = if (routerRemoved) UninstallUi.Step.Done else UninstallUi.Step.Failed,
+                        accountStep = if (routerRemoved) UninstallUi.Step.Failed else UninstallUi.Step.Pending,
+                    )
+                }
+            }
+        }
+    }
+
+    /** The account's device with this router's id, if it is still linked. */
+    private suspend fun unlinkFromAccount(hwid: String?, resetSubscription: Boolean) {
+        if (hwid.isNullOrBlank()) return
+        val devices = botApi.getDevices().data?.devices.orEmpty()
+        val device = devices.firstOrNull {
+            it.hwid.equals(hwid, ignoreCase = true) || it.deviceId.equals(hwid, ignoreCase = true)
+        } ?: return
+        authRepository.unlinkDevice(device.deviceId, resetSubscription).getOrThrow()
+    }
 
     fun clearNotice(id: Long) = _state.update { if (it.notice?.id == id) it.copy(notice = null) else it }
 

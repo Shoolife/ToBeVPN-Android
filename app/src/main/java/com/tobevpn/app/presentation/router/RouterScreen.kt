@@ -1,7 +1,6 @@
 package com.tobevpn.app.presentation.router
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -40,8 +39,10 @@ import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -68,15 +69,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
@@ -86,6 +90,7 @@ import com.tobevpn.app.presentation.components.countryFlagForUi
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
 import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
 import com.tobevpn.app.presentation.components.serverDisplayName
+import com.tobevpn.app.presentation.theme.AppAlertDialog
 import com.tobevpn.app.presentation.theme.BrandSoftCardFill
 import com.tobevpn.app.presentation.theme.LocalAppDarkTheme
 import com.tobevpn.app.presentation.theme.VpnGreen
@@ -207,12 +212,22 @@ fun RouterScreen(
                             onAutostart = { viewModel.control(if (it) "autostart-on" else "autostart-off") },
                             onRuDirect = viewModel::setRuDirect,
                             onStartStop = { viewModel.control(if (status.running) "stop" else "start") },
+                            onUninstall = viewModel::openUninstall,
                         )
                     }
                 }
             }
         }
         }
+    }
+
+    state.uninstall?.let { uninstall ->
+        UninstallDialog(
+            ui = uninstall,
+            canResetLink = state.status?.hwid != null || state.link?.hwid != null,
+            onConfirm = viewModel::uninstall,
+            onClose = viewModel::closeUninstall,
+        )
     }
 
     val device = picking
@@ -693,6 +708,7 @@ private fun RouterControls(
     onAutostart: (Boolean) -> Unit,
     onRuDirect: (Boolean) -> Unit,
     onStartStop: () -> Unit,
+    onUninstall: () -> Unit,
 ) {
     val status = state.status ?: return
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -708,16 +724,39 @@ private fun RouterControls(
                 )
             }
         }
-        OutlinedButton(
-            onClick = onStartStop,
-            enabled = !state.busy,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.fillMaxWidth().height(48.dp),
-        ) {
-            if (state.busy) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-            } else {
-                Text(stringResource(if (status.running) R.string.router_stop else R.string.router_start))
+        // Two equal buttons, as on PC: the VPN switch and the removal.
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(
+                onClick = onStartStop,
+                enabled = !state.busy,
+                shape = RoundedCornerShape(14.dp),
+                contentPadding = PaddingValues(horizontal = 10.dp),
+                modifier = Modifier.weight(1f).height(52.dp),
+            ) {
+                if (state.busy) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                } else {
+                    Text(
+                        stringResource(if (status.running) R.string.router_stop else R.string.router_start),
+                        textAlign = TextAlign.Center,
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                    )
+                }
+            }
+            OutlinedButton(
+                onClick = onUninstall,
+                enabled = !state.busy,
+                shape = RoundedCornerShape(14.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.6f)),
+                contentPadding = PaddingValues(horizontal = 10.dp),
+                modifier = Modifier.weight(1f).height(52.dp),
+            ) {
+                Text(
+                    stringResource(R.string.router_uninstall_short),
+                    color = MaterialTheme.colorScheme.error,
+                    textAlign = TextAlign.Center,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                )
             }
         }
     }
@@ -778,4 +817,162 @@ private fun SectionTitle(text: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 4.dp, top = 12.dp),
     )
+}
+
+// ---------------------------------------------------------------- removal ---
+
+/**
+ * Removing ToBeVPN, as on PC: a question with "Reset the subscription
+ * link", then each step with its spinner, then the result, in one dialog.
+ */
+@Composable
+private fun UninstallDialog(
+    ui: UninstallUi,
+    canResetLink: Boolean,
+    onConfirm: (resetSubscription: Boolean) -> Unit,
+    onClose: () -> Unit,
+) {
+    val dark = LocalAppDarkTheme.current
+    var resetLink by rememberSaveable { mutableStateOf(true) }
+    val working = ui.phase == UninstallUi.Phase.Working
+    AppAlertDialog(
+        onDismissRequest = { if (!working) onClose() },
+        properties = DialogProperties(dismissOnBackPress = !working, dismissOnClickOutside = !working),
+        shape = RoundedCornerShape(28.dp),
+        containerColor = if (dark) MaterialTheme.colorScheme.surfaceContainer else MaterialTheme.colorScheme.surface,
+        title = {
+            Text(
+                stringResource(
+                    if (ui.phase == UninstallUi.Phase.Done) R.string.router_uninstall_done_title else R.string.router_uninstall,
+                ),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.headlineSmall),
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                when (ui.phase) {
+                    UninstallUi.Phase.Confirm -> {
+                        Text(
+                            stringResource(R.string.router_uninstall_explain),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        if (canResetLink) ResetLinkRow(resetLink) { resetLink = it }
+                    }
+                    UninstallUi.Phase.Done -> Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Check, contentDescription = null, tint = VpnGreen, modifier = Modifier.size(40.dp))
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            stringResource(R.string.router_uninstall_done_text),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    else -> {
+                        StepRow(stringResource(R.string.router_uninstall_step_router), ui.routerStep)
+                        StepRow(stringResource(R.string.router_uninstall_step_account), ui.accountStep)
+                    }
+                }
+                ui.error?.let {
+                    Text(it, color = MaterialTheme.colorScheme.error, style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall))
+                }
+            }
+        },
+        confirmButton = {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                when (ui.phase) {
+                    UninstallUi.Phase.Confirm, UninstallUi.Phase.Failed -> {
+                        OutlinedButton(
+                            onClick = onClose,
+                            shape = RoundedCornerShape(13.dp),
+                            modifier = Modifier.weight(1f).height(46.dp),
+                        ) {
+                            Text(stringResource(if (ui.phase == UninstallUi.Phase.Failed) R.string.router_close else R.string.cancel))
+                        }
+                        Button(
+                            onClick = { onConfirm(resetLink) },
+                            shape = RoundedCornerShape(13.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError,
+                            ),
+                            modifier = Modifier.weight(1f).height(46.dp),
+                        ) {
+                            Text(
+                                stringResource(
+                                    if (ui.phase == UninstallUi.Phase.Failed) R.string.router_retry else R.string.router_uninstall_yes,
+                                ),
+                            )
+                        }
+                    }
+                    UninstallUi.Phase.Done -> Button(
+                        onClick = onClose,
+                        shape = RoundedCornerShape(13.dp),
+                        modifier = Modifier.fillMaxWidth().height(46.dp),
+                    ) { Text(stringResource(R.string.router_close)) }
+                    UninstallUi.Phase.Working -> Unit
+                }
+            }
+        },
+        dismissButton = {},
+    )
+}
+
+@Composable
+private fun StepRow(text: String, step: UninstallUi.Step) {
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+            when (step) {
+                UninstallUi.Step.Active -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                UninstallUi.Step.Done -> Icon(Icons.Filled.Check, contentDescription = null, tint = VpnGreen)
+                UninstallUi.Step.Failed -> Text("!", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                UninstallUi.Step.Pending -> Box(
+                    Modifier.size(8.dp).clip(CircleShape).background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)),
+                )
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Text(
+            text,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+            color = if (step == UninstallUi.Step.Pending) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+@Composable
+private fun ResetLinkRow(checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+            .toggleable(value = checked, role = Role.Checkbox, onValueChange = onChange)
+            .padding(end = 14.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = null, modifier = Modifier.padding(12.dp))
+        Column(Modifier.padding(top = 12.dp)) {
+            Text(
+                stringResource(R.string.reset_link_option),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                stringResource(if (checked) R.string.reset_link_option_on else R.string.reset_link_option_off),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }

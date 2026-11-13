@@ -860,4 +860,15 @@
     <string name="router_connect_description">The VPN on the router already works. Connect the phone to the router to manage it from here: choose a server for each device at home, turn the VPN on and off.</string>
     <string name="router_connect_button">Connect the router</string>
     <string name="router_card_installed">ToBeVPN installed • Your network</string>
+    <string name="router_uninstall_short">Remove from router</string>
+    <string name="router_uninstall">Remove ToBeVPN from the router</string>
+    <string name="router_uninstall_explain">The VPN on the router stops and every device at home goes online directly. ToBeVPN\'s files are removed from the router, and the router leaves the account, so it no longer takes a device of the subscription. The router\'s own settings stay as they are.</string>
+    <string name="router_uninstall_step_router">Removing ToBeVPN from the router</string>
+    <string name="router_uninstall_step_account">Taking the router off the account</string>
+    <string name="router_uninstall_done_title">ToBeVPN removed</string>
+    <string name="router_uninstall_done_text">The router works as before, without the VPN. ToBeVPN can be installed again at any time.</string>
+    <string name="router_uninstall_account_failed">ToBeVPN is removed from the router, but taking the router off the account failed: %1$s. Try again, or disconnect it later under Devices.</string>
+    <string name="router_uninstall_yes">Remove</string>
+    <string name="router_retry">Try again</string>
+    <string name="router_close">Close</string>
 </resources>
