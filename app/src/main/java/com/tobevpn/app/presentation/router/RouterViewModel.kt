@@ -329,12 +329,24 @@ class RouterViewModel @Inject constructor(
                     subscriptionUrl = subscriptionUrl,
                     autostart = _state.value.install.autostart,
                     ruSites = repository.ruSites(),
-                    progress = { step -> install { it.copy(step = step) } },
+                    // Each step is also a line of the log, as on PC.
+                    progress = { step ->
+                        install { it.copy(step = step, log = it.log + com.tobevpn.app.router.InstallLogLine("step", step)) }
+                    },
                     log = { line -> install { it.copy(log = it.log + line) } },
                 )
-                install { it.copy(installing = false, step = null) }
-                _state.update { it.copy(status = status, installedByAnother = false) }
-                load(initial = true)
+                // The home's devices are read before the screen switches, so
+                // the installed view comes in whole, without a spinner first.
+                val network = runCatching { repository.devices() }.getOrNull()
+                val fresh = runCatching { repository.status() }.getOrDefault(status)
+                _state.update {
+                    it.copy(
+                        status = fresh,
+                        network = network,
+                        installedByAnother = false,
+                        install = InstallUi(),
+                    )
+                }
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {

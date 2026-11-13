@@ -913,4 +913,14 @@
     <string name="router_error_memory">У роутера не хватает памяти для VPN: нужно от 128 МБ, из них свободных от 64 МБ.</string>
     <string name="router_error_space">На роутере не хватает места для VPN.</string>
     <string name="router_error_packages">Не удалось поставить на роутер нужные компоненты (TUN, curl). Проверьте, что у роутера есть интернет, и попробуйте ещё раз.</string>
+    <string name="router_install_scope">После установки выберите на этом экране, какие устройства пойдут через VPN и через какой сервер. Новые устройства подключаются без VPN.</string>
+    <string name="router_problem_cpu">Процессор не подходит: VPN работает на ARM64 и ARMv7.</string>
+    <string name="router_problem_memory_total">Слишком мало памяти: нужно от 128 МБ.</string>
+    <string name="router_problem_memory_free">Мало свободной памяти: нужно от 64 МБ свободных. Отключите лишние службы роутера.</string>
+    <string name="router_problem_space">Мало места: нужно от 40 МБ свободных во флеш-памяти.</string>
+    <string name="router_problem_packages">На роутере нет менеджера пакетов, чтобы доставить недостающие компоненты.</string>
+    <string name="router_problem_firewall">Не найден брандмауэр iptables или nftables.</string>
+    <string name="router_log_copy">Скопировать</string>
+    <string name="router_log_copied">Скопировано</string>
+    <string name="router_log_errors">ошибок: %1$d</string>
 </resources>

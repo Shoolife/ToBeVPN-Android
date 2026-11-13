@@ -1,6 +1,11 @@
 package com.tobevpn.app.presentation.router
 
 import androidx.compose.animation.AnimatedVisibility
+import com.tobevpn.app.presentation.components.BrandLoader
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -192,20 +197,25 @@ fun RouterScreen(
         Box(Modifier.padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 12.dp)) { RouterHeader(state) }
         // Fades and arrows at the edges with more content, as on the other
         // screens; they follow the scroll over the fade's height.
+        // A change of what the screen is about (connecting, checking,
+        // installing, installed, refreshing) crossfades instead of blinking.
+        // Each layer keeps the state of its own phase, so the outgoing one
+        // still shows the old view while the new one fades in.
+        AnimatedContent(
+            targetState = state,
+            contentKey = { routerPhase(it) },
+            transitionSpec = { fadeIn(tween(360)) togetherWith fadeOut(tween(360)) },
+            label = "router-phase",
+        ) { state ->
+        val status = state.status
         val listState = rememberLazyListState()
-        val topFadeAlpha = listState.startEdgeFade()
-        val bottomFadeAlpha = listState.endEdgeFade()
         Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer { alpha = contentAlpha }
-                .verticalFadingEdges(
-                    topAlpha = topFadeAlpha,
-                    bottomAlpha = bottomFadeAlpha,
-                    fadeHeight = EDGE_FADE_LENGTH,
-                ),
+                .lazyScrollCues(listState),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -287,20 +297,7 @@ fun RouterScreen(
                 }
             }
         }
-            VerticalScrollEdgeArrow(
-                alpha = topFadeAlpha,
-                isTop = true,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 2.dp),
-            )
-            VerticalScrollEdgeArrow(
-                alpha = bottomFadeAlpha,
-                isTop = false,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 2.dp),
-            )
+        }
         }
         }
     }
@@ -1288,55 +1285,100 @@ private fun InstallPanel(
     val install = state.install
     LaunchedEffect(state.servers.isNotEmpty()) { if (state.servers.isNotEmpty()) onReady() }
     RouterCard {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.padding(16.dp).animateContentSize(tween(320)),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                stringResource(R.string.router_vpn_description),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+            )
             val check = install.check
-            when {
-                install.checking && check == null -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(10.dp))
-                    Text(stringResource(R.string.router_step_check), style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium))
+            // While the router is checked, the app's own loader; the result
+            // fades in in its place and the card grows to it smoothly.
+            AnimatedContent(
+                targetState = check,
+                contentKey = { it != null },
+                transitionSpec = {
+                    (fadeIn(tween(320, delayMillis = 80)) togetherWith fadeOut(tween(200)))
+                        .using(SizeTransform(clip = false) { _, _ -> tween(360) })
+                },
+                label = "router-check",
+            ) { result ->
+                if (result == null) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                    ) {
+                        BrandLoader(Modifier.size(84.dp))
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            stringResource(R.string.router_step_check),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                } else {
+                    CompatibilityCard(result)
                 }
-                check != null -> CompatibilityCard(check)
+            }
+            if (check?.ok == true) {
+                // As on PC: the router gets this phone's server; devices are
+                // given theirs on this screen after the install.
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .toggleable(
+                            value = install.autostart,
+                            enabled = !install.installing,
+                            role = Role.Checkbox,
+                            onValueChange = onAutostart,
+                        )
+                        .padding(vertical = 2.dp),
+                ) {
+                    Checkbox(checked = install.autostart, onCheckedChange = null, enabled = !install.installing)
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.router_autostart), style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium))
+                }
+                Text(
+                    stringResource(R.string.router_install_scope),
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             install.error?.let {
                 Text(it, color = MaterialTheme.colorScheme.error, style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall))
             }
-            if (check?.ok == true) {
-                val server = state.servers.firstOrNull { it.id == install.serverId }
-                Text(
-                    stringResource(R.string.router_install_server),
-                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                ServerChip(
-                    server = server,
-                    fallbackName = null,
-                    vpn = true,
-                    saving = false,
-                    enabled = !install.installing,
-                    onClick = onPickServer,
-                )
-                SwitchRow(stringResource(R.string.router_autostart), install.autostart, !install.installing, onAutostart)
-                if (install.installing) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                        Spacer(Modifier.width(10.dp))
-                        Text(stepText(install.step), style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium))
-                    }
-                } else {
-                    Button(
+            val busy = install.checking || install.installing
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                when {
+                    check?.ok == true -> Button(
                         onClick = onInstall,
-                        enabled = server != null,
+                        enabled = !busy && state.servers.isNotEmpty(),
                         shape = RoundedCornerShape(13.dp),
-                        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        modifier = Modifier.heightIn(min = 48.dp),
                     ) { Text(stringResource(R.string.router_install)) }
+                    check != null -> OutlinedButton(
+                        onClick = onCheck,
+                        enabled = !busy,
+                        shape = RoundedCornerShape(13.dp),
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) { Text(stringResource(R.string.router_check_again)) }
+                    else -> Unit
                 }
-            } else if (check != null && !install.checking) {
-                OutlinedButton(
-                    onClick = onCheck,
-                    shape = RoundedCornerShape(13.dp),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
-                ) { Text(stringResource(R.string.router_check_again)) }
+                // The first check has the big loader above; a re-check and the
+                // install show a small one next to the button.
+                if (busy && check != null) {
+                    Spacer(Modifier.width(12.dp))
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        if (install.checking) stringResource(R.string.router_step_check) else stepText(install.step),
+                        style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             if (install.log.isNotEmpty()) InstallLog(install.log)
         }
@@ -1357,94 +1399,179 @@ private fun stepText(step: String?): String = stringResource(
     },
 )
 
-/** The check's verdict and what it found, as on PC. */
+/** The check's verdict and what it found, as on PC: a mark per row and the problems in words. */
 @Composable
 private fun CompatibilityCard(check: com.tobevpn.app.router.RouterCheck) {
-    val color = if (check.ok) VpnGreen else MaterialTheme.colorScheme.error
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                if (check.ok) Icons.Filled.Check else Icons.Filled.Close,
-                contentDescription = null,
-                tint = color,
-                modifier = Modifier.size(20.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                stringResource(if (check.ok) R.string.router_check_ok else R.string.router_check_bad),
-                color = color,
-                fontWeight = FontWeight.SemiBold,
-                style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
-            )
-        }
+    val green = VpnGreen
+    val red = MaterialTheme.colorScheme.error
+    val bad = { problem: String -> problem in check.problems }
+    val cpu = when {
+        !check.cpuOk -> check.machine
+        check.machine == "aarch64" || check.machine == "arm64" -> "ARM64"
+        else -> "ARMv7"
+    }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background((if (check.ok) green else red).copy(alpha = 0.08f))
+            .border(1.dp, (if (check.ok) green else red).copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            stringResource(if (check.ok) R.string.router_check_ok else R.string.router_check_bad),
+            color = if (check.ok) green else red,
+            fontWeight = FontWeight.SemiBold,
+            style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+        )
         @Composable
-        fun fact(label: Int, value: String, bad: Boolean = false) {
-            Row {
+        fun row(label: Int, value: String, ok: Boolean, mark: String = if (ok) "✓" else "✕") {
+            Row(verticalAlignment = Alignment.Top) {
+                Text(mark, color = if (ok) green else red, modifier = Modifier.width(20.dp), style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall))
                 Text(
                     stringResource(label),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.width(120.dp),
+                    modifier = Modifier.width(110.dp),
                 )
                 Text(
                     value,
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
-                    color = if (bad) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    color = if (ok) MaterialTheme.colorScheme.onSurface else red,
                 )
             }
         }
-        if (check.firmware.isNotBlank()) fact(R.string.router_check_firmware, listOf(check.model, check.firmware).filter { it.isNotBlank() }.joinToString(" · "))
-        fact(R.string.router_check_cpu, check.machine, bad = !check.cpuOk)
-        fact(
+        row(R.string.router_check_firmware, check.firmware.ifBlank { "—" }, true)
+        row(R.string.router_check_cpu, cpu, !bad("cpu"))
+        row(
             R.string.router_check_memory,
             stringResource(R.string.router_check_memory_value, check.memoryTotalMb, check.memoryFreeMb),
-            bad = "memory_total" in check.problems || "memory_free" in check.problems,
+            !bad("memory_total") && !bad("memory_free"),
         )
-        fact(R.string.router_check_space, stringResource(R.string.router_check_space_value, check.spaceFreeMb), bad = "space" in check.problems)
-        fact(R.string.router_check_firewall, check.firewall, bad = "firewall" in check.problems)
+        row(R.string.router_check_space, stringResource(R.string.router_check_space_value, check.spaceFreeMb), !bad("space"))
+        row(R.string.router_check_firewall, if (check.firewall == "none") "—" else check.firewall, !bad("firewall"))
         if (check.packages.isNotEmpty()) {
-            fact(R.string.router_check_packages, check.packages.joinToString(", "), bad = "packages" in check.problems)
+            row(
+                R.string.router_check_packages,
+                check.packages.joinToString(", "),
+                !bad("packages"),
+                mark = if (bad("packages")) "✕" else "•",
+            )
+        }
+        check.problems.forEach { problem ->
+            val text = when (problem) {
+                "cpu" -> R.string.router_problem_cpu
+                "memory_total" -> R.string.router_problem_memory_total
+                "memory_free" -> R.string.router_problem_memory_free
+                "space" -> R.string.router_problem_space
+                "packages" -> R.string.router_problem_packages
+                else -> R.string.router_problem_firewall
+            }
+            Text(stringResource(text), color = red, style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall))
         }
     }
 }
 
-/** The install's detailed log, expandable, errors in red. */
+/**
+ * The install's full log, as on PC: every step, check, download and error
+ * with its time; the errors counted while it is closed; copying; and the
+ * latest line kept in view.
+ */
 @Composable
 private fun InstallLog(lines: List<com.tobevpn.app.router.InstallLogLine>) {
     var open by rememberSaveable { mutableStateOf(false) }
+    var copied by remember { mutableStateOf(false) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val errors = lines.count { it.level == "error" }
+    val stepLabels = lines.filter { it.level == "step" }.associate { it.text to stepText(it.text) }
+    fun lineText(line: com.tobevpn.app.router.InstallLogLine) =
+        if (line.level == "step") "— ${stepLabels[line.text] ?: line.text}" else line.text
+    LaunchedEffect(copied) {
+        if (copied) {
+            delay(1_500)
+            copied = false
+        }
+    }
     Column {
-        Text(
-            stringResource(if (open) R.string.router_log_hide else R.string.router_log_show, lines.size),
-            color = MaterialTheme.colorScheme.primary,
-            style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .clickable { open = !open }
-                .padding(vertical = 6.dp),
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                stringResource(if (open) R.string.router_log_hide else R.string.router_log_show, lines.size),
+                color = MaterialTheme.colorScheme.primary,
+                style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable { open = !open }
+                    .padding(vertical = 6.dp, horizontal = 2.dp),
+            )
+            if (errors > 0 && !open) {
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    stringResource(R.string.router_log_errors, errors),
+                    color = MaterialTheme.colorScheme.error,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelMedium),
+                )
+            }
+            if (open) {
+                Spacer(Modifier.weight(1f))
+                Text(
+                    stringResource(if (copied) R.string.router_log_copied else R.string.router_log_copy),
+                    color = MaterialTheme.colorScheme.primary,
+                    style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable {
+                            clipboard.setText(
+                                androidx.compose.ui.text.AnnotatedString(
+                                    lines.joinToString("\n") { "${it.time} ${it.level.uppercase()} ${lineText(it)}" },
+                                ),
+                            )
+                            copied = true
+                        }
+                        .padding(vertical = 6.dp, horizontal = 2.dp),
+                )
+            }
+        }
         AnimatedVisibility(visible = open, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+            val scroll = rememberScrollState()
+            // Follow new lines, so the latest step or error is in view.
+            LaunchedEffect(lines.size) { scroll.animateScrollTo(scroll.maxValue) }
             Column(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(max = 280.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
-                    .verticalScrollWithCues(rememberScrollState())
+                    .verticalScrollWithCues(scroll)
                     .padding(10.dp),
             ) {
                 lines.forEach { line ->
                     Text(
-                        line.text,
+                        "${line.time} ${lineText(line)}",
                         style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                         color = when (line.level) {
                             "error" -> MaterialTheme.colorScheme.error
                             "warn" -> Color(0xFFE0A030)
+                            "step" -> MaterialTheme.colorScheme.onSurface
                             else -> MaterialTheme.colorScheme.onSurfaceVariant
                         },
                     )
                 }
             }
         }
+    }
+}
+
+/** What the Router screen is about; a change crossfades. */
+private fun routerPhase(state: RouterUiState): String {
+    val status = state.status
+    return when {
+        state.info?.gateway == null -> "away"
+        !state.paired -> "unpaired"
+        state.refreshing -> "refreshing"
+        status == null -> "loading"
+        !status.installed -> "install"
+        else -> "installed"
     }
 }

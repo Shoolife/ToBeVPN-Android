@@ -899,4 +899,14 @@
     <string name="router_error_memory">The router has too little memory for the VPN: it needs 128 MB, with 64 MB free.</string>
     <string name="router_error_space">There is not enough space on the router for the VPN.</string>
     <string name="router_error_packages">Could not install the needed components on the router (TUN, curl). Check that the router is online and try again.</string>
+    <string name="router_install_scope">After installing, choose on this screen which devices go through the VPN and through which server. New devices connect without the VPN.</string>
+    <string name="router_problem_cpu">The CPU does not fit: the VPN runs on ARM64 and ARMv7.</string>
+    <string name="router_problem_memory_total">Too little memory: 128 MB or more is needed.</string>
+    <string name="router_problem_memory_free">Little free memory: 64 MB free is needed. Turn off unneeded router services.</string>
+    <string name="router_problem_space">Little space: 40 MB free in the flash is needed.</string>
+    <string name="router_problem_packages">The router has no package manager to add the missing components.</string>
+    <string name="router_problem_firewall">Neither iptables nor nftables was found.</string>
+    <string name="router_log_copy">Copy</string>
+    <string name="router_log_copied">Copied</string>
+    <string name="router_log_errors">errors: %1$d</string>
 </resources>

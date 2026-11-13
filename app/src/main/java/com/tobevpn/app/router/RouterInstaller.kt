@@ -40,7 +40,12 @@ data class RouterCheck(
 )
 
 /** One line of the install log, for the screen's detailed log. */
-data class InstallLogLine(val level: String, val text: String)
+data class InstallLogLine(
+    val level: String,
+    val text: String,
+    /** HH:mm:ss, as on PC. */
+    val time: String = java.time.LocalTime.now().withNano(0).toString(),
+)
 
 /**
  * Installs ToBeVPN on the paired router from the phone, the way the desktop
