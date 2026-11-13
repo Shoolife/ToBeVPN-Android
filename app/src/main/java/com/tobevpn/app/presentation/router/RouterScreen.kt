@@ -84,6 +84,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -1540,12 +1545,24 @@ private fun InstallLog(lines: List<com.tobevpn.app.router.InstallLogLine>) {
             val scroll = rememberScrollState()
             // Follow new lines, so the latest step or error is in view.
             LaunchedEffect(lines.size) { scroll.animateScrollTo(scroll.maxValue) }
+            // As on PC: the log scrolls on its own; reaching its end does
+            // not carry the gesture (or its fling) over to the screen. A log
+            // short enough to have no scroll leaves the screen scrolling.
+            val keepScroll = remember(scroll) {
+                object : NestedScrollConnection {
+                    override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource) =
+                        if (scroll.maxValue > 0) available.copy(x = 0f) else Offset.Zero
+                    override suspend fun onPostFling(consumed: Velocity, available: Velocity) =
+                        if (scroll.maxValue > 0) available.copy(x = 0f) else Velocity.Zero
+                }
+            }
             Column(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(max = 280.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f))
+                    .nestedScroll(keepScroll)
                     .verticalScrollWithCues(scroll)
                     .padding(10.dp),
             ) {
