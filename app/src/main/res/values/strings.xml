@@ -935,4 +935,9 @@
     <string name="router_servers_loading">Loading the subscription\'s servers…</string>
     <string name="router_servers_failed">Could not get the subscription\'s servers. If the subscription link was reset on another device, refresh the subscription on the main screen and come back.</string>
     <string name="router_unit_kb">KB</string>
+    <string name="router_this_phone_reconnecting">Done. The phone reconnects to Wi‑Fi for a couple of seconds to drop old connections and DNS answers.</string>
+    <string name="state_router_vpn">VPN on the router</string>
+    <string name="home_router_vpn_hint">This phone already goes through the router\'s VPN (%1$s). The VPN in the app is not needed at home.</string>
+    <string name="home_router_vpn_hint_plain">This phone already goes through the router\'s VPN. The VPN in the app is not needed at home.</string>
+    <string name="home_router_vpn_turn_off">Turn off</string>
 </resources>

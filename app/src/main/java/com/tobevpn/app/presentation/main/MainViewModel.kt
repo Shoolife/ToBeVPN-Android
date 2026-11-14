@@ -88,6 +88,7 @@ class MainViewModel @Inject constructor(
     private val deepLinkBus: DeepLinkBus,
     private val paymentNotifications: PaymentNotifications,
     private val playBillingCountry: PlayBillingCountry,
+    private val routerRepository: com.tobevpn.app.router.RouterRepository,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -233,6 +234,7 @@ class MainViewModel @Inject constructor(
     private val purchasePlansGson = Gson()
 
     private companion object {
+        const val ROUTER_VPN_CHECK_MS = 3 * 60_000L
         const val TAG = "MainViewModel"
         const val RESUME_SYNC_THROTTLE_MS = 5_000L
         const val PURCHASE_REFRESH_ACTIVE_WINDOW_MS = 2L * 60L * 1000L
@@ -514,6 +516,7 @@ class MainViewModel @Inject constructor(
     /** Re-sync subscription & servers when app returns to foreground (throttled to 5s). */
     fun onResume() {
         screenActive.value = true
+        checkRouterVpn()
         if (!initialized) return
         launchGuarded("Resume sync") resume@{
             if (prefsDataStore.getPendingPurchaseState() != null) {
@@ -885,5 +888,33 @@ class MainViewModel @Inject constructor(
             context.startActivity(intent)
             true
         }.getOrDefault(false)
+    }
+
+    // ------------------------------------------------------ router at home ---
+
+    private val _routerVpn = MutableStateFlow<com.tobevpn.app.router.RouterRepository.Protection?>(null)
+
+    /** The home router already sends this phone through the VPN (as on PC); null otherwise. */
+    val routerVpn: StateFlow<com.tobevpn.app.router.RouterRepository.Protection?> = _routerVpn
+
+    private var routerVpnJob: kotlinx.coroutines.Job? = null
+
+    /** Asks the home router whether it sends this phone through the VPN; silent on failure. */
+    fun checkRouterVpn() {
+        if (routerVpnJob?.isActive == true) return
+        routerVpnJob = viewModelScope.launch {
+            _routerVpn.value = runCatching { routerRepository.protection() }.getOrNull()
+        }
+    }
+
+    init {
+        // Checked again every few minutes while Home is on screen (another
+        // network, the router's VPN stopped, the phone's choice changed).
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(ROUTER_VPN_CHECK_MS)
+                if (screenActive.value) checkRouterVpn()
+            }
+        }
     }
 }

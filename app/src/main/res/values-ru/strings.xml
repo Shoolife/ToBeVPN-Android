@@ -949,4 +949,9 @@
     <string name="router_servers_loading">Загружаем список серверов подписки…</string>
     <string name="router_servers_failed">Не удалось получить серверы подписки. Если ссылку подписки сбросили на другом устройстве, обновите подписку на главном экране и вернитесь сюда.</string>
     <string name="router_unit_kb">КБ</string>
+    <string name="router_this_phone_reconnecting">Готово. Телефон на пару секунд переподключится к Wi‑Fi, чтобы сбросить старые соединения и ответы DNS.</string>
+    <string name="state_router_vpn">VPN на роутере</string>
+    <string name="home_router_vpn_hint">Этот телефон уже идёт через VPN роутера (%1$s). Дома включать VPN в приложении не обязательно.</string>
+    <string name="home_router_vpn_hint_plain">Этот телефон уже идёт через VPN роутера. Дома включать VPN в приложении не обязательно.</string>
+    <string name="home_router_vpn_turn_off">Выключить</string>
 </resources>

@@ -279,9 +279,21 @@ class RouterViewModel @Inject constructor(
                 }
                 val label = deviceLabel(device)
                 val text = when {
-                    // Dropping this phone from Wi-Fi would cut this very session.
-                    device.ip != null && device.ip == status.clientIp ->
-                        context.getString(R.string.router_this_phone_changed)
+                    // This phone reconnects to Wi-Fi by itself a moment later,
+                    // leaving old connections and DNS answers behind (as PC
+                    // clears its DNS cache); the screen is read again after.
+                    device.ip != null && device.ip == status.clientIp -> {
+                        val kicked = runCatching { repository.kickSoon(device.mac) }.isSuccess
+                        if (kicked) {
+                            viewModelScope.launch {
+                                delay(THIS_PHONE_BACK_MS)
+                                load(initial = false)
+                            }
+                            context.getString(R.string.router_this_phone_reconnecting)
+                        } else {
+                            context.getString(R.string.router_this_phone_changed)
+                        }
+                    }
                     device.online -> if (runCatching { repository.kick(device.mac) }.getOrDefault(false)) {
                         context.getString(R.string.router_device_reconnected, label)
                     } else {
@@ -706,6 +718,8 @@ class RouterViewModel @Inject constructor(
         private const val MIN_REFRESH_FEEDBACK_MS = 900L
         private const val TRAFFIC_MAX_AGE_MS = 60_000L
         private const val TRAFFIC_MIN_LOADING_MS = 600L
+        /** Wi-Fi is back on most phones within this after a reconnect. */
+        private const val THIS_PHONE_BACK_MS = 9_000L
 
         fun deviceLabel(device: RouterDevice): String =
             device.name ?: device.hostname ?: device.mac.uppercase()

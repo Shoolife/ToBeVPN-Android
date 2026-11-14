@@ -16,6 +16,8 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
@@ -218,6 +220,8 @@ fun MainScreen(
     }
     val currentLimits by viewModel.currentLimits.collectAsStateWithLifecycle()
     val connectionPreparation by viewModel.connectionPreparation.collectAsStateWithLifecycle()
+    // As on PC: at home, the router may already send this phone through the VPN.
+    val routerVpn by viewModel.routerVpn.collectAsStateWithLifecycle()
     val paymentSuccessVisible by viewModel.paymentSuccessVisible.collectAsStateWithLifecycle()
     val subscriptionUsageBlocked by viewModel.subscriptionUsageBlocked.collectAsStateWithLifecycle()
     val subscriptionReminderSnooze by
@@ -482,6 +486,8 @@ fun MainScreen(
                         reminder = appFilterReminder,
                         enlarged = useLargeTabletLayout,
                         medium = foldableTwoPaneLayout,
+                        routerVpn = routerVpn,
+                        onRouterTurnOff = onConnectClick,
                     )
 
                     // The temporary-access notice belongs to the connect
@@ -627,6 +633,8 @@ fun MainScreen(
                 isPreparing = connectionPreparation,
                 suppressError = isAnonExhausted || subscriptionUsageBlocked,
                 reminder = appFilterReminder,
+                routerVpn = routerVpn,
+                onRouterTurnOff = onConnectClick,
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -1268,8 +1276,15 @@ private fun StatusText(
     reminder: String? = null,
     enlarged: Boolean = false,
     medium: Boolean = false,
+    routerVpn: com.tobevpn.app.router.RouterRepository.Protection? = null,
+    onRouterTurnOff: () -> Unit = {},
 ) {
     val disconnected = stringResource(R.string.state_disconnected)
+    // Off in the app but sent through the VPN by the home router: said so,
+    // in the "on" colour, rather than "Disconnected" (as on PC).
+    val routerOnly = routerVpn != null && !isPreparing &&
+        (connectionState is ConnectionState.Disconnected || connectionState is ConnectionState.Error)
+    val routerText = listOfNotNull(stringResource(R.string.state_router_vpn), routerVpn?.serverName).joinToString(" · ")
     // Connection errors win over the ambient reminder — once the user has
     // hit Connect, the actual error text is more useful than a generic
     // "pick at least one app" hint. When there's no error, show the
@@ -1292,12 +1307,13 @@ private fun StatusText(
         stringResource(R.string.state_connecting) to VpnOrange
     } else {
         when (connectionState) {
-            is ConnectionState.Disconnected -> disconnected to MaterialTheme.colorScheme.onSurfaceVariant
+            is ConnectionState.Disconnected -> if (routerOnly) routerText to VpnGreen else disconnected to MaterialTheme.colorScheme.onSurfaceVariant
             is ConnectionState.Connecting -> stringResource(R.string.state_connecting) to VpnOrange
             is ConnectionState.Connected -> stringResource(R.string.state_connected) to VpnGreen
-            is ConnectionState.Error -> disconnected to MaterialTheme.colorScheme.onSurfaceVariant
+            is ConnectionState.Error -> if (routerOnly) routerText to VpnGreen else disconnected to MaterialTheme.colorScheme.onSurfaceVariant
         }
     }
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
     Text(
         text = text,
         style = fixedLayoutTextStyle(
@@ -1321,6 +1337,42 @@ private fun StatusText(
         softWrap = false,
         overflow = TextOverflow.Ellipsis,
     )
+    // Connected in the app as well: the app's tunnel is not needed at home.
+    AnimatedVisibility(
+        visible = routerVpn != null && connectionState is ConnectionState.Connected && !isPreparing,
+        enter = fadeIn(tween(320)) + expandVertically(tween(320)),
+        exit = fadeOut(tween(220)) + shrinkVertically(tween(220)),
+    ) {
+        RouterVpnHint(serverName = routerVpn?.serverName, onTurnOff = onRouterTurnOff)
+    }
+    }
+}
+
+/** The home router already sends this phone through the VPN, with a way to turn the app's off. */
+@Composable
+private fun RouterVpnHint(serverName: String?, onTurnOff: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .padding(top = 14.dp)
+            .widthIn(max = 420.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(VpnGreen.copy(alpha = 0.12f))
+            .padding(start = 14.dp, top = 10.dp, bottom = 10.dp, end = 8.dp),
+    ) {
+        Text(
+            if (serverName != null) {
+                stringResource(R.string.home_router_vpn_hint, serverName)
+            } else {
+                stringResource(R.string.home_router_vpn_hint_plain)
+            },
+            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onTurnOff) { Text(stringResource(R.string.home_router_vpn_turn_off)) }
+    }
 }
 
 @Composable

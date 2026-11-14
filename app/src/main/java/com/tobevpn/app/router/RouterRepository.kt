@@ -248,6 +248,43 @@ class RouterRepository @Inject constructor(
      * Drops a home device from Wi-Fi for a moment, so that it reconnects and
      * forgets the DNS answers it cached before its VPN changed.
      */
+    /** The home router sends this phone through a server that answers. */
+    data class Protection(val serverName: String?)
+
+    /**
+     * Whether the home router already sends this phone through the VPN, as
+     * on PC: at home behind the linked router, ToBeVPN running there, this
+     * phone set to a server (or the default VPN) and that server answering.
+     * Anything else is null, so the app never claims a VPN that is not there.
+     */
+    suspend fun protection(): Protection? {
+        linkHere() ?: return null
+        val status = status()
+        val clientIp = status.clientIp
+        if (!status.installed || !status.running || clientIp == null) return null
+        val network = devices()
+        val me = network.devices.firstOrNull { it.ip == clientIp } ?: return null
+        val mode = if (me.mode == "default") status.defaultMode else me.mode
+        if (mode != "vpn") return null
+        val slot = if (me.mode == "vpn") me.slot else 0
+        if (slot in status.downSlots) return null
+        val server = network.slots.firstOrNull { it.slot == slot } ?: network.slots.firstOrNull { it.slot == 0 }
+        return Protection(server?.serverName)
+    }
+
+    /**
+     * Drops this phone from Wi-Fi a moment after the call returns, so it
+     * reconnects with no old connections or DNS answers (an app cannot
+     * clear Android's DNS cache itself; PC clears its own instead).
+     */
+    suspend fun kickSoon(mac: String) {
+        val cleanMac = mac.trim().lowercase()
+        if (!RouterAgent.validMac(cleanMac)) throw RouterException("invalid MAC address")
+        withRouter { shell ->
+            shell.run("( trap '' HUP; sleep 2; ${RouterAgent.SCRIPT} kick '$cleanMac' ) </dev/null >/dev/null 2>&1 &")
+        }
+    }
+
     suspend fun kick(mac: String): Boolean {
         val cleanMac = mac.trim().lowercase()
         if (!RouterAgent.validMac(cleanMac)) throw RouterException("invalid MAC address")
