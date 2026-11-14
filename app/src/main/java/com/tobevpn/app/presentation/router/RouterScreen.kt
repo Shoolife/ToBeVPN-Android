@@ -178,7 +178,6 @@ fun RouterScreen(
         lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
             while (true) {
                 kotlinx.coroutines.delay(TRAFFIC_EVERY_MS)
-                viewModel.refreshTraffic(maxAgeMs = TRAFFIC_EVERY_MS - 5_000L)
                 // A name or state changed on PC shows here within a minute.
                 viewModel.refreshStatusQuietly()
             }

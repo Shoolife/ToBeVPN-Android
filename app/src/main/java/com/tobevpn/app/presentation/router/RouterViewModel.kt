@@ -181,16 +181,22 @@ class RouterViewModel @Inject constructor(
                     otherRouter = "another router at this address" in error.message.orEmpty()
                     !lost && !otherRouter
                 }) {
-                    val status = repository.status()
-                    _state.update { it.copy(status = status, link = repository.link.value) }
+                    // Status, devices and traffic in one login.
+                    val cached = repository.cachedTraffic()
+                    if (cached != null && _state.value.traffic.isEmpty()) _state.update { it.copy(traffic = cached.second) }
+                    val snapshot = repository.snapshot(withTraffic = true)
+                    val status = snapshot.status
+                    _state.update {
+                        it.copy(
+                            status = status,
+                            link = repository.link.value,
+                            network = snapshot.network ?: it.network,
+                            traffic = snapshot.traffic ?: it.traffic,
+                        )
+                    }
                     if (status.installed) {
-                        // Traffic is read alongside, not waited for: the
-                        // numbers show their spinner meanwhile.
-                        refreshTraffic(maxAgeMs = if (initial) TRAFFIC_MAX_AGE_MS else 0L)
                         checkUpdate()
-                        val network = repository.devices()
-                        _state.update { it.copy(network = network) }
-                        migrateDefaultDevices(status, network)
+                        snapshot.network?.let { network -> migrateDefaultDevices(status, network) }
                     }
                 }
             }
@@ -478,9 +484,15 @@ class RouterViewModel @Inject constructor(
     private var updateCheckJob: kotlinx.coroutines.Job? = null
 
     /** Asks the router whether it runs older components; silent on failure. */
+    private var updateCheckedAt = 0L
+
     private fun checkUpdate() {
         val link = repository.link.value ?: return
         if (updateCheckJob?.isActive == true || _state.value.updating != null) return
+        // Once in a while, not on every refresh: it logs in and may ask GitHub.
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (updateCheckedAt != 0L && now - updateCheckedAt < UPDATE_CHECK_EVERY_MS) return
+        updateCheckedAt = now
         updateCheckJob = viewModelScope.launch {
             val update = try {
                 installer.updateCheck(link.host, link.user, haveSites = withContext(Dispatchers.IO) { repository.ruSites() } != null)
@@ -500,9 +512,29 @@ class RouterViewModel @Inject constructor(
     fun refreshStatusQuietly() {
         val current = _state.value
         if (!current.paired || current.busy || current.refreshing || current.updating != null) return
-        viewModelScope.launch {
-            val status = runCatching { repository.status() }.getOrNull() ?: return@launch
-            _state.update { if (it.busy) it else it.copy(status = status, link = repository.link.value) }
+        if (trafficJob?.isActive == true) return
+        // Status, devices and traffic in one login: the traffic numbers show
+        // their spinner, the rest changes only if something changed.
+        trafficJob = viewModelScope.launch {
+            val startedAt = android.os.SystemClock.elapsedRealtime()
+            _state.update { it.copy(trafficLoading = true) }
+            val snapshot = runCatching { repository.snapshot(withTraffic = true) }.getOrNull()
+            val shown = android.os.SystemClock.elapsedRealtime() - startedAt
+            if (shown < TRAFFIC_MIN_LOADING_MS) delay(TRAFFIC_MIN_LOADING_MS - shown)
+            _state.update {
+                when {
+                    snapshot == null -> it.copy(trafficLoading = false)
+                    // A change in progress keeps its own view of the devices.
+                    it.busy || it.savingMac != null -> it.copy(trafficLoading = false, traffic = snapshot.traffic ?: it.traffic)
+                    else -> it.copy(
+                        trafficLoading = false,
+                        status = snapshot.status,
+                        link = repository.link.value,
+                        network = snapshot.network ?: it.network,
+                        traffic = snapshot.traffic ?: it.traffic,
+                    )
+                }
+            }
         }
     }
 
@@ -671,10 +703,7 @@ class RouterViewModel @Inject constructor(
         migrating = true
         // A failure part-way is retried on the next load, not left half-done.
         val next = try {
-            for (device in network.devices.filter { it.mode == "default" }) {
-                repository.setDevice(device.mac, "vpn", 0, device.name.orEmpty())
-            }
-            repository.setDefaultMode("direct")
+            repository.migrateDefaultDevices(network.devices.filter { it.mode == "default" })
         } finally {
             migrating = false
         }
@@ -761,6 +790,7 @@ class RouterViewModel @Inject constructor(
         private const val MIN_REFRESH_FEEDBACK_MS = 900L
         private const val TRAFFIC_MAX_AGE_MS = 60_000L
         private const val TRAFFIC_MIN_LOADING_MS = 600L
+        private const val UPDATE_CHECK_EVERY_MS = 30 * 60_000L
         /** Wi-Fi is back on most phones within this after a reconnect. */
         private const val THIS_PHONE_BACK_MS = 9_000L
 

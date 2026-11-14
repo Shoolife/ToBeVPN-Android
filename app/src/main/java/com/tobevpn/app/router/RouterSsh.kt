@@ -86,9 +86,12 @@ class RouterSsh @Inject constructor(
      * Forgets the router at [host]: only the key it showed last, when known,
      * so another router paired at the same address (elsewhere) still works.
      */
-    fun forget(host: String) {
+    fun forget(host: String, keepUnknown: Boolean = false) {
         val hosts = knownHosts()
         val seen = lastSeen.remove(host)
+        // Not knowing which key is this router's, another router at the same
+        // address keeps them all rather than lose its own.
+        if (seen == null && keepUnknown) return
         val left = if (seen != null) hostKeys(host) - seen else emptySet()
         if (left.isEmpty()) hosts.remove(host) else hosts.put(host, org.json.JSONArray(left.toList()))
         hostsFile.writeText(hosts.toString())

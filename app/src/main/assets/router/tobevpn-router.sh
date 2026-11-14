@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111401
+AGENT_VERSION=2026111402
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -537,7 +537,9 @@ set_device() {
         printf '%s\t%s\t%s\t%s\n' "$mac" "$mode" "$name" "$slot" >>"$DIR/devices.tmp"
     fi
     mv "$DIR/devices.tmp" "$DIR/devices"
-    pidof xray >/dev/null && apply_routes
+    # Several devices saved at once (TOBEVPN_NO_APPLY=1) are applied once,
+    # by the command that ends the batch.
+    [ -z "$TOBEVPN_NO_APPLY" ] && pidof xray >/dev/null && apply_routes
     echo "saved=1"
 }
 

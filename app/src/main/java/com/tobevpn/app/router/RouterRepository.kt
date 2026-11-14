@@ -39,7 +39,15 @@ class RouterRepository @Inject constructor(
     private val detector: RouterDetector,
 ) {
     private val prefs = context.getSharedPreferences("tobevpn_router", Context.MODE_PRIVATE)
-    private val _link = MutableStateFlow(loadLink())
+    /**
+     * Every router this phone is connected to (home, a cottage…), most
+     * recently used first. Each keeps its own key on the router and its own
+     * pinned host key here, so moving between them needs no password.
+     */
+    private val links: MutableList<RouterLink> = loadLinks().toMutableList()
+
+    /** The router being worked with: the one of the current network, once [linkHere] picked it. */
+    private val _link = MutableStateFlow(links.firstOrNull())
     val link: StateFlow<RouterLink?> = _link.asStateFlow()
 
     private val _router = MutableStateFlow<RouterInfo?>(null)
@@ -81,51 +89,89 @@ class RouterRepository @Inject constructor(
         return RouterInfo(gateway = gateway)
     }
 
-    /** The linked router, when it is the router of the current network. */
+    /**
+     * The connected router of the current network, which becomes the one
+     * worked with. Routers at the same address (home and a cottage both on
+     * 192.168.1.1) are told apart by the router's mark; without a mark, the
+     * one used last at that address.
+     */
     fun linkHere(): RouterLink? {
-        val link = _link.value ?: return null
         val gateway = detector.homeLan()?.gateway ?: return null
-        // Another router at the same address (a cottage, a friend's flat on
-        // 192.168.1.1 too) is not the linked one: its mark tells them apart.
         val mark = _router.value?.takeIf { it.gateway == gateway }?.mark
-        val hwid = link.hwid
-        if (mark != null && hwid != null && routerMark(hwid) != mark) return null
-        return link.takeIf { it.host == gateway && ssh.isPaired(it.host) }
+        val chosen = synchronized(links) {
+            val candidates = links.filter { it.host == gateway && ssh.isPaired(it.host) }
+            if (mark != null) {
+                candidates.firstOrNull { it.hwid != null && routerMark(it.hwid) == mark }
+                    // Connected but its id not read yet (just paired).
+                    ?: candidates.firstOrNull { it.hwid == null }
+            } else {
+                candidates.firstOrNull()
+            }
+        } ?: return null
+        if (_link.value != chosen) {
+            synchronized(links) {
+                links.remove(chosen)
+                links.add(0, chosen)
+                storeLinks()
+            }
+            _link.value = chosen
+        }
+        return chosen
     }
 
     private fun network() = detector.homeLan()?.network
 
     // --------------------------------------------------------------- link ---
 
-    private fun loadLink(): RouterLink? = runCatching {
-        val json = JSONObject(prefs.getString(KEY_LINK, null) ?: return null)
-        RouterLink(
-            host = json.getString("host"),
-            user = json.getString("user"),
-            hwid = json.optString("hwid").takeIf { it.isNotEmpty() },
-            name = json.optString("name").takeIf { it.isNotEmpty() },
-            model = json.optString("model").takeIf { it.isNotEmpty() },
-        )
-    }.getOrNull()
+    private fun linkFrom(json: JSONObject): RouterLink = RouterLink(
+        host = json.getString("host"),
+        user = json.getString("user"),
+        hwid = json.optString("hwid").takeIf { it.isNotEmpty() },
+        name = json.optString("name").takeIf { it.isNotEmpty() },
+        model = json.optString("model").takeIf { it.isNotEmpty() },
+    )
 
+    private fun linkJson(link: RouterLink): JSONObject = JSONObject()
+        .put("host", link.host)
+        .put("user", link.user)
+        .put("hwid", link.hwid.orEmpty())
+        .put("name", link.name.orEmpty())
+        .put("model", link.model.orEmpty())
+
+    /** The list, or the single link earlier versions kept. */
+    private fun loadLinks(): List<RouterLink> {
+        prefs.getString(KEY_LINKS, null)?.let { text ->
+            return runCatching {
+                val array = org.json.JSONArray(text)
+                (0 until array.length()).mapNotNull { runCatching { linkFrom(array.getJSONObject(it)) }.getOrNull() }
+            }.getOrDefault(emptyList())
+        }
+        return listOfNotNull(runCatching { linkFrom(JSONObject(prefs.getString(KEY_LINK, null) ?: return emptyList())) }.getOrNull())
+    }
+
+    private fun storeLinks() {
+        val array = org.json.JSONArray()
+        links.forEach { array.put(linkJson(it)) }
+        prefs.edit().putString(KEY_LINKS, array.toString()).remove(KEY_LINK).apply()
+    }
+
+    /** Replaces the router being worked with (null: forgets it) in the list. */
     private fun saveLink(link: RouterLink?) {
-        _link.value = link
-        prefs.edit().apply {
-            if (link == null) {
-                remove(KEY_LINK)
-            } else {
-                putString(
-                    KEY_LINK,
-                    JSONObject()
-                        .put("host", link.host)
-                        .put("user", link.user)
-                        .put("hwid", link.hwid.orEmpty())
-                        .put("name", link.name.orEmpty())
-                        .put("model", link.model.orEmpty())
-                        .toString(),
-                )
+        synchronized(links) {
+            val current = _link.value
+            val index = if (current != null) links.indexOf(current) else -1
+            when {
+                link == null -> if (index >= 0) links.removeAt(index)
+                index >= 0 -> links[index] = link
+                else -> links.add(0, link)
             }
-        }.apply()
+            // One entry per router: a router connected again replaces its old one.
+            if (link?.hwid != null) {
+                links.removeAll { it !== link && it.hwid.equals(link.hwid, ignoreCase = true) }
+            }
+            storeLinks()
+        }
+        _link.value = link
     }
 
     /** Remembers what the router reported about itself. */
@@ -139,7 +185,16 @@ class RouterRepository @Inject constructor(
 
     suspend fun pair(host: String, user: String, password: String) {
         ssh.pair(network(), host, user, password)
-        saveLink(RouterLink(host = host, user = user, model = _router.value?.model))
+        // A new router joins the list (the others stay connected); its id is
+        // filled in by its first status, which also drops an older entry of
+        // the same router.
+        val link = RouterLink(host = host, user = user, model = _router.value?.model)
+        synchronized(links) {
+            links.removeAll { it.host == host && it.hwid == null }
+            links.add(0, link)
+            storeLinks()
+        }
+        _link.value = link
     }
 
     /**
@@ -164,7 +219,10 @@ class RouterRepository @Inject constructor(
 
     /** Forgets the router on this phone (its key stays until uninstall). */
     fun unlink() {
-        _link.value?.let { ssh.forget(it.host) }
+        _link.value?.let { link ->
+            val sharesAddress = synchronized(links) { links.any { it != link && it.host == link.host } }
+            ssh.forget(link.host, keepUnknown = sharesAddress)
+        }
         saveLink(null)
     }
 
@@ -178,10 +236,14 @@ class RouterRepository @Inject constructor(
     suspend fun status(): RouterStatus = withRouter { shell ->
         val (output, _) = shell.run("[ -x ${RouterAgent.SCRIPT} ] && ${RouterAgent.SCRIPT} status")
         RouterAgent.parseStatus(output)
-    }.also { status ->
-        // Another router at the linked address (paired elsewhere, no mark to
-        // tell them apart before logging in): not the linked one, and its id
-        // must not replace the linked router's.
+    }.also(::accept)
+
+    /**
+     * Another router at the linked address (paired elsewhere, no mark to tell
+     * them apart before logging in) is not the linked one, and its id must
+     * not replace the linked router's.
+     */
+    private fun accept(status: RouterStatus) {
         val linked = _link.value?.hwid
         if (linked != null && status.hwid != null && !linked.equals(status.hwid, ignoreCase = true)) {
             throw RouterException("another router at this address")
@@ -189,10 +251,50 @@ class RouterRepository @Inject constructor(
         remember(status)
     }
 
+    /** Everything the Router screen shows, read in one SSH session. */
+    data class Snapshot(val status: RouterStatus, val network: RouterNetwork?, val traffic: List<TrafficHour>?)
+
+    /**
+     * The router's status and, with ToBeVPN on it, its home devices and (with
+     * [withTraffic]) its traffic: one login instead of one per question.
+     */
+    suspend fun snapshot(withTraffic: Boolean): Snapshot = withRouter { shell ->
+        val status = RouterAgent.parseStatus(shell.run("[ -x ${RouterAgent.SCRIPT} ] && ${RouterAgent.SCRIPT} status").first)
+        if (!status.installed) return@withRouter Snapshot(status, null, null)
+        val output = shell.runOk("${RouterAgent.SCRIPT} devices")
+        val network = RouterNetwork(RouterAgent.parseDevices(output), RouterAgent.parseSlots(output))
+        val traffic = if (withTraffic) {
+            runCatching { RouterAgent.parseTraffic(shell.runOk("${RouterAgent.SCRIPT} traffic")) }.getOrNull()
+        } else {
+            null
+        }
+        Snapshot(status, network, traffic)
+    }.also { snapshot ->
+        accept(snapshot.status)
+        snapshot.traffic?.let(::cacheTraffic)
+    }
+
+    /**
+     * Earlier versions sent every device without a choice through the
+     * router's server: each keeps that server as its own choice and new
+     * devices start without VPN. One session, and the routes are rebuilt
+     * once at the end (older agents rebuild after each device; still right).
+     */
+    suspend fun migrateDefaultDevices(devices: List<RouterDevice>): RouterStatus = withRouter { shell ->
+        val saves = devices.filter { RouterAgent.validMac(it.mac.lowercase()) }.joinToString("") { device ->
+            val name = RouterAgent.shellQuoteInner(device.name.orEmpty().filter { !it.isISOControl() && it != '|' }.take(40))
+            "TOBEVPN_NO_APPLY=1 ${RouterAgent.SCRIPT} set-device '${device.mac.lowercase()}' vpn 0 '$name' && "
+        }
+        shell.runOk("$saves${RouterAgent.SCRIPT} set-default direct")
+        RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
+    }.also(::remember)
+
     /** The router's VPN traffic by hour; kept, so the screen shows it at once next time. */
     suspend fun traffic(): List<TrafficHour> = withRouter { shell ->
         RouterAgent.parseTraffic(shell.runOk("${RouterAgent.SCRIPT} traffic"))
-    }.also { hours ->
+    }.also(::cacheTraffic)
+
+    private fun cacheTraffic(hours: List<TrafficHour>) {
         val cache = JSONObject()
             .put("hwid", _link.value?.hwid.orEmpty())
             .put("fetchedAt", System.currentTimeMillis())
@@ -436,6 +538,7 @@ class RouterRepository @Inject constructor(
 
     companion object {
         private const val KEY_LINK = "link"
+        private const val KEY_LINKS = "links"
         private const val PING_TIMEOUT_MS = 2_000
         private const val KEY_ROUTER = "router_here"
         private const val KEY_TRAFFIC = "traffic"

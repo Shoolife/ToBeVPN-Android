@@ -1008,7 +1008,13 @@ private fun LinkedDevicesSheetBody(
     // the account's routers elsewhere. The account's router of this network
     // is the same box, so it is not listed twice.
     val gatewayHere = routerHere?.gateway
-    val linkedHere = routerLink?.takeIf { it.host == gatewayHere }
+    // The connected router of this network: the same address and, when the
+    // router shows its mark, the same router (several can be connected).
+    val linkedHere = routerLink?.takeIf { link ->
+        val mark = routerHere?.mark
+        val hwid = link.hwid
+        link.host == gatewayHere && (mark == null || hwid == null || com.tobevpn.app.router.routerMark(hwid) == mark)
+    }
     val isRouterHere: (LinkedDeviceDto) -> Boolean = { device ->
         val hwid = linkedHere?.hwid
         if (hwid != null) {
