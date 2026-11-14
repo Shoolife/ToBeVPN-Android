@@ -269,7 +269,12 @@ class RouterRepository @Inject constructor(
         val slot = if (me.mode == "vpn") me.slot else 0
         if (slot in status.downSlots) return null
         val server = network.slots.firstOrNull { it.slot == slot } ?: network.slots.firstOrNull { it.slot == 0 }
-        return Protection(server?.serverName)
+        // The name without its flag emoji, as PC shows it.
+        val name = server?.serverName
+            ?.replace(Regex("[\\x{1F1E6}-\\x{1F1FF}]"), "")
+            ?.trim()
+            ?.takeIf { it.isNotEmpty() }
+        return Protection(name)
     }
 
     /**

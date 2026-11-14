@@ -624,7 +624,9 @@ fun MainScreen(
                 onClick = if (subscriptionUsageBlocked) onBlockedClick else onConnectClick,
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // The status line sits midway between the button and the cards
+            // below (the cards keep their place: the two gaps add up as before).
+            Spacer(modifier = Modifier.height(31.dp))
 
             // When the anonymous limit is exhausted we surface a dedicated banner
             // below, so suppress the generic red error text to avoid duplication.
@@ -637,7 +639,7 @@ fun MainScreen(
                 onRouterTurnOff = onConnectClick,
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(9.dp))
 
             if (isAnonExhausted) {
                 LimitExhaustedCard(onLoginClick = onNavigateToAuth)
