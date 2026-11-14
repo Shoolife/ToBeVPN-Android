@@ -659,6 +659,15 @@ class MainViewModel @Inject constructor(
                 return
             }
             _currentLimits.value = limits
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            // The plans kept on screen are from before: shown as such, not
+            // as fresh prices.
+            if (request == purchaseLoadRequest && _purchasePlans.value != null) {
+                _purchasePlansFromCache.value = true
+            }
+            throw error
         } finally {
             if (request == purchaseLoadRequest) {
                 _purchasePlansLoaded.value = true
@@ -903,14 +912,40 @@ class MainViewModel @Inject constructor(
     /** Asks the home router whether it sends this phone through the VPN; silent on failure. */
     private var routerVpnCheckedAt = 0L
 
-    fun checkRouterVpn() {
-        if (routerVpnJob?.isActive == true) return
+    fun checkRouterVpn(force: Boolean = false) {
+        if (routerVpnJob?.isActive == true && !force) return
         // Switching apps back and forth does not log in to the router each time.
         val now = android.os.SystemClock.elapsedRealtime()
-        if (routerVpnCheckedAt != 0L && now - routerVpnCheckedAt < ROUTER_VPN_MIN_GAP_MS) return
+        if (!force && routerVpnCheckedAt != 0L && now - routerVpnCheckedAt < ROUTER_VPN_MIN_GAP_MS) return
+        routerVpnJob?.cancel()
         routerVpnCheckedAt = now
         routerVpnJob = viewModelScope.launch {
             _routerVpn.value = runCatching { routerRepository.protection() }.getOrNull()
+        }
+    }
+
+    init {
+        // Leaving home Wi-Fi (or joining it) is seen at once: Home must not
+        // keep saying the router protects the phone on mobile data.
+        runCatching {
+            val connectivity = context.getSystemService(android.net.ConnectivityManager::class.java)
+            val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    checkRouterVpn(force = true)
+                }
+
+                override fun onLost(network: android.net.Network) {
+                    _routerVpn.value = null
+                    checkRouterVpn(force = true)
+                }
+            }
+            connectivity.registerNetworkCallback(
+                android.net.NetworkRequest.Builder()
+                    .addTransportType(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+                    .build(),
+                callback,
+            )
+            addCloseable { runCatching { connectivity.unregisterNetworkCallback(callback) } }
         }
     }
 

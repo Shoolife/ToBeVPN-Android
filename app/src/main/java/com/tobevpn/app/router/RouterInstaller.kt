@@ -344,16 +344,18 @@ class RouterInstaller @Inject constructor(
         val facts = RouterAgent.keyValues(
             shell.runOk(
                 componentFactsCommand(binaries) +
-                    "echo md5_agent=\$(md5sum ${RouterAgent.SCRIPT} 2>/dev/null | cut -d' ' -f1); " +
+                    "echo agent_version=\$(sed -n 's/^AGENT_VERSION=//p' ${RouterAgent.SCRIPT} 2>/dev/null); " +
                     "echo ru_direct=\$(cat ${RouterAgent.RU_DIRECT_FLAG} 2>/dev/null); " +
                     "echo sites=\$([ -s ${RouterAgent.RU_SITES_PATH} ] && echo 1 || echo 0)",
             ),
         )
-        val agentMd5 = MessageDigest.getInstance("MD5").digest(agentScript()).joinToString("") { "%02x".format(it) }
+        // By version, not by content: a newer agent put there by the desktop
+        // app is not "updated" back to this app's older one.
+        val ours = agentVersion(String(agentScript()))
         return Outdated(
             binaries = binaries.filter { outdated(it, facts) },
             xrayCurrent = facts["xray_version"]?.takeIf { it.isNotEmpty() },
-            agent = facts["md5_agent"] != agentMd5,
+            agent = (facts["agent_version"]?.trim()?.toLongOrNull() ?: 0L) < ours,
             // The phone's list is the smaller one: it never replaces a list
             // the router has (the desktop app brings the fuller one).
             sitesMissing = facts["ru_direct"]?.trim() != "0" && facts["sites"] != "1",
@@ -412,7 +414,9 @@ class RouterInstaller @Inject constructor(
             // after that must not leave the home without it.
             runCatching {
                 ssh.session(network, host, user) { shell ->
-                    shell.run("[ -x ${RouterAgent.SCRIPT} ] && ${RouterAgent.SCRIPT} start")
+                    // Only when the VPN is down: a failure before the stop, or a
+                    // start still running on the router, needs no second start.
+                    shell.run("[ -x ${RouterAgent.SCRIPT} ] && ! pidof xray >/dev/null && ${RouterAgent.SCRIPT} start")
                 }
             }
             throw error
@@ -644,6 +648,10 @@ class RouterInstaller @Inject constructor(
             "packages" -> "the router lacks ${check.packages.joinToString(", ")} and has no package manager"
             else -> "the router has no supported firewall"
         }
+
+        /** AGENT_VERSION from the agent script; 0 for agents from before it had one. */
+        fun agentVersion(script: String): Long =
+            Regex("(?m)^AGENT_VERSION=(\\d+)").find(script)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
 
         fun versionTuple(version: String): List<Int> {
             val parts = version.trim().split('.').map { it.toIntOrNull() }

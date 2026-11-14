@@ -160,7 +160,7 @@ class RouterViewModel @Inject constructor(
 
     fun refresh() = load(initial = false)
 
-    private fun load(initial: Boolean) {
+    private fun load(initial: Boolean, recheck: Boolean = true) {
         viewModelScope.launch {
             val startedAt = android.os.SystemClock.elapsedRealtime()
             _state.update { it.copy(refreshing = !initial, error = null) }
@@ -174,8 +174,13 @@ class RouterViewModel @Inject constructor(
             val detection = async { repository.detect() }
             val accountRouters = async { accountRouters() }
             var lost = false
+            var otherRouter = false
             if (here != null) {
-                runRouter(onError = { error -> lost = isAccessLost(error); !lost }) {
+                runRouter(onError = { error ->
+                    lost = isAccessLost(error)
+                    otherRouter = "another router at this address" in error.message.orEmpty()
+                    !lost && !otherRouter
+                }) {
                     val status = repository.status()
                     _state.update { it.copy(status = status, link = repository.link.value) }
                     if (status.installed) {
@@ -191,14 +196,12 @@ class RouterViewModel @Inject constructor(
             }
             val info = detection.await()
             val models = accountRouters.await()
-            // By the router's own mark when it has one (exact, even for two
-            // routers of one model); by the model only for older agents.
+            // By the router's own mark (exact, even for two routers of one
+            // model). Without a mark the router has no current ToBeVPN; a
+            // model match would only confuse two routers of one model.
             val mark = info.mark
-            val installedByAnother = if (mark != null) {
+            val installedByAnother = mark != null &&
                 models.any { (hwid, _) -> hwid != null && com.tobevpn.app.router.routerMark(hwid) == mark }
-            } else {
-                models.any { (_, model) -> com.tobevpn.app.router.sameRouterModel(model, info.model) }
-            }
             _state.update { it.copy(installedByAnother = installedByAnother) }
             // A refresh that answers at once still shows one full turn of
             // its icon, as on PC (and the devices list).
@@ -211,9 +214,17 @@ class RouterViewModel @Inject constructor(
                     checking = false,
                     refreshing = false,
                     accessLost = lost,
-                    status = if (lost) null else it.status,
+                    status = if (lost || otherRouter) null else it.status,
+                    // This network's router is not the linked one: shown as a
+                    // router to connect to, with no error.
+                    paired = if (otherRouter) false else it.paired,
                 )
             }
+            // Whether the linked router is this network's was decided with the
+            // mark seen before (possibly another network's): read once more
+            // when the fresh detection says otherwise.
+            val hereNow = withContext(Dispatchers.IO) { repository.linkHere() }
+            if (recheck && !otherRouter && (hereNow == null) != (here == null)) load(initial = false, recheck = false)
         }
     }
 
@@ -409,8 +420,12 @@ class RouterViewModel @Inject constructor(
                     ?: throw RouterException("server-missing")
                 val shortUuid = sessionDao.getSession()?.shortUuid?.takeIf { it.isNotBlank() }
                     ?: throw RouterException("no subscription")
-                val subscriptionUrl = java.net.URI(com.tobevpn.app.BuildConfig.SUBSCRIPTION_BASE_URL)
-                    .resolve(java.net.URLEncoder.encode(shortUuid, "UTF-8")).toString()
+                // Built as the app builds its own (templates, a base without a
+                // trailing slash), so the router gets the same working link.
+                val subscriptionUrl = com.tobevpn.app.data.remote.buildSubscriptionUrlByKey(
+                    com.tobevpn.app.BuildConfig.SUBSCRIPTION_BASE_URL,
+                    shortUuid,
+                )?.toString() ?: throw RouterException("no subscription")
                 val status = installer.install(
                     host = link.host,
                     user = link.user,
@@ -719,7 +734,9 @@ class RouterViewModel @Inject constructor(
 
     private fun isAccessLost(error: Exception): Boolean {
         val raw = error.message.orEmpty()
-        return "rejected the app key" in raw || "not paired" in raw
+        // A new host key (the router was reset or reflashed) is the same
+        // case: connecting again with the password records the new one.
+        return "rejected the app key" in raw || "not paired" in raw || "host key changed" in raw
     }
 
     private fun errorText(error: Exception): String {

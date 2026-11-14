@@ -23,6 +23,10 @@
 #   tobevpn-router.sh set-device MAC vpn|direct|default SLOT [NAME]
 #   tobevpn-router.sh set-default vpn|direct
 
+# Raised with every change of this script. An app updates the router's copy
+# only when its own is newer, so two apps of different versions never keep
+# replacing each other's.
+AGENT_VERSION=2026111401
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -397,23 +401,28 @@ clear_device_rules() {
 
 # One run at a time: the watchdog, a DHCP event and a command from the app
 # can all ask at once, and two runs rebuilding the same rules would leave a
-# device without its DNS redirect until the next one. A lock left by a run
-# that died is taken over after 15 seconds.
+# device without its DNS redirect until the next one. The lock holds its
+# owner's pid: a lock whose owner is gone is taken over at once, a live one
+# is waited for (a run resolving many server names can take a while).
 apply_routes() {
+    mkdir -p "$RUN"
+    read -r self _ </proc/self/stat
     tries=0
     while ! mkdir "$RUN/apply.lock" 2>/dev/null; do
-        tries=$((tries + 1))
-        if [ "$tries" -ge 15 ]; then
+        owner=$(cat "$RUN/apply.lock/pid" 2>/dev/null)
+        if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
             rm -rf "$RUN/apply.lock"
-            mkdir -p "$RUN"
-            mkdir "$RUN/apply.lock" 2>/dev/null
-            break
+            continue
         fi
+        tries=$((tries + 1))
+        # A run never takes this long: its owner hangs; go ahead without it.
+        [ "$tries" -ge 120 ] && break
         sleep 1
     done
+    echo "$self" >"$RUN/apply.lock/pid" 2>/dev/null
     apply_routes_now
     result=$?
-    rmdir "$RUN/apply.lock" 2>/dev/null
+    [ "$(cat "$RUN/apply.lock/pid" 2>/dev/null)" = "$self" ] && rm -rf "$RUN/apply.lock"
     return $result
 }
 
@@ -603,11 +612,17 @@ watch() {
                 fi
                 continue
             fi
+            if ! bring_up_tunnels; then
+                # Tried again in a minute, with the home direct meanwhile.
+                kill_core
+                [ -f "$RUN/state" ] || { echo "failed=$(date +%s)" >"$RUN/state"; stop_routing; }
+                continue
+            fi
             if [ -f "$RUN/state" ]; then
                 rm -f "$RUN/state"
                 event "core back"
             fi
-            bring_up_tunnels && apply_routes
+            apply_routes
         fi
         [ $((ticks % 6)) -eq 0 ] && account_traffic
         [ $((ticks % 3)) -eq 0 ] && check_health && apply_routes
@@ -653,7 +668,16 @@ start() {
     [ -c /dev/net/tun ] || modprobe tun 2>/dev/null || insmod tun 2>/dev/null
     refresh_subscription
     start_core
-    bring_up_tunnels || return 1
+    if ! bring_up_tunnels; then
+        # Not left without a watchdog: the home goes direct and a new start
+        # is tried every minute, as when the core fails later.
+        kill_core
+        echo "failed=$(date +%s)" >"$RUN/state"
+        stop_routing
+        event "tunnels did not come up, home direct"
+        start_watch
+        return 1
+    fi
     # A server that does not answer must not take the home offline.
     rm -f "$RUN/down" "$RUN"/fails_*
     for slot in 0 $(extra_slots); do
@@ -663,10 +687,22 @@ start() {
         }
     done
     apply_routes
+    start_watch
+    echo "started=1"
+}
+
+start_watch() {
     if ! { [ -f "$RUN/watch.pid" ] && kill -0 "$(cat "$RUN/watch.pid")" 2>/dev/null; }; then
         "$0" watch >/dev/null 2>&1 &
     fi
-    echo "started=1"
+}
+
+kill_core() {
+    for name in hev-socks5-tunnel xray; do
+        pids=$(pidof "$name")
+        # shellcheck disable=SC2086 # several pids
+        [ -n "$pids" ] && kill $pids
+    done
 }
 
 stop_routing() {
@@ -683,6 +719,7 @@ stop_routing() {
 }
 
 stop() {
+    rm -rf "$RUN/apply.lock"
     if [ -f "$RUN/watch.pid" ]; then
         kill "$(cat "$RUN/watch.pid")" 2>/dev/null
         rm -f "$RUN/watch.pid"

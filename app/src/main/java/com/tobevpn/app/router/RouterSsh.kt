@@ -82,11 +82,20 @@ class RouterSsh @Inject constructor(
 
     fun isPaired(host: String): Boolean = knownHosts().has(host)
 
+    /**
+     * Forgets the router at [host]: only the key it showed last, when known,
+     * so another router paired at the same address (elsewhere) still works.
+     */
     fun forget(host: String) {
         val hosts = knownHosts()
-        hosts.remove(host)
+        val seen = lastSeen.remove(host)
+        val left = if (seen != null) hostKeys(host) - seen else emptySet()
+        if (left.isEmpty()) hosts.remove(host) else hosts.put(host, org.json.JSONArray(left.toList()))
         hostsFile.writeText(hosts.toString())
     }
+
+    /** The host key each router showed in its last session. */
+    private val lastSeen = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     /** Runs [block] in a session that uses this app's key. */
     suspend fun <T> session(
@@ -99,7 +108,8 @@ class RouterSsh @Inject constructor(
         val expected = hostKeys(host).takeIf { it.isNotEmpty() }
             ?: throw RouterException("router is not paired")
         val jsch = JSch()
-        jsch.setHostKeyRepository(PinnedHosts(expected = expected, seen = arrayOfNulls(1)))
+        val seen = arrayOfNulls<String>(1)
+        jsch.setHostKeyRepository(PinnedHosts(expected = expected, seen = seen))
         jsch.addIdentity(keyComment, keyFileBytes(), null, null)
         val session = jsch.getSession(user, host, 22).apply { configure(network) }
         try {
@@ -113,6 +123,7 @@ class RouterSsh @Inject constructor(
                 }
                 throw error
             }
+            seen[0]?.let { lastSeen[host] = it }
             block(RouterShell(session))
         } finally {
             session.disconnect()
@@ -220,10 +231,8 @@ class RouterSsh @Inject constructor(
     ) : HostKeyRepository {
         override fun check(host: String?, key: ByteArray?): Int {
             val fingerprint = key?.let(::fingerprint) ?: return HostKeyRepository.NOT_INCLUDED
-            if (expected == null) {
-                seen[0] = fingerprint
-                return HostKeyRepository.OK
-            }
+            seen[0] = fingerprint
+            if (expected == null) return HostKeyRepository.OK
             return if (fingerprint in expected) HostKeyRepository.OK else HostKeyRepository.CHANGED
         }
 

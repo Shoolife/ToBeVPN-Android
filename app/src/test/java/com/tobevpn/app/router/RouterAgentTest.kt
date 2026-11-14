@@ -183,6 +183,27 @@ class RouterAgentTest {
     }
 
     @Test
+    fun doesNotRewriteSlotsWhoseServerThePhoneDoesNotKnow() {
+        fun server(id: String) = Server(id = id, name = id, address = id, port = 443, uuid = "u")
+        val network = RouterNetwork(
+            devices = listOf(RouterDevice("m1", null, null, "vpn", null, true, 1)),
+            slots = listOf(RouterSlot(0, "a", "a"), RouterSlot(1, "gone", "gone")),
+        )
+        // Device m1 rides slot 1, whose server this phone no longer has: a new
+        // server must not take its place.
+        assertEquals(
+            RouterRepository.Companion.SlotPlan.Missing,
+            RouterRepository.planSlots(listOf(server("a"), server("y")), network, "m2", "y", limit = 4),
+        )
+    }
+
+    @Test
+    fun readsTheAgentVersion() {
+        assertEquals(2026111401L, RouterInstaller.agentVersion("#!/bin/sh\nAGENT_VERSION=2026111401\nDIR=/opt"))
+        assertEquals(0L, RouterInstaller.agentVersion("#!/bin/sh\nDIR=/opt"))
+    }
+
+    @Test
     fun routerMarkMatchesTheAgent() {
         // Router shell: printf '%s' "befe0dc8-..." | sha256sum | cut -c1-16
         assertEquals("b5eda37d94f713a3", routerMark("BEFE0DC8-F668-5434-847A-1D108CE7D224"))

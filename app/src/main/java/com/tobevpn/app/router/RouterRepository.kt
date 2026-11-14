@@ -178,7 +178,16 @@ class RouterRepository @Inject constructor(
     suspend fun status(): RouterStatus = withRouter { shell ->
         val (output, _) = shell.run("[ -x ${RouterAgent.SCRIPT} ] && ${RouterAgent.SCRIPT} status")
         RouterAgent.parseStatus(output)
-    }.also(::remember)
+    }.also { status ->
+        // Another router at the linked address (paired elsewhere, no mark to
+        // tell them apart before logging in): not the linked one, and its id
+        // must not replace the linked router's.
+        val linked = _link.value?.hwid
+        if (linked != null && status.hwid != null && !linked.equals(status.hwid, ignoreCase = true)) {
+            throw RouterException("another router at this address")
+        }
+        remember(status)
+    }
 
     /** The router's VPN traffic by hour; kept, so the screen shows it at once next time. */
     suspend fun traffic(): List<TrafficHour> = withRouter { shell ->
@@ -323,10 +332,14 @@ class RouterRepository @Inject constructor(
             .map { server ->
                 async(kotlinx.coroutines.Dispatchers.IO) {
                     server.id to runCatching {
+                        // Resolved first, through Wi-Fi (not the app's VPN), and
+                        // outside the timing: the ping is the connect alone.
+                        val address = network?.getAllByName(server.address)?.firstOrNull()
+                            ?: java.net.InetAddress.getByName(server.address)
                         val socket = network?.socketFactory?.createSocket() ?: java.net.Socket()
                         socket.use {
                             val started = System.nanoTime()
-                            it.connect(java.net.InetSocketAddress(server.address, server.port), PING_TIMEOUT_MS)
+                            it.connect(java.net.InetSocketAddress(address, server.port), PING_TIMEOUT_MS)
                             (System.nanoTime() - started) / 1_000_000
                         }
                     }.getOrDefault(-1L)
@@ -459,12 +472,16 @@ class RouterRepository @Inject constructor(
             network.slots.firstOrNull { it.serverId == serverId }?.let { return SlotPlan.Ready(null, it.slot) }
             val server = servers.firstOrNull { it.id == serverId } ?: return SlotPlan.Missing
             val used = usedSlots(network, exceptMac, defaultVpn)
-            val list = network.slots
-                .filter { it.slot in used }
-                .mapNotNull { item -> servers.firstOrNull { it.id == item.serverId }?.let { SlotServer(item.slot, it) } }
+            val kept = network.slots.filter { it.slot in used }
+            // A slot other devices use must be written back as it is. If its
+            // server is not in this phone's list (renamed, removed, or put
+            // there by another app), the router's list cannot be rewritten
+            // without moving those devices to a server nobody chose for them.
+            val list = kept
+                .map { item -> servers.firstOrNull { it.id == item.serverId }?.let { SlotServer(item.slot, it) } ?: return SlotPlan.Missing }
                 .toMutableList()
             if (list.size >= limit) return SlotPlan.Full
-            val taken = list.map { it.slot }.toSet()
+            val taken = list.map { it.slot }.toSet() + used
             val free = (0 until RouterAgent.MAX_SERVERS).firstOrNull { it !in taken } ?: return SlotPlan.Full
             list += SlotServer(free, server)
             return SlotPlan.Ready(list.sortedBy { it.slot }, free)

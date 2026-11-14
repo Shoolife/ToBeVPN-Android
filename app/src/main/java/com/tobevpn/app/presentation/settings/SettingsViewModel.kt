@@ -477,8 +477,10 @@ class SettingsViewModel @Inject constructor(
             _linkedDevicesState.value = try {
                 // The list does not wait for this phone's registration: both
                 // run at once, and the list is fetched again only when this
-                // phone is not in it yet.
-                val registration = async {
+                // phone is not in it yet. Not a child of this refresh: when
+                // it is not waited for, it must not keep the refresh "running"
+                // and swallow the next one (after a disconnect, say).
+                val registration = viewModelScope.async {
                     authRepository.registerCurrentDevice()
                     runCatching { authRepository.pingHwidOnly() }
                 }
