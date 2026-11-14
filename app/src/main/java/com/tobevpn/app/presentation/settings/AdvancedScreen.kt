@@ -1014,7 +1014,14 @@ private fun LinkedDevicesSheetBody(
         if (hwid != null) {
             device.hwid.equals(hwid, ignoreCase = true) || device.deviceId.equals(hwid, ignoreCase = true)
         } else {
-            com.tobevpn.app.router.sameRouterModel(device.deviceModel, routerHere?.model)
+            val mark = routerHere?.mark
+            val id = device.hwid ?: device.deviceId
+            // The router's own mark tells two routers of one model apart.
+            if (mark != null) {
+                id != null && com.tobevpn.app.router.routerMark(id) == mark
+            } else {
+                com.tobevpn.app.router.sameRouterModel(device.deviceModel, routerHere?.model)
+            }
         }
     }
     val routerDevices = notCurrent.filter { it.inferredKind() == DeviceKind.Router && !isRouterHere(it) }

@@ -85,6 +85,11 @@ class RouterRepository @Inject constructor(
     fun linkHere(): RouterLink? {
         val link = _link.value ?: return null
         val gateway = detector.homeLan()?.gateway ?: return null
+        // Another router at the same address (a cottage, a friend's flat on
+        // 192.168.1.1 too) is not the linked one: its mark tells them apart.
+        val mark = _router.value?.takeIf { it.gateway == gateway }?.mark
+        val hwid = link.hwid
+        if (mark != null && hwid != null && routerMark(hwid) != mark) return null
         return link.takeIf { it.host == gateway && ssh.isPaired(it.host) }
     }
 

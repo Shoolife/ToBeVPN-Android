@@ -29,7 +29,19 @@ data class RouterInfo(
     val model: String? = null,
     /** "easywrt" (SNR's OpenWrt), "openwrt", or null when not recognised. */
     val firmware: String? = null,
+    /**
+     * ToBeVPN's mark on the router (a hash of its device id in the account),
+     * read without logging in; null without ToBeVPN or on older agents.
+     */
+    val mark: String? = null,
 )
+
+/** The mark a ToBeVPN router with this device id publishes (see the agent's publish_id). */
+fun routerMark(hwid: String): String =
+    java.security.MessageDigest.getInstance("SHA-256")
+        .digest(hwid.trim().lowercase().toByteArray())
+        .joinToString("") { "%02x".format(it) }
+        .take(16)
 
 /**
  * Finds the router of the Wi-Fi network as the desktop app does: the default
@@ -73,7 +85,9 @@ class RouterDetector @Inject constructor(
         // LuCI's index only redirects (meta refresh) to /cgi-bin/luci.
         val page = if (root.contains("/cgi-bin/luci")) httpGet(lan, "/cgi-bin/luci") ?: root else root
         val (model, firmware) = identify(page)
-        info.copy(model = model, firmware = firmware)
+        val mark = httpGet(lan, "/tobevpn-id")
+            ?.let { MARK.find(it)?.groupValues?.get(1) }
+        info.copy(model = model, firmware = firmware, mark = mark)
     }
 
     private fun httpGet(lan: HomeLan, path: String): String? = runCatching {
@@ -97,6 +111,7 @@ class RouterDetector @Inject constructor(
 
     companion object {
         private const val HTTP_TIMEOUT_MS = 3_000
+        private val MARK = Regex("tobevpn-router ([0-9a-f]{16})")
         private const val MAX_PAGE_BYTES = 64 * 1024
 
         /** Model and firmware family from a router's login page. */

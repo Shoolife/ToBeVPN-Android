@@ -96,7 +96,7 @@ class RouterSsh @Inject constructor(
         block: (RouterShell) -> T,
     ): T = withContext(Dispatchers.IO) {
         check(configured)
-        val expected = knownHosts().optString(host).takeIf { it.isNotEmpty() }
+        val expected = hostKeys(host).takeIf { it.isNotEmpty() }
             ?: throw RouterException("router is not paired")
         val jsch = JSch()
         jsch.setHostKeyRepository(PinnedHosts(expected = expected, seen = arrayOfNulls(1)))
@@ -192,15 +192,30 @@ class RouterSsh @Inject constructor(
     private fun knownHosts(): JSONObject =
         runCatching { JSONObject(hostsFile.readText()) }.getOrDefault(JSONObject())
 
+    /**
+     * Keys of the routers paired at this address. Pairing with another
+     * router that has the same address (elsewhere) adds its key instead of
+     * replacing the home router's, so home still works on return.
+     */
+    private fun hostKeys(host: String): Set<String> {
+        val value = knownHosts().opt(host) ?: return emptySet()
+        return when (value) {
+            is String -> setOf(value).filter { it.isNotEmpty() }.toSet()
+            is org.json.JSONArray -> (0 until value.length()).map { value.optString(it) }.filter { it.isNotEmpty() }.toSet()
+            else -> emptySet()
+        }
+    }
+
     private fun saveHost(host: String, fingerprint: String) {
         val hosts = knownHosts()
-        hosts.put(host, fingerprint)
+        val keys = (hostKeys(host) - fingerprint).toList().takeLast(MAX_KEYS_PER_HOST - 1) + fingerprint
+        hosts.put(host, org.json.JSONArray(keys))
         hostsFile.writeText(hosts.toString())
     }
 
     /** Accepts any key while pairing (recording it), afterwards only the recorded one. */
     private class PinnedHosts(
-        private val expected: String?,
+        private val expected: Set<String>?,
         private val seen: Array<String?>,
     ) : HostKeyRepository {
         override fun check(host: String?, key: ByteArray?): Int {
@@ -209,7 +224,7 @@ class RouterSsh @Inject constructor(
                 seen[0] = fingerprint
                 return HostKeyRepository.OK
             }
-            return if (fingerprint == expected) HostKeyRepository.OK else HostKeyRepository.CHANGED
+            return if (fingerprint in expected) HostKeyRepository.OK else HostKeyRepository.CHANGED
         }
 
         override fun add(hostkey: HostKey?, ui: UserInfo?) = Unit
@@ -242,6 +257,7 @@ class RouterSsh @Inject constructor(
 
     companion object {
         private const val TIMEOUT_MS = 10_000
+        private const val MAX_KEYS_PER_HOST = 4
 
         fun fingerprint(key: ByteArray): String =
             "SHA256:" + Base64.getEncoder().withoutPadding()

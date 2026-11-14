@@ -632,8 +632,23 @@ bring_up_tunnels() {
     done
 }
 
+# A mark on the router's web server that the apps on this network read
+# without logging in: which ToBeVPN router this is (a hash of its device id
+# in the account, not the id itself). Two routers of the same model, or two
+# networks with the same address, are told apart by it.
+publish_id() {
+    [ -d /www ] || return 0
+    hwid=$(sed -n "s/^HWID='\(.*\)'$/\1/p" "$DIR/subscription.conf" 2>/dev/null | tr 'A-F' 'a-f')
+    [ -n "$hwid" ] || return 0
+    command -v sha256sum >/dev/null 2>&1 || return 0
+    mark=$(printf '%s' "$hwid" | sha256sum | cut -c1-16)
+    [ "$(cat /www/tobevpn-id 2>/dev/null)" = "tobevpn-router $mark" ] && return 0
+    printf 'tobevpn-router %s\n' "$mark" >/www/tobevpn-id 2>/dev/null
+}
+
 start() {
     mkdir -p "$RUN"
+    publish_id
     rm -f "$RUN/state"
     [ -c /dev/net/tun ] || modprobe tun 2>/dev/null || insmod tun 2>/dev/null
     refresh_subscription
@@ -731,7 +746,7 @@ status() {
 uninstall() {
     stop >/dev/null
     [ -x /etc/init.d/tobevpn ] && /etc/init.d/tobevpn disable 2>/dev/null
-    rm -f /etc/init.d/tobevpn /etc/hotplug.d/dhcp/90-tobevpn
+    rm -f /etc/init.d/tobevpn /etc/hotplug.d/dhcp/90-tobevpn /www/tobevpn-id
     rm -rf "$RUN"
     sed -i '/ tobevpn-[a-z0-9-]*router/d' /etc/dropbear/authorized_keys ~/.ssh/authorized_keys 2>/dev/null
     rm -rf "$DIR"

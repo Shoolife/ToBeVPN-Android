@@ -172,7 +172,7 @@ class RouterViewModel @Inject constructor(
             // and the account's devices tell whether the router already runs
             // ToBeVPN from another device.
             val detection = async { repository.detect() }
-            val accountRouters = async { accountRouterModels() }
+            val accountRouters = async { accountRouters() }
             var lost = false
             if (here != null) {
                 runRouter(onError = { error -> lost = isAccessLost(error); !lost }) {
@@ -191,7 +191,14 @@ class RouterViewModel @Inject constructor(
             }
             val info = detection.await()
             val models = accountRouters.await()
-            val installedByAnother = models.any { com.tobevpn.app.router.sameRouterModel(it, info.model) }
+            // By the router's own mark when it has one (exact, even for two
+            // routers of one model); by the model only for older agents.
+            val mark = info.mark
+            val installedByAnother = if (mark != null) {
+                models.any { (hwid, _) -> hwid != null && com.tobevpn.app.router.routerMark(hwid) == mark }
+            } else {
+                models.any { (_, model) -> com.tobevpn.app.router.sameRouterModel(model, info.model) }
+            }
             _state.update { it.copy(installedByAnother = installedByAnother) }
             // A refresh that answers at once still shows one full turn of
             // its icon, as on PC (and the devices list).
@@ -319,15 +326,15 @@ class RouterViewModel @Inject constructor(
         }
     }
 
-    /** Models of the routers linked to the account (they fetch with a "/router/" User-Agent). */
-    private suspend fun accountRouterModels(): List<String> = runCatching {
+    /** Routers linked to the account: device id and model (they fetch with a "/router/" User-Agent). */
+    private suspend fun accountRouters(): List<Pair<String?, String?>> = runCatching {
         botApi.getDevices().data?.devices.orEmpty()
             .filter { device ->
                 device.deviceType.equals("router", ignoreCase = true) ||
                     device.userAgent.orEmpty().contains("/router/", ignoreCase = true) ||
                     device.platform.equals("openwrt", ignoreCase = true)
             }
-            .mapNotNull { it.deviceModel?.trim()?.takeIf(String::isNotEmpty) }
+            .map { (it.hwid ?: it.deviceId) to it.deviceModel?.trim()?.takeIf(String::isNotEmpty) }
     }.getOrDefault(emptyList())
 
     // ------------------------------------------------------------ install ---

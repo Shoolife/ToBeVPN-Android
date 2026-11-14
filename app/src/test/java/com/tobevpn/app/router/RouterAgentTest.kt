@@ -183,6 +183,12 @@ class RouterAgentTest {
     }
 
     @Test
+    fun routerMarkMatchesTheAgent() {
+        // Router shell: printf '%s' "befe0dc8-..." | sha256sum | cut -c1-16
+        assertEquals("b5eda37d94f713a3", routerMark("BEFE0DC8-F668-5434-847A-1D108CE7D224"))
+    }
+
+    @Test
     fun matchesRouterModelsWithAVendorInFrontButNotOtherModels() {
         assertTrue(sameRouterModel("SNR-SNR-CPE-AX2", "SNR-CPE-AX2"))
         assertTrue(sameRouterModel("snr cpe ax2", "SNR-CPE-AX2"))
