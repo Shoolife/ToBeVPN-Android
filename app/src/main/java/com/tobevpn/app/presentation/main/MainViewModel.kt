@@ -235,6 +235,7 @@ class MainViewModel @Inject constructor(
 
     private companion object {
         const val ROUTER_VPN_CHECK_MS = 3 * 60_000L
+        const val ROUTER_VPN_MIN_GAP_MS = 10_000L
         const val TAG = "MainViewModel"
         const val RESUME_SYNC_THROTTLE_MS = 5_000L
         const val PURCHASE_REFRESH_ACTIVE_WINDOW_MS = 2L * 60L * 1000L
@@ -900,8 +901,14 @@ class MainViewModel @Inject constructor(
     private var routerVpnJob: kotlinx.coroutines.Job? = null
 
     /** Asks the home router whether it sends this phone through the VPN; silent on failure. */
+    private var routerVpnCheckedAt = 0L
+
     fun checkRouterVpn() {
         if (routerVpnJob?.isActive == true) return
+        // Switching apps back and forth does not log in to the router each time.
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (routerVpnCheckedAt != 0L && now - routerVpnCheckedAt < ROUTER_VPN_MIN_GAP_MS) return
+        routerVpnCheckedAt = now
         routerVpnJob = viewModelScope.launch {
             _routerVpn.value = runCatching { routerRepository.protection() }.getOrNull()
         }

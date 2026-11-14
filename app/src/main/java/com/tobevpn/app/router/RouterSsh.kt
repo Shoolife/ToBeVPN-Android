@@ -261,15 +261,37 @@ class RouterShell(private val session: Session) {
         val output = channel.inputStream
         val input = channel.outputStream
         channel.connect(10_000)
+        // A command that never ends (a hung restart, a stuck download on the
+        // router) must not hold the app forever: past the deadline the
+        // session is closed, which ends the blocking read below.
+        val expired = java.util.concurrent.atomic.AtomicBoolean(false)
+        val watchdog = WATCHDOG.schedule({
+            expired.set(true)
+            runCatching { session.disconnect() }
+        }, COMMAND_DEADLINE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
         try {
             if (stdin != null) input.write(stdin)
             input.close()
             val bytes = output.readBytes()
-            while (!channel.isClosed) Thread.sleep(20)
+            while (!channel.isClosed && !expired.get()) Thread.sleep(20)
+            if (expired.get()) throw RouterException("router did not answer on SSH")
             return String(bytes) to channel.exitStatus.let { if (it < 0) 255 else it }
+        } catch (error: java.io.IOException) {
+            if (expired.get()) throw RouterException("router did not answer on SSH", error)
+            throw error
         } finally {
+            watchdog.cancel(false)
             channel.disconnect()
         }
+    }
+
+    private companion object {
+        /** Longest a single router command may take (an upload of Xray over Wi-Fi is far shorter). */
+        const val COMMAND_DEADLINE_MS = 180_000L
+        val WATCHDOG: java.util.concurrent.ScheduledExecutorService =
+            java.util.concurrent.Executors.newSingleThreadScheduledExecutor { runnable ->
+                Thread(runnable, "router-ssh-watchdog").apply { isDaemon = true }
+            }
     }
 
     fun runOk(command: String, stdin: ByteArray? = null): String {

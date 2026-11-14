@@ -248,7 +248,14 @@ class RouterViewModel @Inject constructor(
                 var current = network
                 if (choice.startsWith("server:")) {
                     val servers = _state.value.servers
-                    when (val plan = RouterRepository.planSlots(servers, network, device.mac, choice.removePrefix("server:"), _state.value.serverLimit)) {
+                    when (val plan = RouterRepository.planSlots(
+                        servers,
+                        network,
+                        device.mac,
+                        choice.removePrefix("server:"),
+                        _state.value.serverLimit,
+                        defaultVpn = status.defaultMode == "vpn",
+                    )) {
                         SlotPlan.Full -> throw RouterException("slots-full")
                         SlotPlan.Missing -> throw RouterException("server-missing")
                         is SlotPlan.Ready -> {
@@ -396,7 +403,9 @@ class RouterViewModel @Inject constructor(
                     host = link.host,
                     user = link.user,
                     servers = listOf(com.tobevpn.app.router.SlotServer(0, server)),
-                    serverHosts = _state.value.servers.map { it.address },
+                    // The app's own services too, as when servers change later
+                    // and as on PC: the app behind the router reaches them direct.
+                    serverHosts = _state.value.servers.map { it.address } + repository.serviceHosts(),
                     subscriptionUrl = subscriptionUrl,
                     autostart = _state.value.install.autostart,
                     ruSites = withContext(Dispatchers.IO) { repository.ruSites() },
@@ -633,10 +642,15 @@ class RouterViewModel @Inject constructor(
     private suspend fun migrateDefaultDevices(status: RouterStatus, network: RouterNetwork) {
         if (status.defaultMode != "vpn" || migrating) return
         migrating = true
-        for (device in network.devices.filter { it.mode == "default" }) {
-            repository.setDevice(device.mac, "vpn", 0, device.name.orEmpty())
+        // A failure part-way is retried on the next load, not left half-done.
+        val next = try {
+            for (device in network.devices.filter { it.mode == "default" }) {
+                repository.setDevice(device.mac, "vpn", 0, device.name.orEmpty())
+            }
+            repository.setDefaultMode("direct")
+        } finally {
+            migrating = false
         }
-        val next = repository.setDefaultMode("direct")
         _state.update { state ->
             state.copy(
                 status = next,

@@ -871,7 +871,13 @@ private fun ServerSheet(
     val network = state.network ?: return
     val current = choiceServer(device, network, state.servers)?.id?.let { "server:$it" }
         ?: if (device.mode == "vpn") "server:" + network.slots.firstOrNull { it.slot == device.slot }?.serverId else "direct"
-    val canAdd = RouterRepository.canAddServer(state.servers, network, device.mac, state.serverLimit)
+    val canAdd = RouterRepository.canAddServer(
+        state.servers,
+        network,
+        device.mac,
+        state.serverLimit,
+        defaultVpn = state.status?.defaultMode == "vpn",
+    )
     val onRouter = network.slots.map { it.serverId }.toSet()
     ServerPickerSheet(
         title = RouterViewModel.deviceLabel(device),

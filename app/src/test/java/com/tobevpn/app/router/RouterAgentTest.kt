@@ -162,6 +162,33 @@ class RouterAgentTest {
             RouterRepository.planSlots(servers, network, "m3", "c", limit = 2),
         )
     }
+
+    @Test
+    fun keepsSlotZeroForDefaultDevicesWhenTheDefaultIsVpn() {
+        fun server(id: String) = Server(id = id, name = id, address = id, port = 443, uuid = "u")
+        val servers = listOf(server("a"), server("b"))
+        val network = RouterNetwork(
+            devices = listOf(RouterDevice("m1", null, null, "default", null, true, 0)),
+            slots = listOf(RouterSlot(0, "a", "a")),
+        )
+        // Default devices ride slot 0: a new server must not take it over.
+        val plan = RouterRepository.planSlots(servers, network, "m2", "b", limit = 4, defaultVpn = true)
+            as RouterRepository.Companion.SlotPlan.Ready
+        assertEquals(1, plan.slot)
+        assertEquals(listOf(0, 1), plan.list!!.map { it.slot })
+        // With the default direct, slot 0 is free to reuse.
+        val reuse = RouterRepository.planSlots(servers, network, "m2", "b", limit = 4, defaultVpn = false)
+            as RouterRepository.Companion.SlotPlan.Ready
+        assertEquals(0, reuse.slot)
+    }
+
+    @Test
+    fun matchesRouterModelsWithAVendorInFrontButNotOtherModels() {
+        assertTrue(sameRouterModel("SNR-SNR-CPE-AX2", "SNR-CPE-AX2"))
+        assertTrue(sameRouterModel("snr cpe ax2", "SNR-CPE-AX2"))
+        assertFalse(sameRouterModel("SNR-CPE-AX23", "SNR-CPE-AX2"))
+        assertFalse(sameRouterModel("AX", "AX"))
+    }
 }
 
 class RouterInstallerTest {

@@ -134,5 +134,7 @@ fun sameRouterModel(listed: String?, here: String?): Boolean {
     fun norm(value: String?) = value.orEmpty().lowercase().filter { it in 'a'..'z' || it in '0'..'9' }
     val a = norm(listed)
     val b = norm(here)
-    return a.length >= 3 && b.length >= 3 && (a.contains(b) || b.contains(a))
+    // Equal, or one is the other with the vendor in front ("snr" + "snrcpeax2");
+    // not any substring, so "AX2" is not "AX23".
+    return a.length >= 3 && b.length >= 3 && (a == b || a.endsWith(b) || b.endsWith(a))
 }

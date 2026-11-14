@@ -5,6 +5,8 @@ import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.domain.model.Server
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.async
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -200,7 +202,7 @@ class RouterRepository @Inject constructor(
      * every app connected to it shows the same one. Empty brings the model back.
      */
     suspend fun setName(name: String): RouterStatus = withRouter { shell ->
-        val clean = name.filter { !it.isISOControl() && it !in "|\\\"`$" }.take(40).trim()
+        val clean = RouterAgent.cleanName(name)
         shell.runOk("${RouterAgent.SCRIPT} set-name '${RouterAgent.shellQuoteInner(clean)}'")
         RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
     }.also(::remember)
@@ -244,10 +246,6 @@ class RouterRepository @Inject constructor(
         }
     }
 
-    /**
-     * Drops a home device from Wi-Fi for a moment, so that it reconnects and
-     * forgets the DNS answers it cached before its VPN changed.
-     */
     /** The home router sends this phone through a server that answers. */
     data class Protection(val serverName: String?)
 
@@ -258,11 +256,20 @@ class RouterRepository @Inject constructor(
      * Anything else is null, so the app never claims a VPN that is not there.
      */
     suspend fun protection(): Protection? {
-        linkHere() ?: return null
-        val status = status()
+        withContext(Dispatchers.IO) { linkHere() } ?: return null
+        // One SSH session for both answers: this runs on every return to Home.
+        val (status, network) = withRouter { shell ->
+            val status = RouterAgent.parseStatus(shell.run("[ -x ${RouterAgent.SCRIPT} ] && ${RouterAgent.SCRIPT} status").first)
+            val network = if (status.installed && status.running) {
+                val output = shell.run("${RouterAgent.SCRIPT} devices").first
+                RouterNetwork(RouterAgent.parseDevices(output), RouterAgent.parseSlots(output))
+            } else {
+                null
+            }
+            status to network
+        }
         val clientIp = status.clientIp
-        if (!status.installed || !status.running || clientIp == null) return null
-        val network = devices()
+        if (!status.installed || !status.running || clientIp == null || network == null) return null
         val me = network.devices.firstOrNull { it.ip == clientIp } ?: return null
         val mode = if (me.mode == "default") status.defaultMode else me.mode
         if (mode != "vpn") return null
@@ -335,7 +342,7 @@ class RouterRepository @Inject constructor(
         if (0 !in slots || slots.toSet().size != slots.size || slots.any { it !in 0..RouterAgent.MAX_SLOT }) {
             throw RouterException("invalid server slots")
         }
-        val sites = ruSites()
+        val sites = withContext(Dispatchers.IO) { ruSites() }
         return withRouter { shell ->
             shell.writeFile("/opt/tobevpn/servers", RouterAgent.serverList(serverHosts + serviceHosts()).toByteArray(), "644")
             writeServers(shell, servers, sites)
@@ -362,7 +369,11 @@ class RouterRepository @Inject constructor(
 
     /** Turns the Russian sites bypass on or off in the config on the router and restarts. */
     suspend fun setRuDirect(enabled: Boolean): RouterStatus {
-        val sites = if (enabled) ruSites() ?: throw RouterException("geosite.dat is missing") else null
+        val sites = if (enabled) {
+            withContext(Dispatchers.IO) { ruSites() } ?: throw RouterException("geosite.dat is missing")
+        } else {
+            null
+        }
         return withRouter { shell ->
             if (sites != null) writeRuSites(shell, sites)
             val config = JSONObject(shell.run("cat /opt/tobevpn/xray.json 2>/dev/null").first)
@@ -398,7 +409,7 @@ class RouterRepository @Inject constructor(
      * The app's own services (subscription, bot API). The router sends them
      * direct too, so the app behind the router reaches them as without it.
      */
-    private fun serviceHosts(): List<String> = listOf(
+    internal fun serviceHosts(): List<String> = listOf(
         BuildConfig.SUBSCRIPTION_BASE_URL,
         BuildConfig.BOT_API_BASE_URL,
     ).mapNotNull { url ->
@@ -411,9 +422,15 @@ class RouterRepository @Inject constructor(
         private const val KEY_ROUTER = "router_here"
         private const val KEY_TRAFFIC = "traffic"
 
-        /** Slots that devices other than [exceptMac] go through. */
-        fun usedSlots(network: RouterNetwork, exceptMac: String?): Set<Int> =
-            network.devices.filter { it.mac != exceptMac && it.mode == "vpn" }.map { it.slot }.toSet()
+        /**
+         * Slots that devices other than [exceptMac] go through. With the
+         * router's default mode on VPN, devices without their own choice go
+         * through slot 0, so it is in use too and never handed to another
+         * server.
+         */
+        fun usedSlots(network: RouterNetwork, exceptMac: String?, defaultVpn: Boolean = false): Set<Int> =
+            network.devices.filter { it.mac != exceptMac && it.mode == "vpn" }.map { it.slot }.toSet() +
+                (if (defaultVpn && network.devices.any { it.mac != exceptMac && it.mode == "default" }) setOf(0) else emptySet())
 
         sealed interface SlotPlan {
             data class Ready(val list: List<SlotServer>?, val slot: Int) : SlotPlan
@@ -432,10 +449,11 @@ class RouterRepository @Inject constructor(
             exceptMac: String,
             serverId: String,
             limit: Int,
+            defaultVpn: Boolean = false,
         ): SlotPlan {
             network.slots.firstOrNull { it.serverId == serverId }?.let { return SlotPlan.Ready(null, it.slot) }
             val server = servers.firstOrNull { it.id == serverId } ?: return SlotPlan.Missing
-            val used = usedSlots(network, exceptMac)
+            val used = usedSlots(network, exceptMac, defaultVpn)
             val list = network.slots
                 .filter { it.slot in used }
                 .mapNotNull { item -> servers.firstOrNull { it.id == item.serverId }?.let { SlotServer(item.slot, it) } }
@@ -447,8 +465,14 @@ class RouterRepository @Inject constructor(
             return SlotPlan.Ready(list.sortedBy { it.slot }, free)
         }
 
-        fun canAddServer(servers: List<Server>, network: RouterNetwork, exceptMac: String, limit: Int): Boolean {
-            val used = usedSlots(network, exceptMac)
+        fun canAddServer(
+            servers: List<Server>,
+            network: RouterNetwork,
+            exceptMac: String,
+            limit: Int,
+            defaultVpn: Boolean = false,
+        ): Boolean {
+            val used = usedSlots(network, exceptMac, defaultVpn)
             return network.slots.count { item -> item.slot in used && servers.any { it.id == item.serverId } } < limit
         }
     }
