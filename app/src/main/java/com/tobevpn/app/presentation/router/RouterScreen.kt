@@ -337,10 +337,29 @@ fun RouterScreen(
                     ) {
                         item { WarningText(stringResource(R.string.router_server_down)) }
                     }
-                    state.update?.let { update ->
-                        item { UpdateBanner(update, enabled = !state.busy, onUpdate = viewModel::openUpdate) }
+                    // The update offer comes and goes smoothly: it unfolds above the
+                    // traffic and folds away after the update, never a jump.
+                    item {
+                        Column {
+                            var shownUpdate by remember { mutableStateOf(state.update) }
+                            if (state.update != null) shownUpdate = state.update
+                            AnimatedVisibility(
+                                visible = state.update != null,
+                                enter = fadeIn(tween(420, delayMillis = 120, easing = FastOutSlowInEasing)) +
+                                    expandVertically(tween(420, easing = FastOutSlowInEasing), expandFrom = Alignment.Top),
+                                exit = fadeOut(tween(220, easing = FastOutSlowInEasing)) +
+                                    shrinkVertically(tween(420, delayMillis = 120, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top),
+                            ) {
+                                shownUpdate?.let { update ->
+                                    Column {
+                                        UpdateBanner(update, enabled = !state.busy, onUpdate = viewModel::openUpdate)
+                                        Spacer(Modifier.height(12.dp))
+                                    }
+                                }
+                            }
+                            SectionTitle(stringResource(R.string.router_traffic_title))
+                        }
                     }
-                    item { SectionTitle(stringResource(R.string.router_traffic_title)) }
                     item { RouterTraffic(hours = state.traffic, loading = state.trafficLoading) }
                     item { SectionTitle(stringResource(R.string.router_home_network_section)) }
                     item {
