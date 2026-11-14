@@ -191,8 +191,8 @@ class RouterInstaller @Inject constructor(
     }
 
     /** Checks a paired router without changing it. */
-    suspend fun check(host: String, user: String): RouterCheck =
-        ssh.session(detector.homeLan()?.network, host, user) { shell -> assess(facts(shell)) }
+    suspend fun check(host: String, user: String, hostKey: String? = null): RouterCheck =
+        ssh.session(detector.homeLan()?.network, host, user, hostKey) { shell -> assess(facts(shell)) }
 
     // ----------------------------------------------------------- install ---
 
@@ -204,6 +204,7 @@ class RouterInstaller @Inject constructor(
     suspend fun install(
         host: String,
         user: String,
+        hostKey: String? = null,
         servers: List<SlotServer>,
         serverHosts: Collection<String>,
         subscriptionUrl: String,
@@ -221,7 +222,7 @@ class RouterInstaller @Inject constructor(
         // First pass: checks and the router's components, then downloads.
         progress("check")
         data class Plan(val check: RouterCheck, val facts: Map<String, String>, val needed: List<Binary>)
-        val plan = ssh.session(network, host, user) { shell ->
+        val plan = ssh.session(network, host, user, hostKey) { shell ->
             val facts = facts(shell).toMutableMap()
             val check = assess(facts)
             log(InstallLogLine("info", summary(check)))
@@ -244,7 +245,7 @@ class RouterInstaller @Inject constructor(
             binary to fetch(binary, log)
         }
 
-        ssh.session(network, host, user) { shell ->
+        ssh.session(network, host, user, hostKey) { shell ->
             val stopped = shell.run("[ -x ${RouterAgent.SCRIPT} ] && ${RouterAgent.SCRIPT} stop").first
             logOutput(stopped, log)
             shell.runOk("mkdir -p /opt/tobevpn")
@@ -363,8 +364,8 @@ class RouterInstaller @Inject constructor(
     }
 
     /** Whether the router runs older components than this app carries; nothing changes on it. */
-    suspend fun updateCheck(host: String, user: String, haveSites: Boolean): RouterUpdate = withContext(Dispatchers.IO) {
-        ssh.session(detector.homeLan()?.network, host, user) { shell ->
+    suspend fun updateCheck(host: String, user: String, haveSites: Boolean, hostKey: String? = null): RouterUpdate = withContext(Dispatchers.IO) {
+        ssh.session(detector.homeLan()?.network, host, user, hostKey) { shell ->
             val found = outdatedComponents(shell) {}
             val components = buildList {
                 found.binaries.forEach { add(it.name) }
@@ -388,6 +389,7 @@ class RouterInstaller @Inject constructor(
     suspend fun update(
         host: String,
         user: String,
+        hostKey: String? = null,
         ruSites: ByteArray?,
         progress: (String) -> Unit,
         log: (InstallLogLine) -> Unit,
@@ -395,7 +397,7 @@ class RouterInstaller @Inject constructor(
         progress("connect")
         val network = detector.homeLan()?.network
         progress("check")
-        val found = ssh.session(network, host, user) { shell ->
+        val found = ssh.session(network, host, user, hostKey) { shell ->
             val found = outdatedComponents(shell, log)
             if (found.binaries.isNotEmpty()) {
                 val freeKb = shell.runOk("df -k /overlay 2>/dev/null | awk 'NR==2{print \$4}'").trim().toLongOrNull() ?: 0L
@@ -408,12 +410,12 @@ class RouterInstaller @Inject constructor(
             binary to fetch(binary, log)
         }
         try {
-            replaceComponents(network, host, user, downloads, found, ruSites, progress, log)
+            replaceComponents(network, host, user, hostKey, downloads, found, ruSites, progress, log)
         } catch (error: Exception) {
             // The VPN was stopped before the files were replaced: a failure
             // after that must not leave the home without it.
             runCatching {
-                ssh.session(network, host, user) { shell ->
+                ssh.session(network, host, user, hostKey) { shell ->
                     // Only when the VPN is down: a failure before the stop, or a
                     // start still running on the router, needs no second start.
                     shell.run("[ -x ${RouterAgent.SCRIPT} ] && ! pidof xray >/dev/null && ${RouterAgent.SCRIPT} start")
@@ -427,13 +429,14 @@ class RouterInstaller @Inject constructor(
         network: android.net.Network?,
         host: String,
         user: String,
+        hostKey: String?,
         downloads: List<Pair<Binary, ByteArray>>,
         found: Outdated,
         ruSites: ByteArray?,
         progress: (String) -> Unit,
         log: (InstallLogLine) -> Unit,
     ): RouterStatus {
-        return ssh.session(network, host, user) { shell ->
+        return ssh.session(network, host, user, hostKey) { shell ->
             progress("configure")
             logOutput(shell.run("${RouterAgent.SCRIPT} stop").first, log)
             downloads.forEach { (binary, content) ->
@@ -444,10 +447,14 @@ class RouterInstaller @Inject constructor(
                     shell.writeFile("/opt/tobevpn/xray.version", "${binary.version}\n".toByteArray(), "644")
                 }
             }
-            shell.writeFile(RouterAgent.SCRIPT, agentScript(), "755")
-            shell.writeFile("/etc/hotplug.d/dhcp/90-tobevpn", DHCP_HOOK.toByteArray(), "755")
-            // Rewriting the init script keeps its enabled/disabled state (rc.d link).
-            shell.writeFile("/etc/init.d/tobevpn", INIT_SCRIPT.toByteArray(), "755")
+            // The agent and its hooks only when this app's are newer: a newer
+            // agent from the desktop app is not replaced with an older one.
+            if (found.agent) {
+                shell.writeFile(RouterAgent.SCRIPT, agentScript(), "755")
+                shell.writeFile("/etc/hotplug.d/dhcp/90-tobevpn", DHCP_HOOK.toByteArray(), "755")
+                // Rewriting the init script keeps its enabled/disabled state (rc.d link).
+                shell.writeFile("/etc/init.d/tobevpn", INIT_SCRIPT.toByteArray(), "755")
+            }
             if (found.sitesMissing && ruSites != null) {
                 progress("upload:sites")
                 shell.writeFile(RouterAgent.RU_SITES_PATH, ruSites, "644")

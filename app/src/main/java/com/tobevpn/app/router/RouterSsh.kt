@@ -72,7 +72,10 @@ class RouterSsh @Inject constructor(
             RouterShell(session).runOk(
                 "umask 077; if [ \"\$(id -u)\" = 0 ] && [ -d /etc/dropbear ]; then f=/etc/dropbear/authorized_keys; " +
                     "else mkdir -p ~/.ssh; f=~/.ssh/authorized_keys; fi; " +
-                    "sed -i '/ $keyComment\$/d' \"\$f\" 2>/dev/null; cat >> \"\$f\"",
+                    "sed -i '/ $keyComment\$/d' \"\$f\" 2>/dev/null; " +
+                    // A file without a final newline would glue our key onto
+                    // the last one, breaking both.
+                    "[ -s \"\$f\" ] && [ -n \"\$(tail -c1 \"\$f\")\" ] && echo >> \"\$f\"; cat >> \"\$f\"",
                 line.toByteArray(),
             )
             seen[0]?.let { fingerprint ->
@@ -106,9 +109,11 @@ class RouterSsh @Inject constructor(
      * Forgets the router at [host]: only the key it showed last, when known,
      * so another router paired at the same address (elsewhere) still works.
      */
-    fun forget(host: String, keepUnknown: Boolean = false) {
+    fun forget(host: String, key: String? = null, keepUnknown: Boolean = false) {
         val hosts = knownHosts()
-        val seen = lastSeen.remove(host)
+        // The link's own key; else the one seen last at this address.
+        val seen = key ?: lastSeen[host]
+        lastSeen.remove(host)
         // Not knowing which key is this router's, another router at the same
         // address keeps them all rather than lose its own.
         if (seen == null && keepUnknown) return
@@ -125,11 +130,13 @@ class RouterSsh @Inject constructor(
         network: Network?,
         host: String,
         user: String,
+        /** The router's host key when known for the link; else the address's pin. */
+        hostKey: String? = null,
         block: (RouterShell) -> T,
     ): T = withContext(Dispatchers.IO) {
         check(configured)
         val keys = hostKeys(host)
-        val pinned = pins[host]
+        val pinned = hostKey ?: pins[host]
         // Only the pinned router, and only while it is still a paired one.
         val expected = (if (pinned != null) keys.filter { it == pinned }.toSet() else keys)
             .takeIf { it.isNotEmpty() }

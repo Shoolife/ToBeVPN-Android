@@ -628,6 +628,7 @@ class MainViewModel @Inject constructor(
             if (request == purchaseLoadRequest) clearPurchaseState()
             return
         }
+        var freshPlansShown = false
         try {
             val freshPlans = purchaseRepository.getPlans()
                 ?.takeIf(::hasPurchasablePlanShape)
@@ -647,6 +648,7 @@ class MainViewModel @Inject constructor(
                 return
             }
             _purchasePlans.value = plans
+            freshPlansShown = !usingFallbackPlanShape
             if (authRepository.pingHwidOnly()) {
                 if (request == purchaseLoadRequest) clearPurchaseState()
                 return
@@ -662,9 +664,9 @@ class MainViewModel @Inject constructor(
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: Exception) {
-            // The plans kept on screen are from before: shown as such, not
-            // as fresh prices.
-            if (request == purchaseLoadRequest && _purchasePlans.value != null) {
+            // The plans kept on screen are from before (the fresh ones did not
+            // arrive): shown as such, not as fresh prices.
+            if (request == purchaseLoadRequest && !freshPlansShown && _purchasePlans.value != null) {
                 _purchasePlansFromCache.value = true
             }
             throw error
@@ -920,7 +922,15 @@ class MainViewModel @Inject constructor(
         routerVpnJob?.cancel()
         routerVpnCheckedAt = now
         routerVpnJob = viewModelScope.launch {
-            _routerVpn.value = runCatching { routerRepository.protection() }.getOrNull()
+            // A check cancelled by a newer one writes nothing: its "null" would
+            // overwrite the newer answer.
+            _routerVpn.value = try {
+                routerRepository.protection()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
         }
     }
 

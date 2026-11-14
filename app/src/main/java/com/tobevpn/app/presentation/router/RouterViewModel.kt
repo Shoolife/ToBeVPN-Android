@@ -230,7 +230,10 @@ class RouterViewModel @Inject constructor(
             // mark seen before (possibly another network's): read once more
             // when the fresh detection says otherwise.
             val hereNow = withContext(Dispatchers.IO) { repository.linkHere() }
-            if (recheck && !otherRouter && (hereNow == null) != (here == null)) load(initial = false, recheck = false)
+            // A different router (not only none ↔ one) is read again too.
+            if (recheck && hereNow?.let { it.host to it.hwid } != here?.let { it.host to it.hwid }) {
+                load(initial = false, recheck = false)
+            }
         }
     }
 
@@ -364,7 +367,7 @@ class RouterViewModel @Inject constructor(
         viewModelScope.launch {
             install { it.copy(checking = true, error = null) }
             try {
-                val check = installer.check(link.host, link.user)
+                val check = installer.check(link.host, link.user, link.hostKey)
                 install { it.copy(check = check, checking = false) }
             } catch (error: CancellationException) {
                 throw error
@@ -435,6 +438,7 @@ class RouterViewModel @Inject constructor(
                 val status = installer.install(
                     host = link.host,
                     user = link.user,
+                    hostKey = link.hostKey,
                     servers = listOf(com.tobevpn.app.router.SlotServer(0, server)),
                     // The app's own services too, as when servers change later
                     // and as on PC: the app behind the router reaches them direct.
@@ -495,7 +499,7 @@ class RouterViewModel @Inject constructor(
         updateCheckedAt = now
         updateCheckJob = viewModelScope.launch {
             val update = try {
-                installer.updateCheck(link.host, link.user, haveSites = withContext(Dispatchers.IO) { repository.ruSites() } != null)
+                installer.updateCheck(link.host, link.user, hostKey = link.hostKey, haveSites = withContext(Dispatchers.IO) { repository.ruSites() } != null)
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
@@ -569,6 +573,7 @@ class RouterViewModel @Inject constructor(
                 val status = installer.update(
                     host = link.host,
                     user = link.user,
+                    hostKey = link.hostKey,
                     ruSites = withContext(Dispatchers.IO) { repository.ruSites() },
                     progress = { step ->
                         when {

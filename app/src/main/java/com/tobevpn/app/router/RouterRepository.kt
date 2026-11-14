@@ -107,9 +107,9 @@ class RouterRepository @Inject constructor(
         val chosen = synchronized(links) {
             val candidates = links.filter { it.host == gateway && ssh.isPaired(it.host) }
             if (mark != null) {
-                candidates.firstOrNull { it.hwid != null && routerMark(it.hwid) == mark }
-                    // Connected but its id not read yet (just paired).
-                    ?: candidates.firstOrNull { it.hwid == null }
+                // The most recent entry that is this router, or may be (its id
+                // not read yet: just paired, e.g. again after a reset).
+                candidates.firstOrNull { it.hwid == null || routerMark(it.hwid) == mark }
             } else {
                 candidates.firstOrNull()
             }
@@ -237,14 +237,14 @@ class RouterRepository @Inject constructor(
     fun unlink() {
         _link.value?.let { link ->
             val sharesAddress = synchronized(links) { links.any { it != link && it.host == link.host } }
-            ssh.forget(link.host, keepUnknown = sharesAddress)
+            ssh.forget(link.host, key = link.hostKey, keepUnknown = sharesAddress)
         }
         saveLink(null)
     }
 
     private suspend fun <T> withRouter(block: (RouterShell) -> T): T {
         val link = _link.value ?: throw RouterException("router is not paired")
-        return ssh.session(network(), link.host, link.user, block)
+        return ssh.session(network(), link.host, link.user, link.hostKey, block)
     }
 
     // ------------------------------------------------------------- status ---
@@ -388,6 +388,9 @@ class RouterRepository @Inject constructor(
      * Anything else is null, so the app never claims a VPN that is not there.
      */
     suspend fun protection(): Protection? {
+        // This network's router first: its mark picks the right one of
+        // several connected routers (a stale one from another network would not).
+        runCatching { detect() }
         withContext(Dispatchers.IO) { linkHere() } ?: return null
         // One SSH session for both answers: this runs on every return to Home.
         val (status, network) = withRouter { shell ->
