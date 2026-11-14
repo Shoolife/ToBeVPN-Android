@@ -192,6 +192,11 @@ class RouterRepository @Inject constructor(
     /** Remembers what the router reported about itself. */
     private fun remember(status: RouterStatus) {
         val link = _link.value ?: return
+        // The router being worked with may have changed while this session
+        // ran (another screen picked another router): what this router said
+        // is not written onto that one. The session's host key tells.
+        val seen = ssh.lastHostKey(link.host)
+        if (link.hostKey != null && seen != null && link.hostKey != seen) return
         // A link from before host keys were pinned learns its router's key
         // now (its id was just checked).
         val next = link.copy(
@@ -205,7 +210,10 @@ class RouterRepository @Inject constructor(
     // ------------------------------------------------------------ pairing ---
 
     suspend fun pair(host: String, user: String, password: String) {
-        val hostKey = ssh.pair(network(), host, user, password)
+        // Only through the home Wi-Fi: with it gone, the password would go to
+        // whatever answers at that address on the mobile network.
+        val network = network() ?: throw RouterException("router did not answer on SSH")
+        val hostKey = ssh.pair(network, host, user, password)
         // A new router joins the list (the others stay connected); its id is
         // filled in by its first status, which also drops an older entry of
         // the same router.
@@ -397,6 +405,10 @@ class RouterRepository @Inject constructor(
      * Anything else is null, so the app never claims a VPN that is not there.
      */
     suspend fun protection(): Protection? {
+        // Only on a network with a connected router's address: elsewhere (or
+        // with no router at all) the gateway's pages are not even asked.
+        val gateway = withContext(Dispatchers.IO) { detector.homeLan()?.gateway } ?: return null
+        if (synchronized(links) { links.none { it.host == gateway } }) return null
         // This network's router first: its mark picks the right one of
         // several connected routers (a stale one from another network would not).
         runCatching { detect() }
@@ -547,6 +559,9 @@ class RouterRepository @Inject constructor(
 
     @Volatile
     private var ruSitesCache: ByteArray? = null
+
+    /** Whether the app carries the sites list at all (without reading 70 MB). */
+    fun hasRuSites(): Boolean = runCatching { context.assets.open("geosite.dat").close() }.isSuccess
 
     /** The app's geosite.dat cut down to its Russian categories, once per process. */
     internal fun ruSites(): ByteArray? = ruSitesCache ?: runCatching {

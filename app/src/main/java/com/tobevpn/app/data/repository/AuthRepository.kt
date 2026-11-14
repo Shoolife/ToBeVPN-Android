@@ -484,9 +484,11 @@ class AuthRepository @Inject constructor(
         prefsDataStore.clearSubscriptionSyncTimestamp()
         runCatching { syncSubscription(force = true) }
         runCatching { vpnRepository.refreshServers(forceRefresh = true) }
-        // A kept link leaves the running VPN as it is. A changed key is a reset
-        // whatever the server said (an older backend may reset regardless).
-        val keyChanged = !oldShortUuid.isNullOrBlank() && !newShortUuid.isNullOrBlank() && oldShortUuid != newShortUuid
+        // A kept link leaves the running VPN as it is. A changed key (read
+        // after the sync, which is where a new one arrives) is a reset
+        // whatever the server said: an older backend may reset regardless.
+        val syncedShortUuid = sessionDao.getSession()?.shortUuid
+        val keyChanged = !oldShortUuid.isNullOrBlank() && !syncedShortUuid.isNullOrBlank() && oldShortUuid != syncedShortUuid
         if (linkReset || keyChanged) _subscriptionResetEvents.tryEmit(Unit)
     }
 

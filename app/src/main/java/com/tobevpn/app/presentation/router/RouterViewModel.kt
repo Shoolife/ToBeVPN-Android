@@ -177,8 +177,11 @@ class RouterViewModel @Inject constructor(
             var otherRouter = false
             if (here != null) {
                 runRouter(onError = { error ->
-                    lost = isAccessLost(error)
-                    otherRouter = "another router at this address" in error.message.orEmpty()
+                    val raw = error.message.orEmpty()
+                    // Another host key at the address: another router (or this
+                    // one reset). Shown as a router to connect to, no error.
+                    otherRouter = "another router at this address" in raw || "host key changed" in raw
+                    lost = !otherRouter && isAccessLost(error)
                     !lost && !otherRouter
                 }) {
                     // Status, devices and traffic in one login.
@@ -190,9 +193,18 @@ class RouterViewModel @Inject constructor(
                         it.copy(
                             status = status,
                             link = repository.link.value,
-                            network = snapshot.network,
+                            // A choice being saved keeps its own view of the devices.
+                            network = if (it.savingMac != null) it.network else snapshot.network,
                             traffic = snapshot.traffic ?: it.traffic,
                         )
+                    }
+                    // Another router than the one checked for updates: its own
+                    // check, not the other router's banner.
+                    val updateKey = repository.link.value?.let { it.host to it.hwid }
+                    if (updateKey != updateCheckedFor) {
+                        updateCheckedFor = updateKey
+                        updateCheckedAt = 0L
+                        _state.update { it.copy(update = null) }
                     }
                     if (status.installed) {
                         checkUpdate()
@@ -241,9 +253,15 @@ class RouterViewModel @Inject constructor(
         val host = _state.value.info?.gateway ?: return
         viewModelScope.launch {
             _state.update { it.copy(busy = true, error = null) }
-            runRouter { repository.pair(host, user.trim(), password) }
+            var paired = false
+            runRouter {
+                repository.pair(host, user.trim(), password)
+                paired = true
+            }
             _state.update { it.copy(busy = false) }
-            if (withContext(Dispatchers.IO) { repository.linkHere() } != null) load(initial = true)
+            // Read again only after a pairing that worked: a reload would
+            // clear the error that says why it did not (a wrong password).
+            if (paired && withContext(Dispatchers.IO) { repository.linkHere() } != null) load(initial = true)
         }
     }
 
@@ -489,6 +507,7 @@ class RouterViewModel @Inject constructor(
 
     /** Asks the router whether it runs older components; silent on failure. */
     private var updateCheckedAt = 0L
+    private var updateCheckedFor: Pair<String, String?>? = null
 
     private fun checkUpdate() {
         val link = repository.link.value ?: return
@@ -499,7 +518,7 @@ class RouterViewModel @Inject constructor(
         updateCheckedAt = now
         updateCheckJob = viewModelScope.launch {
             val update = try {
-                installer.updateCheck(link.host, link.user, hostKey = link.hostKey, haveSites = withContext(Dispatchers.IO) { repository.ruSites() } != null)
+                installer.updateCheck(link.host, link.user, hostKey = link.hostKey, haveSites = withContext(Dispatchers.IO) { repository.hasRuSites() })
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {

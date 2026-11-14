@@ -481,7 +481,10 @@ class RouterInstaller @Inject constructor(
             val current = versionTuple(facts["xray_version"].orEmpty())
             current.isEmpty() || compareVersions(current, versionTuple(target)) < 0
         } else {
-            facts["md5_${binary.name}"] != binary.md5
+            // Without a version to compare, only a missing binary is replaced:
+            // a different one may be newer (put there by the desktop app), and
+            // the two apps must not keep swapping each other's build.
+            facts["md5_${binary.name}"].isNullOrEmpty()
         }
     }
 
