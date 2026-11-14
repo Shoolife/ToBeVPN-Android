@@ -940,4 +940,6 @@
     <string name="home_router_vpn_hint">This phone already goes through the router\'s VPN (%1$s). The VPN in the app is not needed at home.</string>
     <string name="home_router_vpn_hint_plain">This phone already goes through the router\'s VPN. The VPN in the app is not needed at home.</string>
     <string name="home_router_vpn_turn_off">Turn off</string>
+    <string name="stats_router_period">Router (whole home network): %1$s</string>
+    <string name="stats_router_short">router %1$s</string>
 </resources>

@@ -48,6 +48,9 @@ class RouterRepository @Inject constructor(
      */
     private val links: MutableList<RouterLink> = loadLinks().toMutableList()
 
+    /** Whether this phone is connected to any router (wherever it is now). */
+    fun hasLinks(): Boolean = synchronized(links) { links.isNotEmpty() }
+
     /** The router being worked with: the one of the current network, once [linkHere] picked it. */
     private val _link = MutableStateFlow(links.firstOrNull())
     val link: StateFlow<RouterLink?> = _link.asStateFlow()
@@ -107,9 +110,11 @@ class RouterRepository @Inject constructor(
         val chosen = synchronized(links) {
             val candidates = links.filter { it.host == gateway && ssh.isPaired(it.host) }
             if (mark != null) {
-                // The most recent entry that is this router, or may be (its id
-                // not read yet: just paired, e.g. again after a reset).
-                candidates.firstOrNull { it.hwid == null || routerMark(it.hwid) == mark }
+                // The entry that is this router; else the most recent one that
+                // may be (its id not read yet: just paired, e.g. again after a
+                // reset — then the old entry is dropped once the id is read).
+                candidates.firstOrNull { it.hwid != null && routerMark(it.hwid) == mark }
+                    ?: candidates.firstOrNull { it.hwid == null }
             } else {
                 candidates.firstOrNull()
             }
@@ -207,6 +212,10 @@ class RouterRepository @Inject constructor(
         val link = RouterLink(host = host, user = user, model = _router.value?.model, hostKey = hostKey)
         synchronized(links) {
             links.removeAll { it.host == host && it.hwid == null }
+            // The same router paired again (after a reset, with a new host
+            // key): its old entry goes, so the new key is the one used.
+            val mark = _router.value?.takeIf { it.gateway == host }?.mark
+            if (mark != null) links.removeAll { it.host == host && it.hwid != null && routerMark(it.hwid) == mark }
             links.add(0, link)
             storeLinks()
         }

@@ -97,6 +97,24 @@ fun StatsScreen(
 
     val totalSessions = remember(stats) { stats.sumOf { it.sessions } }
     val totalSeconds = remember(stats) { stats.sumOf { it.totalSeconds } }
+    // As on PC: the router's traffic (the whole home network) next to this
+    // phone's, in the chart and the rows; only with "all servers", since the
+    // router's traffic has no server type of the phone's.
+    val routerHours by viewModel.routerHours.collectAsStateWithLifecycle()
+    val withRouter = viewModel.routerLinked && serverSource == StatsServerSource.ALL
+    val slots = remember(stats, period) { buildSlots(stats, period) }
+    val routerAt: (Long) -> Long = remember(routerHours, period, withRouter) {
+        { start ->
+            if (!withRouter) {
+                0L
+            } else {
+                val end = start + slotSeconds(period)
+                routerHours.filter { it.hour >= start && it.hour < end }.sumOf { it.bytes }
+            }
+        }
+    }
+    val routerTotal = remember(slots, routerAt) { slots.sumOf { routerAt(it.period) } }
+    val rows = remember(slots, routerAt) { slots.filter { it.totalBytes + routerAt(it.period) > 0 } }
 
     Scaffold(
         topBar = {
@@ -142,6 +160,7 @@ fun StatsScreen(
                     totalBytes = totalBytes,
                     totalSessions = totalSessions,
                     totalSeconds = totalSeconds,
+                    routerBytes = if (withRouter) routerTotal else null,
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -189,7 +208,7 @@ fun StatsScreen(
 
                 Spacer(Modifier.height(8.dp))
 
-                if (stats.isEmpty()) {
+                if (rows.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -208,6 +227,7 @@ fun StatsScreen(
                     EnhancedTrafficChart(
                         stats = stats,
                         period = period,
+                        routerAt = routerAt,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(220.dp)
@@ -229,16 +249,21 @@ fun StatsScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
 
-                    val maxRowBytes = remember(stats) {
-                        stats.maxOf { it.totalBytes }.coerceAtLeast(1L)
+                    val maxRowBytes = remember(rows, routerAt) {
+                        rows.maxOfOrNull { it.totalBytes + routerAt(it.period) }?.coerceAtLeast(1L) ?: 1L
                     }
                     val statsListState = rememberLazyListState()
                     LazyColumn(
                         state = statsListState,
                         modifier = Modifier.weight(1f).lazyScrollCues(statsListState),
                     ) {
-                        items(stats) { stat ->
-                            EnhancedStatRow(stat = stat, period = period, maxBytes = maxRowBytes)
+                        items(rows) { stat ->
+                            EnhancedStatRow(
+                                stat = stat,
+                                period = period,
+                                maxBytes = maxRowBytes,
+                                routerBytes = routerAt(stat.period),
+                            )
                         }
                     }
                 }
@@ -301,6 +326,8 @@ private fun HeroStatsCard(
     totalBytes: Long,
     totalSessions: Int,
     totalSeconds: Long,
+    /** The router's traffic in the chosen period; null without a router. */
+    routerBytes: Long? = null,
 ) {
     val isDarkTheme = isSystemInDarkTheme()
     val primaryContentColor = if (isDarkTheme) {
@@ -390,6 +417,21 @@ private fun HeroStatsCard(
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                 )
+                if (routerBytes != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(8.dp).clip(CircleShape).background(RouterTrafficColor))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.stats_router_period, formatBytes(routerBytes)),
+                            style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
+                            color = secondaryContentColor,
+                            maxLines = 1,
+                            softWrap = false,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
                 Spacer(Modifier.height(16.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -478,6 +520,7 @@ private fun HeroDivider(color: Color) {
 private fun EnhancedTrafficChart(
     stats: List<TrafficStat>,
     period: StatsPeriod,
+    routerAt: (Long) -> Long = { 0L },
     modifier: Modifier = Modifier,
 ) {
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -492,8 +535,9 @@ private fun EnhancedTrafficChart(
 
     // Build full slots (fill gaps with zero)
     val slots = buildSlots(stats, period)
-    val maxBytes = slots.maxOfOrNull { it.totalBytes }?.coerceAtLeast(1L) ?: 1L
-    val maxIndex = slots.indexOfFirst { it.totalBytes == maxBytes && maxBytes > 0 }
+    val routerBytes = slots.map { routerAt(it.period) }
+    val maxBytes = slots.indices.maxOfOrNull { slots[it].totalBytes + routerBytes[it] }?.coerceAtLeast(1L) ?: 1L
+    val maxIndex = if (routerBytes.any { it > 0 }) -1 else slots.indexOfFirst { it.totalBytes == maxBytes && maxBytes > 0 }
 
     // Grow-in animation — re-runs when data or period changes
     val animProgress = remember(stats, period) { Animatable(0f) }
@@ -600,6 +644,23 @@ private fun EnhancedTrafficChart(
                         }
                     }
 
+                    // The router's part, stacked on this phone's (as on PC).
+                    val routerHeight = routerBytes[index].toFloat() / maxBytes * usableHeight * progress
+                    if (routerHeight > 0.5f) {
+                        val bottom = chartHeight - barHeight.coerceAtLeast(0f)
+                        val top = bottom - routerHeight
+                        drawRoundRect(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(RouterTrafficColor, RouterTrafficColor.copy(alpha = 0.45f)),
+                                startY = top,
+                                endY = bottom,
+                            ),
+                            topLeft = Offset(x, top),
+                            size = Size(barWidth, routerHeight - if (barHeight > 0.5f) 1.dp.toPx() else 0f),
+                            cornerRadius = corner,
+                        )
+                    }
+
                     // X-axis label
                     val label = slotLabel(slot, period, index, barCount, weekPrefixFormat)
                     if (label.isNotEmpty()) {
@@ -681,13 +742,36 @@ private fun buildSlots(stats: List<TrafficStat>, period: StatsPeriod): List<Traf
         }
         StatsPeriod.MONTH -> {
             if (stats.isEmpty()) {
-                emptyList()
+                // No traffic of this phone this month: the month's weeks, so
+                // the router's traffic still has its rows.
+                cal.set(Calendar.HOUR_OF_DAY, 0)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.set(Calendar.MILLISECOND, 0)
+                cal.set(Calendar.DAY_OF_MONTH, 1)
+                val monthStart = cal.timeInMillis / 1000
+                cal.add(Calendar.MONTH, 1)
+                val monthEnd = cal.timeInMillis / 1000
+                generateSequence(monthStart) { it + 7 * 86400L }
+                    .takeWhile { it < monthEnd }
+                    .map { TrafficStat(it, 0, 0, 0) }
+                    .toList()
             } else {
                 stats
             }
         }
     }
 }
+
+/** How long one slot of the period is (a month's rows are weeks). */
+private fun slotSeconds(period: StatsPeriod): Long = when (period) {
+    StatsPeriod.DAY -> 3600L
+    StatsPeriod.WEEK -> 86400L
+    StatsPeriod.MONTH -> 7 * 86400L
+}
+
+/** The router's colour, as on the Router screen and on PC. */
+private val RouterTrafficColor = Color(0xFF9C6BFF)
 
 private fun slotLabel(
     slot: TrafficStat,
@@ -720,8 +804,9 @@ private fun EnhancedStatRow(
     stat: TrafficStat,
     period: StatsPeriod,
     maxBytes: Long,
+    routerBytes: Long = 0L,
 ) {
-    val fraction = (stat.totalBytes.toFloat() / maxBytes).coerceIn(0f, 1f)
+    val fraction = ((stat.totalBytes + routerBytes).toFloat() / maxBytes).coerceIn(0f, 1f)
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -750,8 +835,15 @@ private fun EnhancedStatRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = stringResource(R.string.stats_sessions_short, stat.sessions) +
-                            "  •  " + formatTime(stat.totalSeconds),
+                        text = listOfNotNull(
+                            if (stat.sessions > 0 || stat.totalSeconds > 0) {
+                                stringResource(R.string.stats_sessions_short, stat.sessions) +
+                                    "  •  " + formatTime(stat.totalSeconds)
+                            } else {
+                                null
+                            },
+                            if (routerBytes > 0) stringResource(R.string.stats_router_short, formatBytes(routerBytes)) else null,
+                        ).joinToString("  •  "),
                         style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -760,7 +852,7 @@ private fun EnhancedStatRow(
                     )
                 }
                 Text(
-                    text = formatBytes(stat.totalBytes),
+                    text = formatBytes(stat.totalBytes + routerBytes),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                     fontWeight = FontWeight.Bold,
                     color = VpnGreen,

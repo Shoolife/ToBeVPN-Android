@@ -954,4 +954,6 @@
     <string name="home_router_vpn_hint">Этот телефон уже идёт через VPN роутера (%1$s). Дома включать VPN в приложении не обязательно.</string>
     <string name="home_router_vpn_hint_plain">Этот телефон уже идёт через VPN роутера. Дома включать VPN в приложении не обязательно.</string>
     <string name="home_router_vpn_turn_off">Выключить</string>
+    <string name="stats_router_period">Роутер (вся домашняя сеть): %1$s</string>
+    <string name="stats_router_short">роутер %1$s</string>
 </resources>

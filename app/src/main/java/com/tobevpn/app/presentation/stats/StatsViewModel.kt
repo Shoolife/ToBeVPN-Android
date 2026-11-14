@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.util.Calendar
 import java.util.TimeZone
 import javax.inject.Inject
@@ -29,7 +30,43 @@ enum class StatsServerSource(val databaseValue: String?) {
 @HiltViewModel
 class StatsViewModel @Inject constructor(
     private val trafficLogDao: TrafficLogDao,
+    private val routerRepository: com.tobevpn.app.router.RouterRepository,
 ) : ViewModel() {
+
+    /**
+     * As on PC: with a connected router, its traffic (the whole home network)
+     * joins this phone's. The last read shows on any network; it is read
+     * again, once a minute, only from the router's own network.
+     */
+    val routerLinked: Boolean = routerRepository.hasLinks()
+
+    private val _routerHours = MutableStateFlow(routerRepository.cachedTraffic()?.second.orEmpty())
+    val routerHours: StateFlow<List<com.tobevpn.app.router.TrafficHour>> = _routerHours.asStateFlow()
+
+    init {
+        if (routerLinked) {
+            viewModelScope.launch {
+                while (true) {
+                    refreshRouterTraffic()
+                    kotlinx.coroutines.delay(ROUTER_TRAFFIC_EVERY_MS)
+                }
+            }
+        }
+    }
+
+    private suspend fun refreshRouterTraffic() {
+        runCatching { routerRepository.detect() }
+        val here = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { routerRepository.linkHere() }.getOrNull()
+        } ?: return
+        try {
+            _routerHours.value = routerRepository.traffic()
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // The last read stays.
+        }
+    }
 
     private val _period = MutableStateFlow(StatsPeriod.DAY)
     val period: StateFlow<StatsPeriod> = _period.asStateFlow()
@@ -104,6 +141,10 @@ class StatsViewModel @Inject constructor(
                 }
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private companion object {
+        const val ROUTER_TRAFFIC_EVERY_MS = 60_000L
+    }
 
     fun setPeriod(p: StatsPeriod) {
         _period.value = p
