@@ -240,8 +240,11 @@ class RouterViewModel @Inject constructor(
     fun choose(device: RouterDevice, choice: String) {
         val network = _state.value.network ?: return
         val status = _state.value.status ?: return
+        // One choice at a time: a second one planned against the list before
+        // the first is saved would drop the first one's new slot.
+        if (_state.value.savingMac != null) return
+        _state.update { it.copy(savingMac = device.mac, error = null, notice = null) }
         viewModelScope.launch {
-            _state.update { it.copy(savingMac = device.mac, error = null, notice = null) }
             runRouter {
                 var mode = "direct"
                 var slot = 0
@@ -268,6 +271,8 @@ class RouterViewModel @Inject constructor(
                                     _state.update { it.copy(busy = false) }
                                 }
                                 current = network.copy(slots = list.map { RouterSlot(it.slot, it.server.id, it.server.name) })
+                                // The router has the new servers now, whatever happens next.
+                                _state.update { it.copy(network = current) }
                             }
                             mode = "vpn"
                             slot = plan.slot

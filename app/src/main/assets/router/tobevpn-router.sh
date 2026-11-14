@@ -395,7 +395,29 @@ clear_device_rules() {
     while ip rule del prio "$DEVICE_PRIO" 2>/dev/null; do :; done
 }
 
+# One run at a time: the watchdog, a DHCP event and a command from the app
+# can all ask at once, and two runs rebuilding the same rules would leave a
+# device without its DNS redirect until the next one. A lock left by a run
+# that died is taken over after 15 seconds.
 apply_routes() {
+    tries=0
+    while ! mkdir "$RUN/apply.lock" 2>/dev/null; do
+        tries=$((tries + 1))
+        if [ "$tries" -ge 15 ]; then
+            rm -rf "$RUN/apply.lock"
+            mkdir -p "$RUN"
+            mkdir "$RUN/apply.lock" 2>/dev/null
+            break
+        fi
+        sleep 1
+    done
+    apply_routes_now
+    result=$?
+    rmdir "$RUN/apply.lock" 2>/dev/null
+    return $result
+}
+
+apply_routes_now() {
     subnet=$(lan_subnet)
     router_ip=$(lan_address)
     ip route replace default dev "$(tunnel_of 0)" table "$TABLE"
@@ -497,7 +519,9 @@ set_device() {
     echo "$mac" | grep -qE '^([0-9a-f]{2}:){5}[0-9a-f]{2}$' || { echo "error=bad mac"; return 2; }
     case "$mode" in vpn | direct | default) ;; *) echo "error=bad mode"; return 2 ;; esac
     case "$slot" in [0-7]) ;; *) echo "error=bad slot"; return 2 ;; esac
-    name=$(printf '%s' "$4" | tr -d '\t\r\n|' | cut -c1-40)
+    # The apps cap names at 40 letters; bytes are capped here only as a
+    # guard (busybox cut counts bytes, which split Cyrillic names).
+    name=$(printf '%s' "$4" | tr -d '\t\r\n|' | head -c 160)
     touch "$DIR/devices"
     grep -v -i "^$mac	" "$DIR/devices" >"$DIR/devices.tmp" 2>/dev/null
     if [ "$mode" != default ] || [ "$slot" != 0 ] || [ -n "$name" ]; then

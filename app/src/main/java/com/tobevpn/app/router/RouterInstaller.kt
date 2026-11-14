@@ -405,7 +405,31 @@ class RouterInstaller @Inject constructor(
             progress("download:${binary.name}")
             binary to fetch(binary, log)
         }
-        ssh.session(network, host, user) { shell ->
+        try {
+            replaceComponents(network, host, user, downloads, found, ruSites, progress, log)
+        } catch (error: Exception) {
+            // The VPN was stopped before the files were replaced: a failure
+            // after that must not leave the home without it.
+            runCatching {
+                ssh.session(network, host, user) { shell ->
+                    shell.run("[ -x ${RouterAgent.SCRIPT} ] && ${RouterAgent.SCRIPT} start")
+                }
+            }
+            throw error
+        }
+    }
+
+    private suspend fun replaceComponents(
+        network: android.net.Network?,
+        host: String,
+        user: String,
+        downloads: List<Pair<Binary, ByteArray>>,
+        found: Outdated,
+        ruSites: ByteArray?,
+        progress: (String) -> Unit,
+        log: (InstallLogLine) -> Unit,
+    ): RouterStatus {
+        return ssh.session(network, host, user) { shell ->
             progress("configure")
             logOutput(shell.run("${RouterAgent.SCRIPT} stop").first, log)
             downloads.forEach { (binary, content) ->
