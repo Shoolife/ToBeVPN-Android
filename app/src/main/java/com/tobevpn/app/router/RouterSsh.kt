@@ -56,7 +56,8 @@ class RouterSsh @Inject constructor(
     }
 
     /** Logs in with the password once and installs this app's key on the router. */
-    suspend fun pair(network: Network?, host: String, user: String, password: String) = withContext(Dispatchers.IO) {
+    /** Pairs and returns the host key the router showed (pinned for what follows). */
+    suspend fun pair(network: Network?, host: String, user: String, password: String): String? = withContext(Dispatchers.IO) {
         check(configured)
         val jsch = JSch()
         val seen = arrayOfNulls<String>(1)
@@ -74,11 +75,30 @@ class RouterSsh @Inject constructor(
                     "sed -i '/ $keyComment\$/d' \"\$f\" 2>/dev/null; cat >> \"\$f\"",
                 line.toByteArray(),
             )
-            seen[0]?.let { fingerprint -> saveHost(host, fingerprint) }
+            seen[0]?.let { fingerprint ->
+                saveHost(host, fingerprint)
+                pins[host] = fingerprint
+            }
+            seen[0]
         } finally {
             session.disconnect()
         }
     }
+
+    /**
+     * Which router the next sessions at an address must reach: its host key.
+     * Several routers can be paired at one address (home and a cottage both
+     * on 192.168.1.1); without a pin any of them would be accepted, and a
+     * command meant for one could change the other.
+     */
+    private val pins = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    fun pin(host: String, fingerprint: String?) {
+        if (fingerprint.isNullOrEmpty()) pins.remove(host) else pins[host] = fingerprint
+    }
+
+    /** The host key the router at [host] showed in its last session. */
+    fun lastHostKey(host: String): String? = lastSeen[host]
 
     fun isPaired(host: String): Boolean = knownHosts().has(host)
 
@@ -108,7 +128,11 @@ class RouterSsh @Inject constructor(
         block: (RouterShell) -> T,
     ): T = withContext(Dispatchers.IO) {
         check(configured)
-        val expected = hostKeys(host).takeIf { it.isNotEmpty() }
+        val keys = hostKeys(host)
+        val pinned = pins[host]
+        // Only the pinned router, and only while it is still a paired one.
+        val expected = (if (pinned != null) keys.filter { it == pinned }.toSet() else keys)
+            .takeIf { it.isNotEmpty() }
             ?: throw RouterException("router is not paired")
         val jsch = JSch()
         val seen = arrayOfNulls<String>(1)

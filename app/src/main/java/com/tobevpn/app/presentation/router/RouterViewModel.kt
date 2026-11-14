@@ -190,7 +190,7 @@ class RouterViewModel @Inject constructor(
                         it.copy(
                             status = status,
                             link = repository.link.value,
-                            network = snapshot.network ?: it.network,
+                            network = snapshot.network,
                             traffic = snapshot.traffic ?: it.traffic,
                         )
                     }
@@ -530,7 +530,7 @@ class RouterViewModel @Inject constructor(
                         trafficLoading = false,
                         status = snapshot.status,
                         link = repository.link.value,
-                        network = snapshot.network ?: it.network,
+                        network = snapshot.network,
                         traffic = snapshot.traffic ?: it.traffic,
                     )
                 }

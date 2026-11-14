@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111402
+AGENT_VERSION=2026111404
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -401,29 +401,22 @@ clear_device_rules() {
 
 # One run at a time: the watchdog, a DHCP event and a command from the app
 # can all ask at once, and two runs rebuilding the same rules would leave a
-# device without its DNS redirect until the next one. The lock holds its
-# owner's pid: a lock whose owner is gone is taken over at once, a live one
-# is waited for (a run resolving many server names can take a while).
+# device without its DNS redirect until the next one. flock (in OpenWrt's
+# busybox) holds the lock on an open file, so a run that dies frees it by
+# itself; a run that hangs is not waited for longer than two minutes.
 apply_routes() {
     mkdir -p "$RUN"
-    read -r self _ </proc/self/stat
-    tries=0
-    while ! mkdir "$RUN/apply.lock" 2>/dev/null; do
-        owner=$(cat "$RUN/apply.lock/pid" 2>/dev/null)
-        if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
-            rm -rf "$RUN/apply.lock"
-            continue
-        fi
-        tries=$((tries + 1))
-        # A run never takes this long: its owner hangs; go ahead without it.
-        [ "$tries" -ge 120 ] && break
-        sleep 1
-    done
-    echo "$self" >"$RUN/apply.lock/pid" 2>/dev/null
+    # The lock of the previous agent version was a directory.
+    [ -d "$RUN/apply.lock" ] && rm -rf "$RUN/apply.lock"
+    if command -v flock >/dev/null 2>&1 && exec 9>"$RUN/apply.lock"; then
+        flock -w 120 9
+        apply_routes_now
+        result=$?
+        flock -u 9
+        exec 9>&-
+        return $result
+    fi
     apply_routes_now
-    result=$?
-    [ "$(cat "$RUN/apply.lock/pid" 2>/dev/null)" = "$self" ] && rm -rf "$RUN/apply.lock"
-    return $result
 }
 
 apply_routes_now() {
@@ -721,7 +714,6 @@ stop_routing() {
 }
 
 stop() {
-    rm -rf "$RUN/apply.lock"
     if [ -f "$RUN/watch.pid" ]; then
         kill "$(cat "$RUN/watch.pid")" 2>/dev/null
         rm -f "$RUN/watch.pid"

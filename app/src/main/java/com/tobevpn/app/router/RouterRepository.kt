@@ -25,6 +25,8 @@ data class RouterLink(
     val name: String? = null,
     /** Model from its login page. */
     val model: String? = null,
+    /** The router's SSH host key: sessions for this link reach only this router. */
+    val hostKey: String? = null,
 )
 
 /**
@@ -49,6 +51,10 @@ class RouterRepository @Inject constructor(
     /** The router being worked with: the one of the current network, once [linkHere] picked it. */
     private val _link = MutableStateFlow(links.firstOrNull())
     val link: StateFlow<RouterLink?> = _link.asStateFlow()
+
+    init {
+        links.firstOrNull()?.let { ssh.pin(it.host, it.hostKey) }
+    }
 
     private val _router = MutableStateFlow<RouterInfo?>(null)
     /** The router of the current network, as last detected. */
@@ -116,6 +122,7 @@ class RouterRepository @Inject constructor(
             }
             _link.value = chosen
         }
+        ssh.pin(chosen.host, chosen.hostKey)
         return chosen
     }
 
@@ -129,6 +136,7 @@ class RouterRepository @Inject constructor(
         hwid = json.optString("hwid").takeIf { it.isNotEmpty() },
         name = json.optString("name").takeIf { it.isNotEmpty() },
         model = json.optString("model").takeIf { it.isNotEmpty() },
+        hostKey = json.optString("hostKey").takeIf { it.isNotEmpty() },
     )
 
     private fun linkJson(link: RouterLink): JSONObject = JSONObject()
@@ -137,6 +145,7 @@ class RouterRepository @Inject constructor(
         .put("hwid", link.hwid.orEmpty())
         .put("name", link.name.orEmpty())
         .put("model", link.model.orEmpty())
+        .put("hostKey", link.hostKey.orEmpty())
 
     /** The list, or the single link earlier versions kept. */
     private fun loadLinks(): List<RouterLink> {
@@ -172,23 +181,30 @@ class RouterRepository @Inject constructor(
             storeLinks()
         }
         _link.value = link
+        link?.let { ssh.pin(it.host, it.hostKey) }
     }
 
     /** Remembers what the router reported about itself. */
     private fun remember(status: RouterStatus) {
         val link = _link.value ?: return
-        val next = link.copy(hwid = status.hwid ?: link.hwid, name = status.name)
+        // A link from before host keys were pinned learns its router's key
+        // now (its id was just checked).
+        val next = link.copy(
+            hwid = status.hwid ?: link.hwid,
+            name = status.name,
+            hostKey = link.hostKey ?: ssh.lastHostKey(link.host),
+        )
         if (next != link) saveLink(next)
     }
 
     // ------------------------------------------------------------ pairing ---
 
     suspend fun pair(host: String, user: String, password: String) {
-        ssh.pair(network(), host, user, password)
+        val hostKey = ssh.pair(network(), host, user, password)
         // A new router joins the list (the others stay connected); its id is
         // filled in by its first status, which also drops an older entry of
         // the same router.
-        val link = RouterLink(host = host, user = user, model = _router.value?.model)
+        val link = RouterLink(host = host, user = user, model = _router.value?.model, hostKey = hostKey)
         synchronized(links) {
             links.removeAll { it.host == host && it.hwid == null }
             links.add(0, link)
