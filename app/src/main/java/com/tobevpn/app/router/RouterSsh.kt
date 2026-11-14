@@ -208,7 +208,7 @@ class RouterSsh @Inject constructor(
 
     private fun saveHost(host: String, fingerprint: String) {
         val hosts = knownHosts()
-        val keys = (hostKeys(host) - fingerprint).toList().takeLast(MAX_KEYS_PER_HOST - 1) + fingerprint
+        val keys = (hostKeys(host) - fingerprint).toList() + fingerprint
         hosts.put(host, org.json.JSONArray(keys))
         hostsFile.writeText(hosts.toString())
     }
@@ -257,7 +257,6 @@ class RouterSsh @Inject constructor(
 
     companion object {
         private const val TIMEOUT_MS = 10_000
-        private const val MAX_KEYS_PER_HOST = 4
 
         fun fingerprint(key: ByteArray): String =
             "SHA256:" + Base64.getEncoder().withoutPadding()
