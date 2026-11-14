@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111404
+AGENT_VERSION=2026111405
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -408,13 +408,15 @@ apply_routes() {
     mkdir -p "$RUN"
     # The lock of the previous agent version was a directory.
     [ -d "$RUN/apply.lock" ] && rm -rf "$RUN/apply.lock"
-    if command -v flock >/dev/null 2>&1 && exec 9>"$RUN/apply.lock"; then
-        flock -w 120 9
-        apply_routes_now
-        result=$?
-        flock -u 9
-        exec 9>&-
-        return $result
+    # A redirect on a group, not on exec: if the lock file cannot be opened
+    # the group fails and the routes are still applied (a failed exec
+    # redirect would end the whole script).
+    if command -v flock >/dev/null 2>&1 && touch "$RUN/apply.lock" 2>/dev/null; then
+        {
+            flock -w 120 9
+            apply_routes_now
+        } 9>>"$RUN/apply.lock"
+        return
     fi
     apply_routes_now
 }
