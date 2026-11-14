@@ -1236,12 +1236,13 @@ private fun ConnectButtonLarge(
     val buttonSize = when {
         enlarged -> 288.dp
         medium -> 264.dp
-        else -> 180.dp
+        // Phones: a larger button, the screen has room for it.
+        else -> 212.dp
     }
     val iconSize = when {
         enlarged -> 102.4.dp
         medium -> 94.dp
-        else -> 64.dp
+        else -> 76.dp
     }
     Box(
         modifier = Modifier
