@@ -1,5 +1,9 @@
 package com.tobevpn.app.presentation.stats
 
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -92,7 +96,11 @@ fun StatsScreen(
     val useLargeTabletLayout = rememberAppWindowAdaptiveLayout().useFullWidthContent
     val period by viewModel.period.collectAsStateWithLifecycle()
     val serverSource by viewModel.serverSource.collectAsStateWithLifecycle()
-    val stats by viewModel.stats.collectAsStateWithLifecycle()
+    // The period and servers the rows were read for: the chips follow a tap
+    // at once, everything below changes once its rows are there.
+    val view by viewModel.view.collectAsStateWithLifecycle()
+    val stats = view?.stats.orEmpty()
+    val shownPeriod = view?.period ?: period
     val totalBytes by viewModel.totalBytes.collectAsStateWithLifecycle()
 
     val totalSessions = remember(stats) { stats.sumOf { it.sessions } }
@@ -101,18 +109,18 @@ fun StatsScreen(
     // phone's, in the chart and the rows; only with "all servers", since the
     // router's traffic has no server type of the phone's.
     val routerHours by viewModel.routerHours.collectAsStateWithLifecycle()
-    val withRouter = viewModel.routerLinked && serverSource == StatsServerSource.ALL
+    val withRouter = viewModel.routerLinked && (view?.source ?: serverSource) == StatsServerSource.ALL
     // A month with the router: its weeks, this phone's weekly rows put in
     // them, so weeks with only router traffic have their row too.
-    val slots = remember(stats, period, withRouter) {
-        if (period == StatsPeriod.MONTH && withRouter) monthWeeks(stats) else buildSlots(stats, period)
+    val slots = remember(stats, shownPeriod, withRouter) {
+        if (shownPeriod == StatsPeriod.MONTH && withRouter) monthWeeks(stats) else buildSlots(stats, shownPeriod)
     }
-    val routerAt: (Long) -> Long = remember(routerHours, period, withRouter) {
+    val routerAt: (Long) -> Long = remember(routerHours, shownPeriod, withRouter) {
         { start ->
             if (!withRouter) {
                 0L
             } else {
-                val end = start + slotSeconds(period)
+                val end = start + slotSeconds(shownPeriod)
                 routerHours.filter { it.hour >= start && it.hour < end }.sumOf { it.bytes }
             }
         }
@@ -212,7 +220,22 @@ fun StatsScreen(
 
                 Spacer(Modifier.height(8.dp))
 
-                if (rows.isEmpty()) {
+                // Another period or servers: the chart and rows cross-fade as
+                // the Router screen's content does (the old leaves quickly, the
+                // new comes in evenly), each with the rows read for it. New
+                // traffic within the same period only updates them.
+                AnimatedContent(
+                    targetState = StatsSection(shownPeriod, view?.source, slots, rows, routerAt),
+                    contentKey = { it.period to it.source },
+                    transitionSpec = {
+                        fadeIn(tween(420, delayMillis = 120, easing = FastOutSlowInEasing)) togetherWith
+                            fadeOut(tween(220, easing = FastOutSlowInEasing))
+                    },
+                    modifier = Modifier.fillMaxWidth().weight(1f),
+                    label = "stats-period",
+                ) { section ->
+                Column(Modifier.fillMaxSize()) {
+                if (section.rows.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -229,9 +252,9 @@ fun StatsScreen(
                 } else {
                     // Animated chart card
                     EnhancedTrafficChart(
-                        stats = slots,
-                        period = period,
-                        routerAt = routerAt,
+                        stats = section.slots,
+                        period = section.period,
+                        routerAt = section.routerAt,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(220.dp)
@@ -240,7 +263,7 @@ fun StatsScreen(
 
                     // Period label
                     Text(
-                        text = when (period) {
+                        text = when (section.period) {
                             StatsPeriod.DAY -> stringResource(R.string.stats_today_by_hour)
                             StatsPeriod.WEEK -> stringResource(R.string.stats_week_by_day)
                             StatsPeriod.MONTH -> stringResource(R.string.stats_month_by_week)
@@ -253,23 +276,25 @@ fun StatsScreen(
                         overflow = TextOverflow.Ellipsis,
                     )
 
-                    val maxRowBytes = remember(rows, routerAt) {
-                        rows.maxOfOrNull { it.totalBytes + routerAt(it.period) }?.coerceAtLeast(1L) ?: 1L
+                    val maxRowBytes = remember(section) {
+                        section.rows.maxOfOrNull { it.totalBytes + section.routerAt(it.period) }?.coerceAtLeast(1L) ?: 1L
                     }
                     val statsListState = rememberLazyListState()
                     LazyColumn(
                         state = statsListState,
                         modifier = Modifier.weight(1f).lazyScrollCues(statsListState),
                     ) {
-                        items(rows) { stat ->
+                        items(section.rows) { stat ->
                             EnhancedStatRow(
                                 stat = stat,
-                                period = period,
+                                period = section.period,
                                 maxBytes = maxRowBytes,
-                                routerBytes = routerAt(stat.period),
+                                routerBytes = section.routerAt(stat.period),
                             )
                         }
                     }
+                }
+                }
                 }
             }
         }
@@ -544,8 +569,10 @@ private fun EnhancedTrafficChart(
     val maxIndex = if (routerBytes.any { it > 0 }) -1 else slots.indexOfFirst { it.totalBytes == maxBytes && maxBytes > 0 }
 
     // Grow-in animation — re-runs when data or period changes
-    val animProgress = remember(stats, period) { Animatable(0f) }
-    LaunchedEffect(stats, period) {
+    // Grows in once per period (each period is its own content), not again
+    // with every minute of new traffic.
+    val animProgress = remember(period) { Animatable(0f) }
+    LaunchedEffect(period) {
         animProgress.animateTo(
             targetValue = 1f,
             animationSpec = tween(durationMillis = 750, easing = FastOutSlowInEasing),
@@ -967,3 +994,12 @@ private fun formatTime(seconds: Long): String {
         else -> "${seconds}${sUnit}"
     }
 }
+
+/** What the lower part of the screen shows for one period and set of servers. */
+private data class StatsSection(
+    val period: StatsPeriod,
+    val source: StatsServerSource?,
+    val slots: List<TrafficStat>,
+    val rows: List<TrafficStat>,
+    val routerAt: (Long) -> Long,
+)

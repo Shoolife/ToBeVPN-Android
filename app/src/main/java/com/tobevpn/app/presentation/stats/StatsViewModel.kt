@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -81,9 +82,18 @@ class StatsViewModel @Inject constructor(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
 
-    val stats: StateFlow<List<TrafficStat>> = _period
+    /**
+     * The chosen period and servers with their rows, arriving together: the
+     * screen never shows a new period with the old period's rows (a moment
+     * of empty bars, "no data", the chart growing twice).
+     */
+    val view: StateFlow<StatsView?> = _period
         .combine(_serverSource) { period, source -> period to source }
-        .flatMapLatest { (p, source) ->
+        .flatMapLatest { (p, source) -> statsFor(p, source).map { StatsView(p, source, it) } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    private fun statsFor(p: StatsPeriod, source: StatsServerSource): kotlinx.coroutines.flow.Flow<List<TrafficStat>> =
+        run {
             val cal = Calendar.getInstance(TimeZone.getDefault())
 
             when (p) {
@@ -141,7 +151,7 @@ class StatsViewModel @Inject constructor(
                     )
                 }
             }
-        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        }
 
     private companion object {
         const val ROUTER_TRAFFIC_EVERY_MS = 60_000L
@@ -155,3 +165,10 @@ class StatsViewModel @Inject constructor(
         _serverSource.value = source
     }
 }
+
+/** A period's rows, with the period and servers they were read for. */
+data class StatsView(
+    val period: StatsPeriod,
+    val source: StatsServerSource,
+    val stats: List<TrafficStat>,
+)
