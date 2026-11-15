@@ -333,7 +333,7 @@ fun RouterScreen(
                     if (status.failed) {
                         item { WarningText(stringResource(R.string.router_failed)) }
                     } else if (status.running && status.downSlots.isNotEmpty() &&
-                        network?.devices.orEmpty().any { it.mode == "vpn" && it.slot in status.downSlots }
+                        network?.let { net -> net.devices.any { it.mode == "vpn" && net.slotOf(it) in status.downSlots } } == true
                     ) {
                         item { WarningText(stringResource(R.string.router_server_down)) }
                     }
@@ -757,7 +757,7 @@ private fun DeviceRow(
 ) {
     val status = state.status
     val isThisPhone = device.ip != null && device.ip == status?.clientIp
-    val down = device.mode == "vpn" && status?.running == true && device.slot in status.downSlots
+    val down = device.mode == "vpn" && status?.running == true && network.slotOf(device) in status.downSlots
     val sub = buildList {
         device.ip?.let(::add)
         when {

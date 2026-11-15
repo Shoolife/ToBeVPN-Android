@@ -430,7 +430,7 @@ class RouterInstaller @Inject constructor(
         return ssh.session(network, host, user, hostKey) { shell ->
             progress("configure")
             // Whether it ran, so the update leaves it as it found it.
-            shell.run("if pidof xray >/dev/null; then touch $UPDATE_RUNNING_MARK; else rm -f $UPDATE_RUNNING_MARK; fi")
+            shell.run("if $AGENT_RUNNING; then touch $UPDATE_RUNNING_MARK; else rm -f $UPDATE_RUNNING_MARK; fi")
             logOutput(shell.run("${RouterAgent.SCRIPT} stop").first, log)
             downloads.forEach { (binary, content) ->
                 progress("upload:${binary.name}")
@@ -465,7 +465,7 @@ class RouterInstaller @Inject constructor(
             }
             progress("start")
             // Started again only if it ran before the update.
-            logOutput(shell.runOk("if [ -f $UPDATE_RUNNING_MARK ]; then ${RouterAgent.SCRIPT} start; fi; rm -f $UPDATE_RUNNING_MARK; true"), log)
+            logOutput(shell.runOk("if [ -f $UPDATE_RUNNING_MARK ]; then rm -f $UPDATE_RUNNING_MARK; ${RouterAgent.SCRIPT} start; else echo kept=1; fi"), log)
             val status = shell.runOk("${RouterAgent.SCRIPT} status")
             progress("done")
             RouterAgent.parseStatus(status)
@@ -624,6 +624,10 @@ class RouterInstaller @Inject constructor(
         private const val PINNED_XRAY_VERSION = "26.10.31"
         /** Left on the router by an update while the VPN ran; read back after it. */
         private const val UPDATE_RUNNING_MARK = "/tmp/tobevpn-update-running"
+        // The VPN counts as on while its core runs or its watchdog waits to
+        // bring it back (the failed state): an update restarts it either way.
+        private const val AGENT_RUNNING =
+            "{ pidof xray >/dev/null || { [ -f /tmp/tobevpn/watch.pid ] && kill -0 \"\$(cat /tmp/tobevpn/watch.pid)\" 2>/dev/null; }; }"
         /** The hev-socks5-tunnel build this app installs (also in its download URL). */
         private const val HEV_VERSION = "2.19.2"
         private const val RELEASE_MIN_AGE_DAYS = 3L

@@ -52,7 +52,13 @@ data class RouterDevice(
 
 data class RouterSlot(val slot: Int, val serverId: String, val serverName: String)
 
-data class RouterNetwork(val devices: List<RouterDevice>, val slots: List<RouterSlot>)
+data class RouterNetwork(val devices: List<RouterDevice>, val slots: List<RouterSlot>) {
+    /**
+     * The slot a device really rides, as the router agent reads it: its own
+     * when that slot has a server on the router, otherwise slot 0.
+     */
+    fun slotOf(device: RouterDevice): Int = if (slots.any { it.slot == device.slot }) device.slot else 0
+}
 
 /** A server in a slot (0-7); devices are sent to their server's slot. */
 data class SlotServer(val slot: Int, val server: Server)

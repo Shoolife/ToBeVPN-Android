@@ -432,8 +432,9 @@ class RouterRepository @Inject constructor(
         val me = network.devices.firstOrNull { it.ip == clientIp } ?: return null
         val mode = if (me.mode == "default") status.defaultMode else me.mode
         if (mode != "vpn") return null
-        // A "default" device rides the slot its entry names, like a chosen one.
-        val slot = me.slot
+        // A "default" device rides the slot its entry names, like a chosen one
+        // (slot 0 when that slot has no server on the router, as the agent reads it).
+        val slot = network.slotOf(me)
         if (slot in status.downSlots) return null
         val server = network.slots.firstOrNull { it.slot == slot } ?: network.slots.firstOrNull { it.slot == 0 }
         // The name without its flag emoji, as PC shows it.

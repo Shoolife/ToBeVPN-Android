@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111509
+AGENT_VERSION=2026111510
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -248,6 +248,8 @@ apply_server_bypass() {
         # A name that did not resolve keeps the rules it had: nothing is
         # removed then, only added.
         SYNC_ADD_ONLY=$partial with_route_lock sync_rules "$bypass_wanted" "$BYPASS_PRIO"
+        # In place: a later loss (the core restarting) is retried at once.
+        rm -f "$RUN/bypass.tried"
     fi
     rm -f "$bypass_wanted" "$bypass_wanted.now"
 }
@@ -324,20 +326,43 @@ dns_skip() {
 # tunnel); direct devices and the home network itself are left alone. Built
 # aside and swapped in like the DNS rules.
 V6_CHAIN=TOBEVPN_V6
+NFT_V6_TABLE=tobevpn_v6
 v6_begin() {
+    mkdir -p "$RUN"
+    if [ "$FW" = nft ]; then
+        # One nft transaction (v6_hook): its own table, ahead of fw4.
+        {
+            echo "add table ip6 $NFT_V6_TABLE"
+            echo "add chain ip6 $NFT_V6_TABLE forward { type filter hook forward priority -1; policy accept; }"
+            echo "flush chain ip6 $NFT_V6_TABLE forward"
+            echo "add rule ip6 $NFT_V6_TABLE forward iifname != \"$LAN_DEV\" return"
+            # Home addresses (ULA, link-local) stay reachable.
+            echo "add rule ip6 $NFT_V6_TABLE forward ip6 daddr { fc00::/7, fe80::/10 } return"
+        } >"$RUN/v6.nft"
+        return 0
+    fi
     command -v ip6tables >/dev/null 2>&1 || return 0
     ip6tables -N "${V6_CHAIN}_N" 2>/dev/null || ip6tables -F "${V6_CHAIN}_N"
-    # Home addresses (ULA, link-local) stay reachable.
     ip6tables -A "${V6_CHAIN}_N" -d fc00::/7 -j RETURN
     ip6tables -A "${V6_CHAIN}_N" -d fe80::/10 -j RETURN
 }
 
 v6_direct() {
+    if [ "$FW" = nft ]; then
+        echo "add rule ip6 $NFT_V6_TABLE forward ether saddr $1 return" >>"$RUN/v6.nft"
+        return 0
+    fi
     command -v ip6tables >/dev/null 2>&1 || return 0
     ip6tables -A "${V6_CHAIN}_N" -m mac --mac-source "$1" -j RETURN 2>/dev/null
 }
 
 v6_block() {
+    if [ "$FW" = nft ]; then
+        match=${1:+"ether saddr $1 "}
+        echo "add rule ip6 $NFT_V6_TABLE forward ${match}meta l4proto tcp reject with tcp reset" >>"$RUN/v6.nft"
+        echo "add rule ip6 $NFT_V6_TABLE forward ${match}reject" >>"$RUN/v6.nft"
+        return 0
+    fi
     command -v ip6tables >/dev/null 2>&1 || return 0
     if [ -n "$1" ]; then
         ip6tables -A "${V6_CHAIN}_N" -m mac --mac-source "$1" -p tcp -j REJECT --reject-with tcp-reset 2>/dev/null
@@ -348,19 +373,41 @@ v6_block() {
     fi
 }
 
+# Every FORWARD jump to our IPv6 chains, whatever its interface: removed by
+# their own text, so a changed LAN device name leaves none behind.
+v6_drop_jumps() {
+    ip6tables -S FORWARD 2>/dev/null | grep -E -- "-j ${V6_CHAIN}(_N)?( |\$)" | sed 's/^-A /-D /' |
+        while read -r rule; do
+            # shellcheck disable=SC2086 # the rule's own words
+            eval "ip6tables $rule" 2>/dev/null
+        done
+}
+
 v6_hook() {
+    if [ "$FW" = nft ]; then
+        nft -f "$RUN/v6.nft"
+        return 0
+    fi
     command -v ip6tables >/dev/null 2>&1 || return 0
     ip6tables -I FORWARD 1 -i "$LAN_DEV" -j "${V6_CHAIN}_N" -m comment --comment "$TAG"
-    while ip6tables -D FORWARD -i "$LAN_DEV" -j "$V6_CHAIN" -m comment --comment "$TAG" 2>/dev/null; do :; done
+    ip6tables -S FORWARD 2>/dev/null | grep -E -- "-j ${V6_CHAIN}( |\$)" | sed 's/^-A /-D /' |
+        while read -r rule; do
+            # shellcheck disable=SC2086 # the rule's own words
+            eval "ip6tables $rule" 2>/dev/null
+        done
     ip6tables -F "$V6_CHAIN" 2>/dev/null
     ip6tables -X "$V6_CHAIN" 2>/dev/null
     ip6tables -E "${V6_CHAIN}_N" "$V6_CHAIN"
 }
 
 remove_v6_block() {
+    if [ "$FW" = nft ]; then
+        nft delete table ip6 "$NFT_V6_TABLE" 2>/dev/null
+        return 0
+    fi
     command -v ip6tables >/dev/null 2>&1 || return 0
+    v6_drop_jumps
     for chain in "$V6_CHAIN" "${V6_CHAIN}_N"; do
-        while ip6tables -D FORWARD -i "$LAN_DEV" -j "$chain" -m comment --comment "$TAG" 2>/dev/null; do :; done
         ip6tables -F "$chain" 2>/dev/null
         ip6tables -X "$chain" 2>/dev/null
     done
@@ -606,24 +653,26 @@ apply_routes_now() {
         fi
     fi
     device_choices | while read -r mac mode slot; do
+        # IPv6 by the device's MAC: decided even while its IPv4 is unknown.
+        if [ "$mode" = direct ] || { [ "$slot" = 0 ] && [ $main_down = 1 ]; }; then
+            v6_direct "$mac"
+        elif [ "$slot" != 0 ] || [ "$(default_mode)" = direct ]; then
+            v6_block "$mac"
+        fi
         ip=$(mac_address_ip "$mac")
         [ -n "$ip" ] || continue
         if [ "$mode" = direct ]; then
             # Only matters when the rest of the home goes through the VPN.
             echo "$DEVICE_PRIO from $ip main" >>"$routes_wanted"
             dns_skip "$ip"
-            v6_direct "$mac"
         elif [ "$slot" != 0 ]; then
             echo "$DEVICE_PRIO from $ip $((SLOT_TABLE_BASE + slot))" >>"$routes_wanted"
-            v6_block "$mac"
             [ -n "$dns_router_ip" ] && dns_rule "$ip" "$dns_router_ip"
         elif [ $main_down = 1 ]; then
             # The router's server does not answer: direct until it does.
             echo "$DEVICE_PRIO from $ip main" >>"$routes_wanted"
-            v6_direct "$mac"
         elif [ "$(default_mode)" = direct ]; then
             echo "$PRIO from $ip $TABLE" >>"$routes_wanted"
-            v6_block "$mac"
             [ -n "$dns_router_ip" ] && dns_rule "$ip" "$dns_router_ip"
         fi
     done
