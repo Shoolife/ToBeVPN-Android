@@ -407,7 +407,9 @@ class RouterInstaller @Inject constructor(
                 ssh.session(network, host, user, hostKey) { shell ->
                     // Only when the VPN is down: a failure before the stop, or a
                     // start still running on the router, needs no second start.
-                    shell.run("[ -x ${RouterAgent.SCRIPT} ] && ! pidof xray >/dev/null && ${RouterAgent.SCRIPT} start")
+                    // Only a VPN that ran before the update (its mark is left
+                    // only once the stop happened), and only when it is down.
+                    shell.run("[ -x ${RouterAgent.SCRIPT} ] && [ -f $UPDATE_RUNNING_MARK ] && ! pidof xray >/dev/null && ${RouterAgent.SCRIPT} start; rm -f $UPDATE_RUNNING_MARK")
                 }
             }
             throw error
@@ -427,6 +429,8 @@ class RouterInstaller @Inject constructor(
     ): RouterStatus {
         return ssh.session(network, host, user, hostKey) { shell ->
             progress("configure")
+            // Whether it ran, so the update leaves it as it found it.
+            shell.run("if pidof xray >/dev/null; then touch $UPDATE_RUNNING_MARK; else rm -f $UPDATE_RUNNING_MARK; fi")
             logOutput(shell.run("${RouterAgent.SCRIPT} stop").first, log)
             downloads.forEach { (binary, content) ->
                 progress("upload:${binary.name}")
@@ -460,7 +464,8 @@ class RouterInstaller @Inject constructor(
                 log(InstallLogLine("info", "Russian sites list: ${ruSites.size / 1024} KB"))
             }
             progress("start")
-            logOutput(shell.runOk("${RouterAgent.SCRIPT} start"), log)
+            // Started again only if it ran before the update.
+            logOutput(shell.runOk("if [ -f $UPDATE_RUNNING_MARK ]; then ${RouterAgent.SCRIPT} start; fi; rm -f $UPDATE_RUNNING_MARK; true"), log)
             val status = shell.runOk("${RouterAgent.SCRIPT} status")
             progress("done")
             RouterAgent.parseStatus(status)
@@ -617,6 +622,8 @@ class RouterInstaller @Inject constructor(
 
     companion object {
         private const val PINNED_XRAY_VERSION = "26.10.31"
+        /** Left on the router by an update while the VPN ran; read back after it. */
+        private const val UPDATE_RUNNING_MARK = "/tmp/tobevpn-update-running"
         /** The hev-socks5-tunnel build this app installs (also in its download URL). */
         private const val HEV_VERSION = "2.19.2"
         private const val RELEASE_MIN_AGE_DAYS = 3L

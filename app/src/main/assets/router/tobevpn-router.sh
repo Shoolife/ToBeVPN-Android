@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111507
+AGENT_VERSION=2026111509
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -317,6 +317,55 @@ dns_skip() {
     fi
 }
 
+# IPv6: the tunnels carry IPv4 only, so a device sent through the VPN must
+# not reach the internet over IPv6 (it would go around the tunnel, to the
+# real address, with blocked sites still blocked). Its forwarded IPv6 to
+# public addresses is refused at once (it then uses IPv4, through the
+# tunnel); direct devices and the home network itself are left alone. Built
+# aside and swapped in like the DNS rules.
+V6_CHAIN=TOBEVPN_V6
+v6_begin() {
+    command -v ip6tables >/dev/null 2>&1 || return 0
+    ip6tables -N "${V6_CHAIN}_N" 2>/dev/null || ip6tables -F "${V6_CHAIN}_N"
+    # Home addresses (ULA, link-local) stay reachable.
+    ip6tables -A "${V6_CHAIN}_N" -d fc00::/7 -j RETURN
+    ip6tables -A "${V6_CHAIN}_N" -d fe80::/10 -j RETURN
+}
+
+v6_direct() {
+    command -v ip6tables >/dev/null 2>&1 || return 0
+    ip6tables -A "${V6_CHAIN}_N" -m mac --mac-source "$1" -j RETURN 2>/dev/null
+}
+
+v6_block() {
+    command -v ip6tables >/dev/null 2>&1 || return 0
+    if [ -n "$1" ]; then
+        ip6tables -A "${V6_CHAIN}_N" -m mac --mac-source "$1" -p tcp -j REJECT --reject-with tcp-reset 2>/dev/null
+        ip6tables -A "${V6_CHAIN}_N" -m mac --mac-source "$1" -j REJECT 2>/dev/null
+    else
+        ip6tables -A "${V6_CHAIN}_N" -p tcp -j REJECT --reject-with tcp-reset 2>/dev/null
+        ip6tables -A "${V6_CHAIN}_N" -j REJECT 2>/dev/null
+    fi
+}
+
+v6_hook() {
+    command -v ip6tables >/dev/null 2>&1 || return 0
+    ip6tables -I FORWARD 1 -i "$LAN_DEV" -j "${V6_CHAIN}_N" -m comment --comment "$TAG"
+    while ip6tables -D FORWARD -i "$LAN_DEV" -j "$V6_CHAIN" -m comment --comment "$TAG" 2>/dev/null; do :; done
+    ip6tables -F "$V6_CHAIN" 2>/dev/null
+    ip6tables -X "$V6_CHAIN" 2>/dev/null
+    ip6tables -E "${V6_CHAIN}_N" "$V6_CHAIN"
+}
+
+remove_v6_block() {
+    command -v ip6tables >/dev/null 2>&1 || return 0
+    for chain in "$V6_CHAIN" "${V6_CHAIN}_N"; do
+        while ip6tables -D FORWARD -i "$LAN_DEV" -j "$chain" -m comment --comment "$TAG" 2>/dev/null; do :; done
+        ip6tables -F "$chain" 2>/dev/null
+        ip6tables -X "$chain" 2>/dev/null
+    done
+}
+
 # Puts the new DNS rules in place of the old ones in one step.
 dns_hook() {
     if [ "$FW" = nft ]; then
@@ -530,6 +579,7 @@ apply_routes_now() {
     routes_wanted="$RUN/rules.wanted"
     : >"$routes_wanted"
     dns_begin
+    v6_begin
     # The router's DNS goes through the tunnel when the home does; otherwise
     # only queries of VPN devices are sent through their tunnel.
     main_down=0
@@ -562,29 +612,41 @@ apply_routes_now() {
             # Only matters when the rest of the home goes through the VPN.
             echo "$DEVICE_PRIO from $ip main" >>"$routes_wanted"
             dns_skip "$ip"
+            v6_direct "$mac"
         elif [ "$slot" != 0 ]; then
             echo "$DEVICE_PRIO from $ip $((SLOT_TABLE_BASE + slot))" >>"$routes_wanted"
+            v6_block "$mac"
             [ -n "$dns_router_ip" ] && dns_rule "$ip" "$dns_router_ip"
         elif [ $main_down = 1 ]; then
             # The router's server does not answer: direct until it does.
             echo "$DEVICE_PRIO from $ip main" >>"$routes_wanted"
+            v6_direct "$mac"
         elif [ "$(default_mode)" = direct ]; then
             echo "$PRIO from $ip $TABLE" >>"$routes_wanted"
+            v6_block "$mac"
             [ -n "$dns_router_ip" ] && dns_rule "$ip" "$dns_router_ip"
         fi
     done
     if [ "$(default_mode)" = vpn ] && [ $main_down = 0 ] && [ -n "$subnet" ]; then
         # The whole home network, except the devices handled above.
         echo "$PRIO from $subnet $TABLE" >>"$routes_wanted"
+        # The whole home through the VPN: every device not handled above.
+        v6_block ""
     fi
     sync_rules "$routes_wanted" "$DEVICE_PRIO" "$PRIO"
+    v6_hook
     # DNS of VPN devices when the home is direct: resolved inside their tunnel.
     dns_hook
     # The servers' bypass is set at start and every 6 hours (names are
     # resolved then); here only if it is missing (after the core came back).
     # (In the background: names are not resolved while the lock is held.)
     # Without the lock's descriptor (9>&-): the child would hold the lock.
-    ip rule show | grep -q "^$BYPASS_PRIO:" || "$0" bypass 9>&- >/dev/null 2>&1 &
+    # At most every 5 minutes, when no name resolves at all.
+    if ! ip rule show | grep -q "^$BYPASS_PRIO:" &&
+        [ -z "$(find "$RUN/bypass.tried" -mmin -5 2>/dev/null)" ]; then
+        touch "$RUN/bypass.tried"
+        "$0" bypass 9>&- >/dev/null 2>&1 &
+    fi
     fw_open
 }
 
@@ -618,6 +680,33 @@ list_devices() {
     awk -F '\t' '$1 ~ /^[0-7]$/ {print "slot=" $1 "|" $2 "|" $3}' "$DIR/slots" 2>/dev/null
 }
 
+save_device() {
+    touch "$DIR/devices"
+    tmp="$DIR/devices.tmp.$$"
+    grep -v -i "^$1	" "$DIR/devices" >"$tmp" 2>/dev/null
+    if [ "$2" != default ] || [ "$4" != 0 ] || [ -n "$3" ]; then
+        printf '%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" >>"$tmp"
+    fi
+    mv "$tmp" "$DIR/devices"
+}
+
+with_devices_lock() {
+    mkdir -p "$RUN"
+    if command -v flock >/dev/null 2>&1 && touch "$RUN/devices.lock" 2>/dev/null; then
+        {
+            tries=0
+            until flock -n 8; do
+                tries=$((tries + 1))
+                [ "$tries" -ge 30 ] && break
+                sleep 1
+            done
+            "$@"
+        } 8>>"$RUN/devices.lock"
+        return
+    fi
+    "$@"
+}
+
 set_device() {
     mac=$(echo "$1" | tr 'A-F' 'a-f')
     mode=$2
@@ -628,12 +717,9 @@ set_device() {
     # The apps cap names at 40 letters; bytes are capped here only as a
     # guard (busybox cut counts bytes, which split Cyrillic names).
     name=$(printf '%s' "$4" | tr -d '\t\r\n|' | head -c 160)
-    touch "$DIR/devices"
-    grep -v -i "^$mac	" "$DIR/devices" >"$DIR/devices.tmp" 2>/dev/null
-    if [ "$mode" != default ] || [ "$slot" != 0 ] || [ -n "$name" ]; then
-        printf '%s\t%s\t%s\t%s\n' "$mac" "$mode" "$name" "$slot" >>"$DIR/devices.tmp"
-    fi
-    mv "$DIR/devices.tmp" "$DIR/devices"
+    # One writer at a time (the phone and the PC may save at once): each
+    # change is made on the current file, never on a stale copy.
+    with_devices_lock save_device "$mac" "$mode" "$name" "$slot"
     # Several devices saved at once (TOBEVPN_NO_APPLY=1) are applied once,
     # by the command that ends the batch.
     [ -z "$TOBEVPN_NO_APPLY" ] && pidof xray >/dev/null && apply_routes
@@ -818,6 +904,7 @@ stop_routing() {
         ip route flush table "$((SLOT_TABLE_BASE + slot))" 2>/dev/null
     done
     remove_dns_redirect
+    remove_v6_block
     dns_upstream isp
     remove_firewall_rules
 }

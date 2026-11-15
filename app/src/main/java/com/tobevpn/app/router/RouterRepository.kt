@@ -432,7 +432,8 @@ class RouterRepository @Inject constructor(
         val me = network.devices.firstOrNull { it.ip == clientIp } ?: return null
         val mode = if (me.mode == "default") status.defaultMode else me.mode
         if (mode != "vpn") return null
-        val slot = if (me.mode == "vpn") me.slot else 0
+        // A "default" device rides the slot its entry names, like a chosen one.
+        val slot = me.slot
         if (slot in status.downSlots) return null
         val server = network.slots.firstOrNull { it.slot == slot } ?: network.slots.firstOrNull { it.slot == 0 }
         // The name without its flag emoji, as PC shows it.
@@ -508,7 +509,9 @@ class RouterRepository @Inject constructor(
         val sites = withContext(Dispatchers.IO) { ruSites() }
         return withRouter { shell ->
             RouterAgent.writeServerConfig(shell, servers, sites, serverHosts + serviceHosts())
-            shell.runOk("${RouterAgent.SCRIPT} restart")
+            // Applied by a restart only when the VPN runs: a VPN the owner
+            // stopped stays stopped (the new config is used at its next start).
+            shell.runOk("if pidof xray >/dev/null; then ${RouterAgent.SCRIPT} restart; fi; true")
             RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
         }.also(::remember)
     }
@@ -526,7 +529,9 @@ class RouterRepository @Inject constructor(
             RouterAgent.applyRuDirect(config, enabled)
             shell.writeFile("/opt/tobevpn/xray.json", config.toString(2).toByteArray(), "600")
             shell.writeFile(RouterAgent.RU_DIRECT_FLAG, if (enabled) "1\n".toByteArray() else "0\n".toByteArray(), "644")
-            shell.runOk("${RouterAgent.SCRIPT} restart")
+            // Applied by a restart only when the VPN runs: a VPN the owner
+            // stopped stays stopped (the new config is used at its next start).
+            shell.runOk("if pidof xray >/dev/null; then ${RouterAgent.SCRIPT} restart; fi; true")
             RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
         }.also(::remember)
     }
