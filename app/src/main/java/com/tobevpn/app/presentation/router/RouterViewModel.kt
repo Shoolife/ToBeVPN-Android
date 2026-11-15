@@ -730,7 +730,7 @@ class RouterViewModel @Inject constructor(
             state.copy(
                 status = next,
                 network = network.copy(
-                    devices = network.devices.map { if (it.mode == "default") it.copy(mode = "vpn", slot = 0) else it },
+                    devices = network.devices.map { if (it.mode == "default") it.copy(mode = "vpn") else it },
                 ),
             )
         }
@@ -785,7 +785,6 @@ class RouterViewModel @Inject constructor(
 
     companion object {
         private const val MIN_REFRESH_FEEDBACK_MS = 900L
-        private const val TRAFFIC_MAX_AGE_MS = 60_000L
         private const val TRAFFIC_MIN_LOADING_MS = 600L
         private const val UPDATE_CHECK_EVERY_MS = 30 * 60_000L
         /** Wi-Fi is back on most phones within this after a reconnect. */

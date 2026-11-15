@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
 import java.time.Duration
@@ -449,6 +450,13 @@ class RouterInstaller @Inject constructor(
             if (found.sitesMissing && ruSites != null) {
                 progress("upload:sites")
                 RouterAgent.writeRuSitesIfMissing(shell, ruSites)
+                // The config may lack the sites rule (written when the list was
+                // missing): turned on with the list, or the bypass stays off.
+                runCatching {
+                    val config = JSONObject(shell.run("cat /opt/tobevpn/xray.json 2>/dev/null").first)
+                    RouterAgent.applyRuDirect(config, true)
+                    shell.writeFile("/opt/tobevpn/xray.json", config.toString(2).toByteArray(), "600")
+                }
                 log(InstallLogLine("info", "Russian sites list: ${ruSites.size / 1024} KB"))
             }
             progress("start")

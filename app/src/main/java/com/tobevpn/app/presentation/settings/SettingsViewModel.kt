@@ -488,7 +488,15 @@ class SettingsViewModel @Inject constructor(
                     authRepository.registerCurrentDevice()
                     runCatching { authRepository.pingHwidOnly() }
                 }
-                var response = botApi.getDevices()
+                // A stale session (401/403) is refreshed by the registration;
+                // the list is asked again after it, as before both ran at once.
+                var response = try {
+                    botApi.getDevices()
+                } catch (error: retrofit2.HttpException) {
+                    if (error.code() != 401 && error.code() != 403) throw error
+                    registration.await()
+                    botApi.getDevices()
+                }
                 val aliases = currentDeviceAliases.map { it.trim().lowercase(java.util.Locale.ROOT) }.toSet()
                 val listed = response.data?.devices.orEmpty().any { device ->
                     listOf(device.deviceId, device.hwid).any {

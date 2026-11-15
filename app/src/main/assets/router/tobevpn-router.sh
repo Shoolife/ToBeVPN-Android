@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111506
+AGENT_VERSION=2026111507
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -184,10 +184,10 @@ resolve4() {
 # the extra ones go, so a device is never left without its rule (its traffic
 # would go out direct) while the rules change.
 sync_rules() {
-    wanted=$1
+    sr_wanted=$1
     shift
     # Each call its own files: calls for other priorities may run at once.
-    current="$wanted.now"
+    sr_current="$sr_wanted.now"
     ip rule show 2>/dev/null | awk -v prios=" $* " '
         { p = $1; sub(":", "", p) }
         index(prios, " " p " ") {
@@ -198,20 +198,20 @@ sync_rules() {
                 if ($i == "iif") iif = $(i + 1)
             }
             if (sel != "" && tab != "") print p, sel, addr, tab (iif != "" ? " " iif : "")
-        }' | sort -u >"$current"
+        }' | sort -u >"$sr_current"
     # Not "sort -o" (busybox 1.34 prints instead of writing).
-    sort -u "$wanted" >"$wanted.sorted" && mv "$wanted.sorted" "$wanted"
+    sort -u "$sr_wanted" >"$sr_wanted.sorted" && mv "$sr_wanted.sorted" "$sr_wanted"
     # The other list is read with getline, not "NR == FNR": that test is
     # also true for the second file when the first is empty, and then
     # nothing at all was added (no rules on a fresh start).
-    awk -v other="$current" 'BEGIN { while ((getline line < other) > 0) have[line] = 1 } !have[$0]' "$wanted" |
+    awk -v other="$sr_current" 'BEGIN { while ((getline line < other) > 0) have[line] = 1 } !have[$0]' "$sr_wanted" |
         while read -r p sel addr tab iif; do
             ip rule add "$sel" "$addr" ${iif:+iif "$iif"} lookup "$tab" prio "$p" 2>/dev/null
         done
     # SYNC_ADD_ONLY: rules are only added (a partial list must not remove
     # the rules of what it could not find).
     [ -n "$SYNC_ADD_ONLY" ] && return 0
-    awk -v other="$wanted" 'BEGIN { while ((getline line < other) > 0) keep[line] = 1 } !keep[$0]' "$current" |
+    awk -v other="$sr_wanted" 'BEGIN { while ((getline line < other) > 0) keep[line] = 1 } !keep[$0]' "$sr_current" |
         while read -r p sel addr tab iif; do
             ip rule del "$sel" "$addr" ${iif:+iif "$iif"} lookup "$tab" prio "$p" 2>/dev/null
         done
@@ -228,10 +228,12 @@ apply_server_bypass() {
     read -r self _ </proc/self/stat
     # The names are resolved first, outside the route lock (it can take a
     # while); only the rule change itself is done under the lock.
-    wanted="$RUN/bypass.$self"
-    : >"$wanted"
+    bypass_wanted="$RUN/bypass.$self"
+    : >"$bypass_wanted"
     partial=
     for host in $(grep -E '^[A-Za-z0-9.:-]+$' "$DIR/servers" 2>/dev/null); do
+        # IPv6 literals: no IPv4 rule to make, and not a failed lookup.
+        case "$host" in *:*) continue ;; esac
         if echo "$host" | grep -qE '^[0-9.]+$'; then
             addresses=$host
         else
@@ -239,15 +241,15 @@ apply_server_bypass() {
         fi
         [ -n "$addresses" ] || partial=1
         for address in $addresses; do
-            echo "$BYPASS_PRIO to $address main" >>"$wanted"
+            echo "$BYPASS_PRIO to $address main" >>"$bypass_wanted"
         done
     done
-    if [ -s "$wanted" ]; then
+    if [ -s "$bypass_wanted" ]; then
         # A name that did not resolve keeps the rules it had: nothing is
         # removed then, only added.
-        SYNC_ADD_ONLY=$partial with_route_lock sync_rules "$wanted" "$BYPASS_PRIO"
+        SYNC_ADD_ONLY=$partial with_route_lock sync_rules "$bypass_wanted" "$BYPASS_PRIO"
     fi
-    rm -f "$wanted" "$wanted.now"
+    rm -f "$bypass_wanted" "$bypass_wanted.now"
 }
 
 default_mode() {
@@ -510,6 +512,10 @@ with_route_lock() {
 }
 
 apply_routes_now() {
+    # Checked again under the lock: the VPN may have stopped, or the
+    # watchdog may have sent the home direct, while this run waited.
+    pidof xray >/dev/null || return 0
+    [ -f "$RUN/state" ] && return 0
     subnet=$(lan_subnet)
     router_ip=$(lan_address)
     ip route replace default dev "$(tunnel_of 0)" table "$TABLE"
@@ -521,8 +527,8 @@ apply_routes_now() {
     done
     # The wanted device rules are collected and then put in place without a
     # gap (sync_rules); the DNS rules likewise (dns_begin ... dns_hook).
-    wanted="$RUN/rules.wanted"
-    : >"$wanted"
+    routes_wanted="$RUN/rules.wanted"
+    : >"$routes_wanted"
     dns_begin
     # The router's DNS goes through the tunnel when the home does; otherwise
     # only queries of VPN devices are sent through their tunnel.
@@ -554,30 +560,31 @@ apply_routes_now() {
         [ -n "$ip" ] || continue
         if [ "$mode" = direct ]; then
             # Only matters when the rest of the home goes through the VPN.
-            echo "$DEVICE_PRIO from $ip main" >>"$wanted"
+            echo "$DEVICE_PRIO from $ip main" >>"$routes_wanted"
             dns_skip "$ip"
         elif [ "$slot" != 0 ]; then
-            echo "$DEVICE_PRIO from $ip $((SLOT_TABLE_BASE + slot))" >>"$wanted"
+            echo "$DEVICE_PRIO from $ip $((SLOT_TABLE_BASE + slot))" >>"$routes_wanted"
             [ -n "$dns_router_ip" ] && dns_rule "$ip" "$dns_router_ip"
         elif [ $main_down = 1 ]; then
             # The router's server does not answer: direct until it does.
-            echo "$DEVICE_PRIO from $ip main" >>"$wanted"
+            echo "$DEVICE_PRIO from $ip main" >>"$routes_wanted"
         elif [ "$(default_mode)" = direct ]; then
-            echo "$PRIO from $ip $TABLE" >>"$wanted"
+            echo "$PRIO from $ip $TABLE" >>"$routes_wanted"
             [ -n "$dns_router_ip" ] && dns_rule "$ip" "$dns_router_ip"
         fi
     done
     if [ "$(default_mode)" = vpn ] && [ $main_down = 0 ] && [ -n "$subnet" ]; then
         # The whole home network, except the devices handled above.
-        echo "$PRIO from $subnet $TABLE" >>"$wanted"
+        echo "$PRIO from $subnet $TABLE" >>"$routes_wanted"
     fi
-    sync_rules "$wanted" "$DEVICE_PRIO" "$PRIO"
+    sync_rules "$routes_wanted" "$DEVICE_PRIO" "$PRIO"
     # DNS of VPN devices when the home is direct: resolved inside their tunnel.
     dns_hook
     # The servers' bypass is set at start and every 6 hours (names are
     # resolved then); here only if it is missing (after the core came back).
     # (In the background: names are not resolved while the lock is held.)
-    ip rule show | grep -q "^$BYPASS_PRIO:" || "$0" bypass >/dev/null 2>&1 &
+    # Without the lock's descriptor (9>&-): the child would hold the lock.
+    ip rule show | grep -q "^$BYPASS_PRIO:" || "$0" bypass 9>&- >/dev/null 2>&1 &
     fw_open
 }
 
@@ -699,7 +706,7 @@ watch() {
             if ! core_alive; then
                 if [ ! -f "$RUN/state" ]; then
                     echo "failed=$(date +%s)" >"$RUN/state"
-                    stop_routing
+                    with_route_lock stop_routing
                     event "core failed, home direct"
                 fi
                 continue
@@ -707,7 +714,7 @@ watch() {
             if ! bring_up_tunnels; then
                 # Tried again in a minute, with the home direct meanwhile.
                 kill_core
-                [ -f "$RUN/state" ] || { echo "failed=$(date +%s)" >"$RUN/state"; stop_routing; }
+                [ -f "$RUN/state" ] || { echo "failed=$(date +%s)" >"$RUN/state"; with_route_lock stop_routing; }
                 continue
             fi
             if [ -f "$RUN/state" ]; then
@@ -767,7 +774,7 @@ start() {
         # is tried every minute, as when the core fails later.
         kill_core
         echo "failed=$(date +%s)" >"$RUN/state"
-        stop_routing
+        with_route_lock stop_routing
         event "tunnels did not come up, home direct"
         start_watch
         return 1
@@ -826,8 +833,6 @@ stop() {
         save_traffic
         rm -f "$RUN"/counter_*
     fi
-    stop_routing
-    rm -f "$RUN/down" "$RUN"/fails_*
     # busybox killall matches the 15-character kernel name; pidof does not.
     for name in hev-socks5-tunnel xray; do
         pids=$(pidof "$name")
@@ -840,6 +845,10 @@ stop() {
         sleep 1
         i=$((i + 1))
     done
+    # The core is down first, so no apply running meanwhile (which checks
+    # for it under the lock) puts the routing back.
+    with_route_lock stop_routing
+    rm -f "$RUN/down" "$RUN"/fails_*
     for name in hev-socks5-tunnel xray; do
         pids=$(pidof "$name")
         # shellcheck disable=SC2086 # several pids

@@ -102,7 +102,11 @@ fun StatsScreen(
     // router's traffic has no server type of the phone's.
     val routerHours by viewModel.routerHours.collectAsStateWithLifecycle()
     val withRouter = viewModel.routerLinked && serverSource == StatsServerSource.ALL
-    val slots = remember(stats, period) { buildSlots(stats, period) }
+    // A month with the router: its weeks, this phone's weekly rows put in
+    // them, so weeks with only router traffic have their row too.
+    val slots = remember(stats, period, withRouter) {
+        if (period == StatsPeriod.MONTH && withRouter) monthWeeks(stats) else buildSlots(stats, period)
+    }
     val routerAt: (Long) -> Long = remember(routerHours, period, withRouter) {
         { start ->
             if (!withRouter) {
@@ -225,7 +229,7 @@ fun StatsScreen(
                 } else {
                     // Animated chart card
                     EnhancedTrafficChart(
-                        stats = stats,
+                        stats = slots,
                         period = period,
                         routerAt = routerAt,
                         modifier = Modifier
@@ -760,6 +764,30 @@ private fun buildSlots(stats: List<TrafficStat>, period: StatsPeriod): List<Traf
                 stats
             }
         }
+    }
+}
+
+/** This month's weeks (from the 1st, 7 days each), with this phone's rows summed into them. */
+private fun monthWeeks(stats: List<TrafficStat>): List<TrafficStat> {
+    val cal = Calendar.getInstance(TimeZone.getDefault())
+    cal.set(Calendar.HOUR_OF_DAY, 0)
+    cal.set(Calendar.MINUTE, 0)
+    cal.set(Calendar.SECOND, 0)
+    cal.set(Calendar.MILLISECOND, 0)
+    cal.set(Calendar.DAY_OF_MONTH, 1)
+    val monthStart = cal.timeInMillis / 1000
+    cal.add(Calendar.MONTH, 1)
+    val monthEnd = cal.timeInMillis / 1000
+    val week = 7 * 86400L
+    val starts = generateSequence(monthStart) { it + week }.takeWhile { it < monthEnd }.toList()
+    return starts.mapIndexed { index, start ->
+        val inWeek = stats.filter { ((it.period - monthStart) / week).toInt().coerceIn(0, starts.lastIndex) == index }
+        TrafficStat(
+            period = start,
+            totalBytes = inWeek.sumOf { it.totalBytes },
+            totalSeconds = inWeek.sumOf { it.totalSeconds },
+            sessions = inWeek.sumOf { it.sessions },
+        )
     }
 }
 

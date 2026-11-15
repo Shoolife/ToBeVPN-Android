@@ -323,8 +323,10 @@ class RouterRepository @Inject constructor(
      */
     suspend fun migrateDefaultDevices(devices: List<RouterDevice>): RouterStatus = withRouter { shell ->
         val saves = devices.filter { RouterAgent.validMac(it.mac.lowercase()) }.joinToString("") { device ->
-            val name = RouterAgent.shellQuoteInner(device.name.orEmpty().filter { !it.isISOControl() && it != '|' }.take(40))
-            "TOBEVPN_NO_APPLY=1 ${RouterAgent.SCRIPT} set-device '${device.mac.lowercase()}' vpn 0 '$name' && "
+            val name = RouterAgent.shellQuoteInner(RouterAgent.cleanName(device.name.orEmpty()))
+            // The slot it already rode (a "default" entry can name one).
+            val slot = device.slot.coerceIn(0, RouterAgent.MAX_SLOT)
+            "TOBEVPN_NO_APPLY=1 ${RouterAgent.SCRIPT} set-device '${device.mac.lowercase()}' vpn $slot '$name' && "
         }
         shell.runOk("$saves${RouterAgent.SCRIPT} set-default direct")
         RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
@@ -388,7 +390,7 @@ class RouterRepository @Inject constructor(
         if (!RouterAgent.validMac(cleanMac) || mode !in setOf("vpn", "direct", "default") || slot !in 0..RouterAgent.MAX_SLOT) {
             throw RouterException("invalid device")
         }
-        val cleanName = name.filter { !it.isISOControl() && it != '|' }.take(40).trim()
+        val cleanName = RouterAgent.cleanName(name)
         withRouter { shell ->
             shell.runOk(
                 "${RouterAgent.SCRIPT} set-device '$cleanMac' '$mode' '$slot' '${RouterAgent.shellQuoteInner(cleanName)}'",
@@ -566,7 +568,8 @@ class RouterRepository @Inject constructor(
          */
         fun usedSlots(network: RouterNetwork, exceptMac: String?, defaultVpn: Boolean = false): Set<Int> =
             network.devices.filter { it.mac != exceptMac && it.mode == "vpn" }.map { it.slot }.toSet() +
-                (if (defaultVpn && network.devices.any { it.mac != exceptMac && it.mode == "default" }) setOf(0) else emptySet())
+                // A "default" device rides the slot its entry names (0 unless another app set one).
+                (if (defaultVpn) network.devices.filter { it.mac != exceptMac && it.mode == "default" }.map { it.slot }.toSet() else emptySet())
 
         sealed interface SlotPlan {
             data class Ready(val list: List<SlotServer>?, val slot: Int) : SlotPlan

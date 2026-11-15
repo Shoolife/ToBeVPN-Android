@@ -365,7 +365,9 @@ class RouterShell(private val session: Session) {
 
     private companion object {
         /** Longest a single router command may take (an upload of Xray over Wi-Fi is far shorter). */
-        const val COMMAND_DEADLINE_MS = 180_000L
+        // A restart probes each server in turn (up to ~18 s each) before the
+        // routes: a router with many unreachable servers needs this long.
+        const val COMMAND_DEADLINE_MS = 300_000L
         val WATCHDOG: java.util.concurrent.ScheduledExecutorService =
             java.util.concurrent.Executors.newSingleThreadScheduledExecutor { runnable ->
                 Thread(runnable, "router-ssh-watchdog").apply { isDaemon = true }

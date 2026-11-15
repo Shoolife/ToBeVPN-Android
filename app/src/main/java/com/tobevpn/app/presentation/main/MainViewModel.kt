@@ -699,7 +699,9 @@ class MainViewModel @Inject constructor(
             val authenticated = authRepository.getAuthStateSnapshot() as? AuthState.Authenticated
                 ?: return@launchGuarded
             if (_purchasePlans.value != null) return@launchGuarded
-            loadCachedPurchasePlanShape(authenticated.telegramId)?.let { cached ->
+            val cached = loadCachedPurchasePlanShape(authenticated.telegramId)
+            // Fresh plans that arrived during the read are kept.
+            if (cached != null && _purchasePlans.value == null) {
                 _purchasePlans.value = cached
                 _purchasePlansFromCache.value = true
             }
@@ -940,13 +942,17 @@ class MainViewModel @Inject constructor(
         runCatching {
             val connectivity = context.getSystemService(android.net.ConnectivityManager::class.java)
             val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+                // On the main thread, like every other caller: the job and the
+                // throttle are not shared between threads.
                 override fun onAvailable(network: android.net.Network) {
-                    checkRouterVpn(force = true)
+                    viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) { checkRouterVpn(force = true) }
                 }
 
                 override fun onLost(network: android.net.Network) {
-                    _routerVpn.value = null
-                    checkRouterVpn(force = true)
+                    viewModelScope.launch(kotlinx.coroutines.Dispatchers.Main) {
+                        _routerVpn.value = null
+                        checkRouterVpn(force = true)
+                    }
                 }
             }
             connectivity.registerNetworkCallback(

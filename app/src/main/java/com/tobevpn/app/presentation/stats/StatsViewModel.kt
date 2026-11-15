@@ -40,31 +40,35 @@ class StatsViewModel @Inject constructor(
      */
     val routerLinked: Boolean = routerRepository.hasLinks()
 
-    private val _routerHours = MutableStateFlow(routerRepository.cachedTraffic()?.second.orEmpty())
-    val routerHours: StateFlow<List<com.tobevpn.app.router.TrafficHour>> = _routerHours.asStateFlow()
-
-    init {
-        if (routerLinked) {
-            viewModelScope.launch {
-                while (true) {
-                    refreshRouterTraffic()
-                    kotlinx.coroutines.delay(ROUTER_TRAFFIC_EVERY_MS)
-                }
-            }
+    /**
+     * The router's traffic: the last read at once, then read again every
+     * minute only while the Stats screen is shown (and only from the
+     * router's own network).
+     */
+    val routerHours: StateFlow<List<com.tobevpn.app.router.TrafficHour>> = kotlinx.coroutines.flow.flow {
+        emit(routerRepository.cachedTraffic()?.second.orEmpty())
+        if (!routerLinked) return@flow
+        while (true) {
+            readRouterTraffic()?.let { emit(it) }
+            kotlinx.coroutines.delay(ROUTER_TRAFFIC_EVERY_MS)
         }
-    }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        routerRepository.cachedTraffic()?.second.orEmpty(),
+    )
 
-    private suspend fun refreshRouterTraffic() {
+    private suspend fun readRouterTraffic(): List<com.tobevpn.app.router.TrafficHour>? {
         runCatching { routerRepository.detect() }
-        val here = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching { routerRepository.linkHere() }.getOrNull()
-        } ?: return
-        try {
-            _routerHours.value = routerRepository.traffic()
+        } ?: return null
+        return try {
+            routerRepository.traffic()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            // The last read stays.
+            null
         }
     }
 
