@@ -177,7 +177,9 @@ fun StatsScreen(
                     // Fades follow the period and servers, not each minute of traffic.
                     fadeKey = shownPeriod to (view?.source ?: serverSource),
                     // The total is for the servers chosen, whatever the period.
-                    totalFadeKey = view?.source ?: serverSource,
+                    // (keyed as its own query is: by the chosen servers).
+                    totalFadeKey = serverSource,
+                    periodBytes = stats.sumOf { it.totalBytes },
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -368,6 +370,8 @@ private fun HeroStatsCard(
     routerBytes: Long? = null,
     fadeKey: Any? = null,
     totalFadeKey: Any? = null,
+    /** This device's traffic in the chosen period, for the average per session. */
+    periodBytes: Long = totalBytes,
 ) {
     // Another period or servers: each number fades over to its new value
     // with the chart's fade (FadingText), never counted or jumped.
@@ -497,7 +501,7 @@ private fun HeroStatsCard(
                         icon = Icons.AutoMirrored.Filled.ShowChart,
                         label = stringResource(R.string.stats_metric_avg),
                         value = formatBytes(
-                            if (totalSessions > 0) totalBytes / totalSessions else 0
+                            if (totalSessions > 0) periodBytes / totalSessions else 0
                         ),
                         primaryContentColor = primaryContentColor,
                         secondaryContentColor = secondaryContentColor,

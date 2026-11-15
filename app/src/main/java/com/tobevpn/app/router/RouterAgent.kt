@@ -443,9 +443,8 @@ object RouterAgent {
      * none runs.
      */
     const val OWN_XRAY_PID =
-        "\$(r=\$(readlink -f /opt/tobevpn/xray 2>/dev/null); r=\${r:-/opt/tobevpn/xray}; " +
-            "for p in \$(pidof xray); do case \"\$(readlink /proc/\$p/exe 2>/dev/null)\" in " +
-            "/opt/tobevpn/xray | \"/opt/tobevpn/xray (deleted)\" | \"\$r\" | \"\$r (deleted)\") echo \$p; break ;; esac; done)"
+        "\$(for p in \$(pidof xray); do " +
+            "[ \"\$(tr '\\0' '\\n' </proc/\$p/cmdline 2>/dev/null | head -n 1)\" = /opt/tobevpn/xray ] && { echo \$p; break; }; done)"
 
     /**
      * The VPN counts as on while its own core runs or its watchdog waits to

@@ -1,6 +1,5 @@
 package com.tobevpn.app.presentation.router
 
-import kotlinx.coroutines.flow.first
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -264,7 +263,6 @@ class RouterViewModel @Inject constructor(
             // Whether the linked router is this network's was decided with the
             // mark seen before (possibly another network's): read once more
             // when the fresh detection says otherwise.
-            refreshRouterCredentials()
             val hereNow = withContext(Dispatchers.IO) { repository.linkHere() }
             // A different router (not only none ↔ one) is read again too.
             // Ids compared only when both are known: a link that just learned its
@@ -764,59 +762,6 @@ class RouterViewModel @Inject constructor(
             shortUuid,
         )?.toString()
     }
-
-    /**
-     * After the account's link was reset (or a server moved) the router still
-     * logs in with the old credentials: its servers are written again, once,
-     * when the screen sees that. Quiet: no spinner, the status just follows.
-     */
-    private fun refreshRouterCredentials() {
-        val network = _state.value.network ?: return
-        val status = _state.value.status ?: return
-        val hwid = status.hwid ?: return
-        if (_state.value.servers.isEmpty() || !status.installed || credentialsJob?.isActive == true) return
-        // Once per router while the screen is open: a router that stays
-        // different (another account's) is not asked again and again.
-        val routerKey = "${_state.value.link?.host}|${hwid.lowercase()}"
-        if (routerKey == credentialsCheckedFor) return
-        credentialsCheckedFor = routerKey
-        credentialsJob = viewModelScope.launch {
-            runRouter(onError = { false }) {
-                val key = sessionDao.getSession()?.shortUuid
-                if (!repository.credentialsStale(network, _state.value.servers, key)) return@runRouter
-                // Only this account's router gets this account's credentials
-                // (an account list that cannot be read stops here too).
-                if (accountRouters().none { it.first.equals(hwid, ignoreCase = true) }) return@runRouter
-                // This app may be the stale side (the link was reset on another
-                // device): its own link is synced and must answer live with
-                // servers, or nothing is written.
-                try {
-                    authRepository.syncSubscription(force = true)
-                } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) {
-                    return@runRouter
-                }
-                if (!vpnRepository.subscriptionIsLive()) return@runRouter
-                val servers = vpnRepository.refreshServers(forceRefresh = true).getOrNull()
-                    ?.filter { it.isAvailable } ?: return@runRouter
-                if (_state.value.busy || _state.value.savingMac != null) return@runRouter
-                _state.update { it.copy(busy = true) }
-                try {
-                    val next = repository.refreshCredentials(servers, subscriptionUrl(), sessionDao.getSession()?.shortUuid)
-                        ?: return@runRouter
-                    _state.update { it.copy(status = next) }
-                } finally {
-                    _state.update { it.copy(busy = false) }
-                }
-                // The slots and their new keys as the router has them now.
-                runCatching { repository.devices() }.getOrNull()?.let { fresh -> _state.update { it.copy(network = fresh) } }
-            }
-        }
-    }
-
-    private var credentialsCheckedFor: String? = null
-    private var credentialsJob: kotlinx.coroutines.Job? = null
 
     fun clearNotice(id: Long) = _state.update { if (it.notice?.id == id) it.copy(notice = null) else it }
 

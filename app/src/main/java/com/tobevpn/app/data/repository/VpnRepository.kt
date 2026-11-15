@@ -59,24 +59,6 @@ class VpnRepository @Inject constructor(
         }
     }
 
-    /**
-     * Whether the account's current subscription link answers with servers
-     * right now, from the network (never from a cache): proof that this app's
-     * credentials are the live ones before it writes them anywhere else.
-     */
-    suspend fun subscriptionIsLive(): Boolean {
-        val session = sessionDao.getSession() ?: return false
-        val key = session.shortUuid?.takeIf { it.isNotBlank() } ?: return false
-        return try {
-            val profile = subscriptionPinger.fetchProfile(subscriptionUrl = session.subscriptionUrl, subscriptionKey = key)
-            profile != null && profile.isSuccessful && profile.links.isNotEmpty() && !profile.isUsageBlocked
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            false
-        }
-    }
-
     suspend fun refreshServers(forceRefresh: Boolean = false): Result<List<Server>> {
         val startedAt = SystemClock.elapsedRealtime()
         val session = sessionDao.getSession()
