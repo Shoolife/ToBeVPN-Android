@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.router
 
+import com.tobevpn.app.presentation.components.FadingText
 import androidx.compose.animation.AnimatedVisibility
 import com.tobevpn.app.presentation.components.BrandLoader
 import androidx.compose.animation.AnimatedContent
@@ -489,12 +490,11 @@ private fun RouterHeader(state: RouterUiState, onRename: () -> Unit) {
                         Modifier
                     },
                 ) {
-                    Text(
+                    // A new name (renamed here or elsewhere) fades in.
+                    FadingText(
                         title,
                         style = fixedLayoutTextStyle(MaterialTheme.typography.titleMedium),
                         fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     if (renamable) {
@@ -508,12 +508,10 @@ private fun RouterHeader(state: RouterUiState, onRename: () -> Unit) {
                     }
                 }
                 if (meta.isNotEmpty()) {
-                    Text(
+                    FadingText(
                         meta,
                         style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }

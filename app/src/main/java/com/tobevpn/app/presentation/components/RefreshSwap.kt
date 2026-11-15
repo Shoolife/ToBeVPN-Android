@@ -2,6 +2,7 @@ package com.tobevpn.app.presentation.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -9,7 +10,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.delay
 
 /** What a screen shows of a refresh, and how visible it is right now. */
 class RefreshSwap internal constructor(shown: Boolean, private val fade: Animatable<Float, *>) {
@@ -37,14 +37,15 @@ fun rememberRefreshSwap(refreshing: Boolean): RefreshSwap {
             fade.animateTo(1f, tween(REFRESH_FADE_IN_MS, easing = FastOutSlowInEasing))
             return@LaunchedEffect
         }
-        fade.animateTo(0f, tween(REFRESH_FADE_OUT_MS, easing = FastOutSlowInEasing))
+        // Out quickly and only partly, so the screen never goes blank between
+        // the two views; the new one then rises evenly from there.
+        fade.animateTo(REFRESH_LOW_ALPHA, tween(REFRESH_FADE_OUT_MS, easing = LinearOutSlowInEasing))
         swap.refreshing = refreshing
-        delay(REFRESH_GAP_MS)
         fade.animateTo(1f, tween(REFRESH_FADE_IN_MS, easing = FastOutSlowInEasing))
     }
     return swap
 }
 
-private const val REFRESH_FADE_OUT_MS = 220
-private const val REFRESH_GAP_MS = 40L
-private const val REFRESH_FADE_IN_MS = 420
+private const val REFRESH_FADE_OUT_MS = 160
+private const val REFRESH_LOW_ALPHA = 0.1f
+private const val REFRESH_FADE_IN_MS = 360

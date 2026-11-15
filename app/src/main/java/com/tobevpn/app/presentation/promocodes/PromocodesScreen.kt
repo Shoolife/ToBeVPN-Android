@@ -329,10 +329,13 @@ private fun PromocodeContent(
 
             if (items.size < total) {
                 item {
-                    PromocodeLoadMoreButton(
-                        loading = isLoadingMore,
-                        onClick = onLoadMore,
-                    )
+                    // Moves when the list above it swaps: fades with it.
+                    Box(swapFade) {
+                        PromocodeLoadMoreButton(
+                            loading = isLoadingMore,
+                            onClick = onLoadMore,
+                        )
+                    }
                 }
             }
         }

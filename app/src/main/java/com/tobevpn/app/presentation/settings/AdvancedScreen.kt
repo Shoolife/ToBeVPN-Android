@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.settings
 
+import com.tobevpn.app.presentation.components.FadingText
 import com.tobevpn.app.presentation.components.rememberRefreshSwap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -1316,7 +1317,8 @@ private fun LinkedDevicesSheetBody(
                     }
 
                     Column(swapFade) {
-                        if (!refreshActive && (routerDevices.isNotEmpty() || gatewayHere != null)) {
+                        // The routers keep their section while refreshing, with placeholders.
+                        if (routerDevices.isNotEmpty() || gatewayHere != null) {
                             Text(
                                 text = stringResource(
                                     if (routerDevices.size + (if (gatewayHere != null) 1 else 0) > 1) {
@@ -1333,44 +1335,51 @@ private fun LinkedDevicesSheetBody(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                if (gatewayHere != null) {
-                                    RouterHereCard(
-                                        title = linkedHere?.name ?: routerHere.model
-                                            ?: stringResource(R.string.router_not_detected),
-                                        meta = when {
-                                            linkedHere != null -> listOfNotNull(
-                                                routerHere.model?.takeIf { it != linkedHere.name },
-                                                stringResource(R.string.router_this_network),
-                                            ).joinToString(" • ")
-                                            // ToBeVPN runs on it, set up from another device.
-                                            notCurrent.any { it.inferredKind() == DeviceKind.Router && isRouterHere(it) } ->
-                                                stringResource(R.string.router_card_installed)
-                                            routerHere.firmware != null -> stringResource(R.string.router_card_protect_home)
-                                            else -> gatewayHere
-                                        },
-                                        // The sheet slides away first, then the Router
-                                        // section comes in; it slides back on return.
-                                        onClick = {
-                                            // The sheet is part of this screen: it
-                                            // leaves with it and is there on return.
-                                            onOpenRouter()
-                                        },
-                                    )
-                                }
-                                routerDevices.forEach { device ->
-                                    LinkedDeviceCard(
-                                        device = device,
-                                        isCurrent = false,
-                                        isBusy = state.busyDeviceId == device.deviceId,
-                                        onDisconnect = askDisconnect,
-                                        subtitle = if (gatewayHere != null) stringResource(R.string.router_other_network) else null,
-                                    )
+                                if (refreshActive) {
+                                    repeat(routerDevices.size + (if (gatewayHere != null) 1 else 0)) {
+                                        LinkedDeviceLoadingCard(alpha = refreshPlaceholderAlpha, isCurrent = false)
+                                    }
+                                } else {
+                                    if (gatewayHere != null) {
+                                        RouterHereCard(
+                                            title = linkedHere?.name ?: routerHere.model
+                                                ?: stringResource(R.string.router_not_detected),
+                                            meta = when {
+                                                linkedHere != null -> listOfNotNull(
+                                                    routerHere.model?.takeIf { it != linkedHere.name },
+                                                    stringResource(R.string.router_this_network),
+                                                ).joinToString(" • ")
+                                                // ToBeVPN runs on it, set up from another device.
+                                                notCurrent.any { it.inferredKind() == DeviceKind.Router && isRouterHere(it) } ->
+                                                    stringResource(R.string.router_card_installed)
+                                                routerHere.firmware != null -> stringResource(R.string.router_card_protect_home)
+                                                else -> gatewayHere
+                                            },
+                                            // The sheet slides away first, then the Router
+                                            // section comes in; it slides back on return.
+                                            onClick = {
+                                                // The sheet is part of this screen: it
+                                                // leaves with it and is there on return.
+                                                onOpenRouter()
+                                            },
+                                        )
+                                    }
+                                    routerDevices.forEach { device ->
+                                        LinkedDeviceCard(
+                                            device = device,
+                                            isCurrent = false,
+                                            isBusy = state.busyDeviceId == device.deviceId,
+                                            onDisconnect = askDisconnect,
+                                            subtitle = if (gatewayHere != null) stringResource(R.string.router_other_network) else null,
+                                        )
+                                    }
                                 }
                             }
                             Spacer(modifier = Modifier.height(20.dp))
                         }
                     }
 
+                    // Fades with the blocks above it: it moves when they swap.
                     Text(
                         text = stringResource(R.string.devices_other_devices),
                         style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
@@ -1378,6 +1387,7 @@ private fun LinkedDevicesSheetBody(
                         maxLines = 1,
                         softWrap = false,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = swapFade,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                     }
@@ -2233,21 +2243,18 @@ private fun RouterHereCard(title: String, meta: String, onClick: () -> Unit) {
             DeviceKindIcon(DeviceKind.Router)
             Spacer(modifier = Modifier.width(14.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
+                // A new name (renamed on the Router screen or elsewhere) fades in.
+                FadingText(
                     text = title,
                     style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                     fontWeight = FontWeight.SemiBold,
                     color = if (isDark) MaterialTheme.colorScheme.onSurface else Color.Black,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 Spacer(modifier = Modifier.height(4.dp))
-                Text(
+                FadingText(
                     text = meta,
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Icon(
