@@ -454,6 +454,28 @@ class RouterRepository @Inject constructor(
      * Anything else is null, so the app never claims a VPN that is not there.
      */
     suspend fun protection(): Protection? {
+        val handle = withContext(Dispatchers.IO) { detector.homeLan()?.network?.networkHandle }
+        return protectionNow().also { lastProtection = KnownProtection(handle, it) }
+    }
+
+    /** The last answer of [protection] and the network it was given on. */
+    class KnownProtection(val network: Long?, val protection: Protection?)
+
+    @Volatile
+    private var lastProtection: KnownProtection? = null
+
+    /**
+     * The last answer of [protection], when it was given on the network the
+     * phone is on now: a screen shows it at once instead of first claiming a
+     * direct line, and asks again in the background. Null when not known.
+     */
+    fun knownProtection(): KnownProtection? {
+        val known = lastProtection ?: return null
+        val handle = detector.homeLan()?.network?.networkHandle
+        return known.takeIf { it.network == handle }
+    }
+
+    private suspend fun protectionNow(): Protection? {
         // Only on a network with a connected router's address: elsewhere (or
         // with no router at all) the gateway's pages are not even asked.
         // This network's router first: its mark picks the right one of

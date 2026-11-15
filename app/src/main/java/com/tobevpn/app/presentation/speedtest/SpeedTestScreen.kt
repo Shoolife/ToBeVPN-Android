@@ -125,6 +125,14 @@ fun SpeedTestScreen(
     val viaVpn by viewModel.viaVpn.collectAsStateWithLifecycle()
     val viaBaseStationBypass by viewModel.viaBaseStationBypass.collectAsStateWithLifecycle()
     val viaRouter by viewModel.viaRouter.collectAsStateWithLifecycle()
+    val routeKnown by viewModel.routeKnown.collectAsStateWithLifecycle()
+    // Hidden until the route is known, then faded in: never "Direct" first
+    // and the router's VPN a moment later.
+    val badgeAlpha by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (viaVpn || routeKnown) 1f else 0f,
+        animationSpec = androidx.compose.animation.core.tween(220),
+        label = "speedRouteBadge",
+    )
     val history by viewModel.history.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -156,7 +164,9 @@ fun SpeedTestScreen(
                         viaVpn = viaVpn,
                         viaBaseStationBypass = viaBaseStationBypass,
                         viaRouter = viaRouter,
-                        modifier = Modifier.padding(end = 12.dp),
+                        modifier = Modifier
+                            .padding(end = 12.dp)
+                            .graphicsLayer { alpha = badgeAlpha },
                     )
                 },
             )

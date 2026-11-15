@@ -83,7 +83,12 @@ class SpeedTestViewModel @Inject constructor(
      */
     val viaVpn: StateFlow<Boolean> = connectionManager.connectionState
         .map { it is ConnectionState.Connected }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+        // The current state from the first frame, not "off" for a moment.
+        .stateIn(
+            viewModelScope,
+            SharingStarted.Eagerly,
+            connectionManager.connectionState.value is ConnectionState.Connected,
+        )
 
     /** Whether that tunnel goes through a base-station bypass server. */
     val viaBaseStationBypass: StateFlow<Boolean> = combine(
@@ -93,7 +98,17 @@ class SpeedTestViewModel @Inject constructor(
         state is ConnectionState.Connected && server?.source == ServerSource.BASE_STATION_BYPASS
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
-    private val _viaRouter = MutableStateFlow(false)
+    // The last answer on this network, shown at once (Home has usually just
+    // asked); a fresh one follows.
+    private val knownRouter = routerRepository.knownProtection()
+    private val _viaRouter = MutableStateFlow(knownRouter?.protection != null)
+
+    private val _routeKnown = MutableStateFlow(knownRouter != null)
+    /**
+     * Whether the route is known yet. Until then the badge stays hidden
+     * rather than claiming a direct line the router's VPN may contradict.
+     */
+    val routeKnown: StateFlow<Boolean> = _routeKnown.asStateFlow()
     /**
      * With the app's VPN off, whether the home router sends this phone
      * through its VPN: the test then measures that tunnel, not a direct line.
@@ -109,6 +124,7 @@ class SpeedTestViewModel @Inject constructor(
             false
         }
         _viaRouter.value = through
+        _routeKnown.value = true
         return through
     }
 
