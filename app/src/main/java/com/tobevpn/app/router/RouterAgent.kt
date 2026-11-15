@@ -294,6 +294,42 @@ object RouterAgent {
             parts.all { part -> part.length == 2 && part.all { it.isDigit() || it.lowercaseChar() in 'a'..'f' } }
     }
 
+    /**
+     * Writes the router's servers: the Russian sites list when the bypass
+     * is on and the router has none yet (the phone's list is the smaller
+     * one), xray.json, one tunnel config per slot, the slot list and the
+     * addresses that go around the tunnels. Used by the install and by every
+     * later server change, so both leave the same layout.
+     */
+    fun writeServerConfig(
+        shell: RouterShell,
+        servers: List<SlotServer>,
+        sites: ByteArray?,
+        bypassHosts: Collection<String>,
+    ) {
+        val ruDirect = shell.run("cat $RU_DIRECT_FLAG 2>/dev/null").first.trim() != "0"
+        val withSites = ruDirect && sites != null
+        if (withSites) writeRuSitesIfMissing(shell, sites!!)
+        shell.writeFile("/opt/tobevpn/xray.json", xrayConfig(servers, withSites).toByteArray(), "600")
+        for (slot in 0..MAX_SLOT) {
+            val path = if (slot == 0) "/opt/tobevpn/hev.yml" else "/opt/tobevpn/hev$slot.yml"
+            if (servers.any { it.slot == slot }) {
+                shell.writeFile(path, hevConfig(slot).toByteArray(), "600")
+            } else {
+                shell.runOk("rm -f '$path'")
+            }
+        }
+        shell.writeFile("/opt/tobevpn/slots", slotsFile(servers).toByteArray(), "644")
+        shell.writeFile("/opt/tobevpn/servers", serverList(bypassHosts).toByteArray(), "644")
+    }
+
+    /** The phone's sites list, only when the router has none (the desktop app carries the fuller one). */
+    fun writeRuSitesIfMissing(shell: RouterShell, sites: ByteArray) {
+        if (shell.run("[ -s $RU_SITES_PATH ]").second == 0) return
+        shell.writeFile(RU_SITES_PATH, sites, "644")
+        shell.writeFile(RU_SITES_DIGEST, "${sha256Hex(sites)}\n".toByteArray(), "644")
+    }
+
     fun shellQuoteInner(value: String) = value.replace("'", "'\\''")
 
     fun cleanName(name: String, max: Int = 40) =

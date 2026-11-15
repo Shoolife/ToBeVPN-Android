@@ -82,6 +82,14 @@ class RouterDetector @Inject constructor(
         val lan = homeLan() ?: return@withContext RouterInfo()
         val info = RouterInfo(gateway = lan.gateway)
         val root = httpGet(lan, "/") ?: return@withContext info
+        // A web server that sends HTTP to HTTPS (OpenWrt's redirect_https):
+        // the page behind it would need its self-signed certificate accepted,
+        // which an app from Google Play must not do. A redirect to LuCI is
+        // still OpenWrt; the model and the mark stay unknown (the PC app reads
+        // them, and the router is told apart by its host key once connected).
+        if (redirectsToHttps(root)) {
+            return@withContext info.copy(firmware = if (root.contains("/cgi-bin/luci")) "openwrt" else null)
+        }
         // LuCI's index only redirects (meta refresh) to /cgi-bin/luci.
         val page = if (root.contains("/cgi-bin/luci")) httpGet(lan, "/cgi-bin/luci") ?: root else root
         val (model, firmware) = identify(page)
@@ -112,6 +120,14 @@ class RouterDetector @Inject constructor(
     companion object {
         private const val HTTP_TIMEOUT_MS = 3_000
         private val MARK = Regex("tobevpn-router ([0-9a-f]{16})")
+
+        /** An HTTP answer that sends the browser to an https:// address. */
+        fun redirectsToHttps(response: String): Boolean {
+            val lines = response.lineSequence().map { it.trimEnd('\r') }
+            val status = lines.firstOrNull()?.split(' ')?.getOrNull(1).orEmpty()
+            return status.startsWith("3") &&
+                lines.drop(1).takeWhile { it.isNotEmpty() }.any { it.lowercase().startsWith("location: https://") }
+        }
         private const val MAX_PAGE_BYTES = 64 * 1024
 
         /** Model and firmware family from a router's login page. */

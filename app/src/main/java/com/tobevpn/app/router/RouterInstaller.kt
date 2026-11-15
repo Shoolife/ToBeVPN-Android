@@ -288,24 +288,9 @@ class RouterInstaller @Inject constructor(
                 "MODEL='${RouterAgent.shellQuoteInner(model)}'\n"
             shell.writeFile(RouterAgent.SCRIPT, agentScript(), "755")
             // The servers and their configs, as when a device's server changes.
-            val ruDirect = shell.run("cat ${RouterAgent.RU_DIRECT_FLAG} 2>/dev/null").first.trim() != "0"
-            val withSites = ruDirect && ruSites != null
-            if (withSites && shell.run("[ -s ${RouterAgent.RU_SITES_PATH} ]").second != 0) {
-                shell.writeFile(RouterAgent.RU_SITES_PATH, ruSites!!, "644")
-                shell.writeFile(RouterAgent.RU_SITES_DIGEST, "${RouterAgent.sha256Hex(ruSites)}\n".toByteArray(), "644")
-            }
-            shell.writeFile("/opt/tobevpn/xray.json", RouterAgent.xrayConfig(servers, withSites).toByteArray(), "600")
-            for (slot in 0..RouterAgent.MAX_SLOT) {
-                val path = if (slot == 0) "/opt/tobevpn/hev.yml" else "/opt/tobevpn/hev$slot.yml"
-                if (servers.any { it.slot == slot }) {
-                    shell.writeFile(path, RouterAgent.hevConfig(slot).toByteArray(), "600")
-                } else {
-                    shell.runOk("rm -f '$path'")
-                }
-            }
-            shell.writeFile("/opt/tobevpn/slots", RouterAgent.slotsFile(servers).toByteArray(), "644")
+            // The servers as every later change writes them (one shared writer).
+            RouterAgent.writeServerConfig(shell, servers, ruSites, serverHosts)
             shell.writeFile("/opt/tobevpn/subscription.conf", subscription.toByteArray(), "600")
-            shell.writeFile("/opt/tobevpn/servers", RouterAgent.serverList(serverHosts).toByteArray(), "644")
             // New devices stay direct until the owner picks a server for
             // them; choices made earlier are kept when reinstalling.
             shell.runOk(
@@ -457,8 +442,7 @@ class RouterInstaller @Inject constructor(
             }
             if (found.sitesMissing && ruSites != null) {
                 progress("upload:sites")
-                shell.writeFile(RouterAgent.RU_SITES_PATH, ruSites, "644")
-                shell.writeFile(RouterAgent.RU_SITES_DIGEST, "${RouterAgent.sha256Hex(ruSites)}\n".toByteArray(), "644")
+                RouterAgent.writeRuSitesIfMissing(shell, ruSites)
                 log(InstallLogLine("info", "Russian sites list: ${ruSites.size / 1024} KB"))
             }
             progress("start")

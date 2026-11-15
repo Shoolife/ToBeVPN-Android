@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111405
+AGENT_VERSION=2026111501
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -178,10 +178,45 @@ resolve4() {
     fi
 }
 
+# Brings the ip rules of the given priorities to the wanted list, one
+# "PRIO from|to ADDRESS TABLE" per line: the missing ones are added before
+# the extra ones go, so a device is never left without its rule (its traffic
+# would go out direct) while the rules change.
+sync_rules() {
+    wanted=$1
+    shift
+    current="$RUN/rules.now"
+    ip rule show 2>/dev/null | awk -v prios=" $* " '
+        { p = $1; sub(":", "", p) }
+        index(prios, " " p " ") {
+            sel = ""; addr = ""; tab = ""
+            for (i = 2; i <= NF; i++) {
+                if ($i == "from" || $i == "to") { sel = $i; addr = $(i + 1) }
+                if ($i == "lookup") tab = $(i + 1)
+            }
+            if (sel != "" && tab != "") print p, sel, addr, tab
+        }' | sort -u >"$current"
+    sort -u "$wanted" -o "$wanted"
+    awk 'NR == FNR { have[$0] = 1; next } !have[$0]' "$current" "$wanted" |
+        while read -r p sel addr tab; do
+            ip rule add "$sel" "$addr" lookup "$tab" prio "$p" 2>/dev/null
+        done
+    awk 'NR == FNR { keep[$0] = 1; next } !keep[$0]' "$wanted" "$current" |
+        while read -r p sel addr tab; do
+            ip rule del "$sel" "$addr" lookup "$tab" prio "$p" 2>/dev/null
+        done
+}
+
 # Connections to ToBeVPN servers stay outside the tunnel: a device with its
 # own VPN on then connects directly, and its traffic is counted once.
+# Server addresses go around the tunnels (the apps' own VPN on home devices
+# reaches its servers directly). Names are resolved here, which can take a
+# while: done at start and every 6 hours, not on every route change; the
+# rules change without a gap.
 apply_server_bypass() {
-    while ip rule del lookup main prio "$BYPASS_PRIO" 2>/dev/null; do :; done
+    mkdir -p "$RUN"
+    wanted="$RUN/bypass.wanted"
+    : >"$wanted"
     for host in $(grep -E '^[A-Za-z0-9.:-]+$' "$DIR/servers" 2>/dev/null); do
         if echo "$host" | grep -qE '^[0-9.]+$'; then
             addresses=$host
@@ -189,9 +224,12 @@ apply_server_bypass() {
             addresses=$(resolve4 "$host")
         fi
         for address in $addresses; do
-            ip rule add to "$address" lookup main prio "$BYPASS_PRIO" 2>/dev/null
+            echo "$BYPASS_PRIO to $address main" >>"$wanted"
         done
     done
+    # A failed lookup of every name keeps the rules there were.
+    [ -s "$wanted" ] || ip rule show | grep -q "^$BYPASS_PRIO:" || return 0
+    [ -s "$wanted" ] && sync_rules "$wanted" "$BYPASS_PRIO"
 }
 
 default_mode() {
@@ -225,40 +263,53 @@ device_choices() {
 # DNS redirect: rebuilt on every apply. dns_rule sends a device's queries
 # to the router into its tunnel; dns_skip leaves a device's queries alone.
 dns_begin() {
+    mkdir -p "$RUN"
     if [ "$FW" = nft ]; then
-        nft delete table ip "$NFT_DNS_TABLE" 2>/dev/null
-        nft add table ip "$NFT_DNS_TABLE"
-        nft add chain ip "$NFT_DNS_TABLE" prerouting "{ type nat hook prerouting priority -105; policy accept; }"
+        # One nft transaction (dns_hook): the old rules stay until the new
+        # ones are in, together.
+        {
+            echo "add table ip $NFT_DNS_TABLE"
+            echo "add chain ip $NFT_DNS_TABLE prerouting { type nat hook prerouting priority -105; policy accept; }"
+            echo "flush chain ip $NFT_DNS_TABLE prerouting"
+        } >"$RUN/dns.nft"
     else
-        iptables -t nat -N "$DNS_CHAIN" 2>/dev/null || iptables -t nat -F "$DNS_CHAIN"
+        # A new chain is filled aside and swapped in by dns_hook.
+        iptables -t nat -N "${DNS_CHAIN}_N" 2>/dev/null || iptables -t nat -F "${DNS_CHAIN}_N"
     fi
 }
 
 dns_rule() {
     if [ "$FW" = nft ]; then
-        nft add rule ip "$NFT_DNS_TABLE" prerouting ip saddr "$1" ip daddr "$2" \
-            meta l4proto "{ tcp, udp }" th dport 53 dnat to "$TUNNEL_DNS:53"
+        echo "add rule ip $NFT_DNS_TABLE prerouting ip saddr $1 ip daddr $2 meta l4proto { tcp, udp } th dport 53 dnat to $TUNNEL_DNS:53" >>"$RUN/dns.nft"
         return
     fi
     for proto in udp tcp; do
-        iptables -t nat -A "$DNS_CHAIN" -s "$1" -d "$2" -p "$proto" --dport 53 \
+        iptables -t nat -A "${DNS_CHAIN}_N" -s "$1" -d "$2" -p "$proto" --dport 53 \
             -j DNAT --to-destination "$TUNNEL_DNS:53"
     done
 }
 
 dns_skip() {
     if [ "$FW" = nft ]; then
-        nft add rule ip "$NFT_DNS_TABLE" prerouting ip saddr "$1" return
+        echo "add rule ip $NFT_DNS_TABLE prerouting ip saddr $1 return" >>"$RUN/dns.nft"
     else
-        iptables -t nat -A "$DNS_CHAIN" -s "$1" -j RETURN
+        iptables -t nat -A "${DNS_CHAIN}_N" -s "$1" -j RETURN
     fi
 }
 
+# Puts the new DNS rules in place of the old ones in one step.
 dns_hook() {
-    # The nft chain is hooked itself; the iptables chain is jumped to.
-    [ "$FW" = nft ] && return 0
-    iptables -t nat -C PREROUTING -j "$DNS_CHAIN" -m comment --comment "$TAG" 2>/dev/null ||
-        iptables -t nat -I PREROUTING 1 -j "$DNS_CHAIN" -m comment --comment "$TAG"
+    if [ "$FW" = nft ]; then
+        nft -f "$RUN/dns.nft"
+        return
+    fi
+    # The new chain is jumped to first, then the old one goes and the new
+    # one takes its name.
+    iptables -t nat -I PREROUTING 1 -j "${DNS_CHAIN}_N" -m comment --comment "$TAG"
+    while iptables -t nat -D PREROUTING -j "$DNS_CHAIN" -m comment --comment "$TAG" 2>/dev/null; do :; done
+    iptables -t nat -F "$DNS_CHAIN" 2>/dev/null
+    iptables -t nat -X "$DNS_CHAIN" 2>/dev/null
+    iptables -t nat -E "${DNS_CHAIN}_N" "$DNS_CHAIN"
 }
 
 remove_dns_redirect() {
@@ -266,9 +317,11 @@ remove_dns_redirect() {
         nft delete table ip "$NFT_DNS_TABLE" 2>/dev/null
         return 0
     fi
-    while iptables -t nat -D PREROUTING -j "$DNS_CHAIN" -m comment --comment "$TAG" 2>/dev/null; do :; done
-    iptables -t nat -F "$DNS_CHAIN" 2>/dev/null
-    iptables -t nat -X "$DNS_CHAIN" 2>/dev/null
+    for chain in "$DNS_CHAIN" "${DNS_CHAIN}_N"; do
+        while iptables -t nat -D PREROUTING -j "$chain" -m comment --comment "$TAG" 2>/dev/null; do :; done
+        iptables -t nat -F "$chain" 2>/dev/null
+        iptables -t nat -X "$chain" 2>/dev/null
+    done
 }
 
 # Resolvers of the internet provider, used for the names of the servers.
@@ -431,7 +484,10 @@ apply_routes_now() {
         ip route replace default dev "$(tunnel_of "$slot")" table "$table" 2>/dev/null
         [ -n "$subnet" ] && ip route replace "$subnet" dev "$LAN_DEV" table "$table"
     done
-    clear_device_rules
+    # The wanted device rules are collected and then put in place without a
+    # gap (sync_rules); the DNS rules likewise (dns_begin ... dns_hook).
+    wanted="$RUN/rules.wanted"
+    : >"$wanted"
     dns_begin
     # The router's DNS goes through the tunnel when the home does; otherwise
     # only queries of VPN devices are sent through their tunnel.
@@ -463,26 +519,29 @@ apply_routes_now() {
         [ -n "$ip" ] || continue
         if [ "$mode" = direct ]; then
             # Only matters when the rest of the home goes through the VPN.
-            ip rule add from "$ip" lookup main prio "$DEVICE_PRIO"
+            echo "$DEVICE_PRIO from $ip main" >>"$wanted"
             dns_skip "$ip"
         elif [ "$slot" != 0 ]; then
-            ip rule add from "$ip" lookup "$((SLOT_TABLE_BASE + slot))" prio "$DEVICE_PRIO"
+            echo "$DEVICE_PRIO from $ip $((SLOT_TABLE_BASE + slot))" >>"$wanted"
             [ -n "$dns_router_ip" ] && dns_rule "$ip" "$dns_router_ip"
         elif [ $main_down = 1 ]; then
             # The router's server does not answer: direct until it does.
-            ip rule add from "$ip" lookup main prio "$DEVICE_PRIO"
+            echo "$DEVICE_PRIO from $ip main" >>"$wanted"
         elif [ "$(default_mode)" = direct ]; then
-            ip rule add from "$ip" lookup "$TABLE" prio "$PRIO"
+            echo "$PRIO from $ip $TABLE" >>"$wanted"
             [ -n "$dns_router_ip" ] && dns_rule "$ip" "$dns_router_ip"
         fi
     done
     if [ "$(default_mode)" = vpn ] && [ $main_down = 0 ] && [ -n "$subnet" ]; then
         # The whole home network, except the devices handled above.
-        ip rule add from "$subnet" lookup "$TABLE" prio "$PRIO"
+        echo "$PRIO from $subnet $TABLE" >>"$wanted"
     fi
+    sync_rules "$wanted" "$DEVICE_PRIO" "$PRIO"
     # DNS of VPN devices when the home is direct: resolved inside their tunnel.
     dns_hook
-    apply_server_bypass
+    # The servers' bypass is set at start and every 6 hours (names are
+    # resolved then); here only if it is missing (after the core came back).
+    ip rule show | grep -q "^$BYPASS_PRIO:" || apply_server_bypass
     fw_open
 }
 
@@ -683,6 +742,9 @@ start() {
             event "slot $slot down at start"
         }
     done
+    # The servers' addresses (perhaps new ones) before the routes: their
+    # names are resolved now, once per start.
+    apply_server_bypass
     apply_routes
     start_watch
     echo "started=1"

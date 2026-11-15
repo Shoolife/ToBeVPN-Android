@@ -106,6 +106,25 @@ class RouterSsh @Inject constructor(
     fun isPaired(host: String): Boolean = knownHosts().has(host)
 
     /**
+     * The host key the router at [host] shows, read from the key exchange
+     * alone (no login is tried): which of several routers paired at one
+     * address answers there now. Null when it does not answer.
+     */
+    fun scanHostKey(network: Network?, host: String): String? {
+        check(configured)
+        val seen = arrayOfNulls<String>(1)
+        val jsch = JSch()
+        jsch.setHostKeyRepository(PinnedHosts(expected = null, seen = seen))
+        val session = jsch.getSession("tobevpn-scan", host, 22).apply {
+            configure(network)
+            setConfig("PreferredAuthentications", "none")
+        }
+        runCatching { session.connect(SCAN_TIMEOUT_MS) }
+        session.disconnect()
+        return seen[0]
+    }
+
+    /**
      * Forgets the router at [host]: only the key it showed last, when known,
      * so another router paired at the same address (elsewhere) still works.
      */
@@ -300,6 +319,7 @@ class RouterSsh @Inject constructor(
 
     companion object {
         private const val TIMEOUT_MS = 10_000
+        private const val SCAN_TIMEOUT_MS = 4_000
 
         fun fingerprint(key: ByteArray): String =
             "SHA256:" + Base64.getEncoder().withoutPadding()

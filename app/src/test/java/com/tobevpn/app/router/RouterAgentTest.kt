@@ -204,6 +204,13 @@ class RouterAgentTest {
     }
 
     @Test
+    fun seesARedirectToHttps() {
+        assertTrue(RouterDetector.redirectsToHttps("HTTP/1.1 302 Found\r\nLocation: https://192.168.1.1/cgi-bin/luci\r\n\r\n"))
+        assertFalse(RouterDetector.redirectsToHttps("HTTP/1.1 200 OK\r\n\r\n<a href=\"https://x\">"))
+        assertFalse(RouterDetector.redirectsToHttps("HTTP/1.1 302 Found\r\nLocation: /cgi-bin/luci\r\n\r\n"))
+    }
+
+    @Test
     fun routerMarkMatchesTheAgent() {
         // Router shell: printf '%s' "befe0dc8-..." | sha256sum | cut -c1-16
         assertEquals("b5eda37d94f713a3", routerMark("BEFE0DC8-F668-5434-847A-1D108CE7D224"))

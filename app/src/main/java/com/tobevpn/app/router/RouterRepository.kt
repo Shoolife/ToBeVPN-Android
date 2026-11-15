@@ -107,8 +107,16 @@ class RouterRepository @Inject constructor(
     fun linkHere(): RouterLink? {
         val gateway = detector.homeLan()?.gateway ?: return null
         val mark = _router.value?.takeIf { it.gateway == gateway }?.mark
-        val chosen = synchronized(links) {
-            val candidates = links.filter { it.host == gateway && ssh.isPaired(it.host) }
+        val candidates = synchronized(links) { links.filter { it.host == gateway && ssh.isPaired(it.host) } }
+        // Several routers connected at this address: the one answering is the
+        // one whose host key it shows — asked directly, not guessed.
+        val byKey = if (candidates.size > 1 && candidates.any { it.hostKey != null }) {
+            runCatching { ssh.scanHostKey(network(), gateway) }.getOrNull()
+                ?.let { key -> candidates.firstOrNull { it.hostKey == key } }
+        } else {
+            null
+        }
+        val chosen = byKey ?: synchronized(links) {
             if (mark != null) {
                 // The entry that is this router; else the most recent one that
                 // may be (its id not read yet: just paired, e.g. again after a
@@ -373,13 +381,6 @@ class RouterRepository @Inject constructor(
         RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
     }.also(::remember)
 
-    suspend fun setDefaultMode(mode: String): RouterStatus {
-        require(mode == "vpn" || mode == "direct")
-        return withRouter { shell ->
-            shell.runOk("${RouterAgent.SCRIPT} set-default $mode")
-            RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
-        }.also(::remember)
-    }
 
     /** Sets one device to "vpn" (through [slot]), "direct" or back to "default". */
     suspend fun setDevice(mac: String, mode: String, slot: Int, name: String) {
@@ -504,27 +505,10 @@ class RouterRepository @Inject constructor(
         }
         val sites = withContext(Dispatchers.IO) { ruSites() }
         return withRouter { shell ->
-            shell.writeFile("/opt/tobevpn/servers", RouterAgent.serverList(serverHosts + serviceHosts()).toByteArray(), "644")
-            writeServers(shell, servers, sites)
+            RouterAgent.writeServerConfig(shell, servers, sites, serverHosts + serviceHosts())
             shell.runOk("${RouterAgent.SCRIPT} restart")
             RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
         }.also(::remember)
-    }
-
-    private fun writeServers(shell: RouterShell, servers: List<SlotServer>, sites: ByteArray?) {
-        val ruDirect = shell.run("cat ${RouterAgent.RU_DIRECT_FLAG} 2>/dev/null").first.trim() != "0"
-        val withSites = ruDirect && sites != null
-        if (withSites) writeRuSites(shell, sites!!)
-        shell.writeFile("/opt/tobevpn/xray.json", RouterAgent.xrayConfig(servers, withSites).toByteArray(), "600")
-        for (slot in 0..RouterAgent.MAX_SLOT) {
-            val path = if (slot == 0) "/opt/tobevpn/hev.yml" else "/opt/tobevpn/hev$slot.yml"
-            if (servers.any { it.slot == slot }) {
-                shell.writeFile(path, RouterAgent.hevConfig(slot).toByteArray(), "600")
-            } else {
-                shell.runOk("rm -f '$path'")
-            }
-        }
-        shell.writeFile("/opt/tobevpn/slots", RouterAgent.slotsFile(servers).toByteArray(), "644")
     }
 
     /** Turns the Russian sites bypass on or off in the config on the router and restarts. */
@@ -535,7 +519,7 @@ class RouterRepository @Inject constructor(
             null
         }
         return withRouter { shell ->
-            if (sites != null) writeRuSites(shell, sites)
+            if (sites != null) RouterAgent.writeRuSitesIfMissing(shell, sites)
             val config = JSONObject(shell.run("cat /opt/tobevpn/xray.json 2>/dev/null").first)
             RouterAgent.applyRuDirect(config, enabled)
             shell.writeFile("/opt/tobevpn/xray.json", config.toString(2).toByteArray(), "600")
@@ -543,18 +527,6 @@ class RouterRepository @Inject constructor(
             shell.runOk("${RouterAgent.SCRIPT} restart")
             RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
         }.also(::remember)
-    }
-
-    /**
-     * Puts the phone's list on the router only when it has none: the desktop
-     * app carries the fuller list (its "Update" brings it), and the phone's
-     * smaller one must not replace it.
-     */
-    private fun writeRuSites(shell: RouterShell, sites: ByteArray) {
-        if (shell.run("[ -s ${RouterAgent.RU_SITES_PATH} ]").second == 0) return
-        val digest = RouterAgent.sha256Hex(sites)
-        shell.writeFile(RouterAgent.RU_SITES_PATH, sites, "644")
-        shell.writeFile(RouterAgent.RU_SITES_DIGEST, "$digest\n".toByteArray(), "644")
     }
 
     @Volatile

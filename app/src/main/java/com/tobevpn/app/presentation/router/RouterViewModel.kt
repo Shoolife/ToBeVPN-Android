@@ -265,11 +265,6 @@ class RouterViewModel @Inject constructor(
         }
     }
 
-    /** Forgets the router on this phone; pairing again needs the password. */
-    fun unlink() {
-        repository.unlink()
-        _state.update { it.copy(paired = false, link = null, status = null, network = null) }
-    }
 
     fun control(action: String) = change { _state.update { state -> state.copy(status = repository.control(action)) } }
 
@@ -751,28 +746,6 @@ class RouterViewModel @Inject constructor(
 
     private var trafficJob: kotlinx.coroutines.Job? = null
 
-    /** Reads the router's traffic when the kept copy is older than [maxAgeMs]; silent on failure. */
-    fun refreshTraffic(maxAgeMs: Long = TRAFFIC_MAX_AGE_MS) {
-        val cached = repository.cachedTraffic()
-        if (cached != null && _state.value.traffic.isEmpty()) _state.update { it.copy(traffic = cached.second) }
-        if (cached != null && System.currentTimeMillis() - cached.first < maxAgeMs) return
-        if (trafficJob?.isActive == true) return
-        trafficJob = viewModelScope.launch {
-            val startedAt = android.os.SystemClock.elapsedRealtime()
-            _state.update { it.copy(trafficLoading = true) }
-            val hours = try {
-                repository.traffic()
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Exception) {
-                null
-            }
-            // A quick read still shows its spinner a moment, not as a flash.
-            val shown = android.os.SystemClock.elapsedRealtime() - startedAt
-            if (shown < TRAFFIC_MIN_LOADING_MS) delay(TRAFFIC_MIN_LOADING_MS - shown)
-            _state.update { it.copy(traffic = hours ?: it.traffic, trafficLoading = false) }
-        }
-    }
 
     /** Runs a router call; a failure is shown in red unless [onError] says otherwise. */
     private suspend fun runRouter(onError: (Exception) -> Boolean = { true }, block: suspend () -> Unit) {
