@@ -140,7 +140,7 @@ class RouterInstaller @Inject constructor(
         }
         return Binary(
             name = "hev-socks5-tunnel",
-            url = "https://github.com/heiher/hev-socks5-tunnel/releases/download/2.19.2/$asset",
+            url = "https://github.com/heiher/hev-socks5-tunnel/releases/download/$HEV_VERSION/$asset",
             downloadSha256 = sha,
             zipMember = null,
             sha256 = sha,
@@ -274,6 +274,9 @@ class RouterInstaller @Inject constructor(
                 log(InstallLogLine("info", "${binary.name}: uploaded ${content.size / 1024} KB"))
                 if (binary.name == "xray" && binary.version != null) {
                     shell.writeFile("/opt/tobevpn/xray.version", "${binary.version}\n".toByteArray(), "644")
+                }
+                if (binary.name == "hev-socks5-tunnel") {
+                    shell.writeFile("/opt/tobevpn/hev.version", "$HEV_VERSION\n".toByteArray(), "644")
                 }
             }
 
@@ -431,6 +434,9 @@ class RouterInstaller @Inject constructor(
                 if (binary.name == "xray" && binary.version != null) {
                     shell.writeFile("/opt/tobevpn/xray.version", "${binary.version}\n".toByteArray(), "644")
                 }
+                if (binary.name == "hev-socks5-tunnel") {
+                    shell.writeFile("/opt/tobevpn/hev.version", "$HEV_VERSION\n".toByteArray(), "644")
+                }
             }
             // The agent and its hooks only when this app's are newer: a newer
             // agent from the desktop app is not replaced with an older one.
@@ -465,16 +471,23 @@ class RouterInstaller @Inject constructor(
             val current = versionTuple(facts["xray_version"].orEmpty())
             current.isEmpty() || compareVersions(current, versionTuple(target)) < 0
         } else {
-            // Without a version to compare, only a missing binary is replaced:
-            // a different one may be newer (put there by the desktop app), and
-            // the two apps must not keep swapping each other's build.
-            facts["md5_${binary.name}"].isNullOrEmpty()
+            // hev: replaced when missing or older by the version written next
+            // to it (hev.version), never with an older build than the router
+            // has. A router from before that file: by the build's MD5.
+            val md5 = facts["md5_${binary.name}"]
+            val current = facts["hev_version"]?.trim()?.takeIf { it.isNotEmpty() }
+            when {
+                md5.isNullOrEmpty() -> true
+                current != null -> compareVersions(versionTuple(current), versionTuple(HEV_VERSION)) < 0
+                else -> md5 != binary.md5
+            }
         }
     }
 
     private fun componentFactsCommand(binaries: List<Binary>): String =
         binaries.joinToString("") { "echo md5_${it.name}=\$(md5sum /opt/tobevpn/${it.name} 2>/dev/null | cut -d' ' -f1); " } +
-            "echo xray_version=\$(cat /opt/tobevpn/xray.version 2>/dev/null || /opt/tobevpn/xray version 2>/dev/null | awk 'NR==1{print \$2}'); "
+            "echo xray_version=\$(cat /opt/tobevpn/xray.version 2>/dev/null || /opt/tobevpn/xray version 2>/dev/null | awk 'NR==1{print \$2}'); " +
+            "echo hev_version=\$(cat /opt/tobevpn/hev.version 2>/dev/null); "
 
     private fun packageInstallCommand(packages: List<String>): String {
         val list = packages.joinToString(" ")
@@ -596,6 +609,8 @@ class RouterInstaller @Inject constructor(
 
     companion object {
         private const val PINNED_XRAY_VERSION = "26.10.31"
+        /** The hev-socks5-tunnel build this app installs (also in its download URL). */
+        private const val HEV_VERSION = "2.19.2"
         private const val RELEASE_MIN_AGE_DAYS = 3L
         private val RELEASE_CHECK_EVERY: Duration = Duration.ofHours(6)
         private const val GITHUB_XRAY_DOWNLOADS = "https://github.com/XTLS/Xray-core/releases/download/"

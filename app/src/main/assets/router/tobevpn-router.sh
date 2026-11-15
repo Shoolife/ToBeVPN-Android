@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111505
+AGENT_VERSION=2026111506
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -168,11 +168,12 @@ remove_firewall_rules() {
 }
 
 # IPv4 addresses of a name: resolveip where installed, else busybox nslookup.
+NSLOOKUP_TIMEOUT=$(command -v timeout 2>/dev/null)
 resolve4() {
     if command -v resolveip >/dev/null 2>&1; then
         resolveip -4 -t 5 "$1" 2>/dev/null
     else
-        nslookup "$1" 2>/dev/null | awk '
+        ${NSLOOKUP_TIMEOUT:+timeout 5} nslookup "$1" 2>/dev/null | awk '
             /^Name:/ {named = 1; next}
             named && /^Address/ {sub(/^Address[^:]*:[ \t]*/, ""); if ($0 ~ /^[0-9]+(\.[0-9]+){3}$/) print $0}'
     fi
@@ -185,16 +186,18 @@ resolve4() {
 sync_rules() {
     wanted=$1
     shift
-    current="$RUN/rules.now"
+    # Each call its own files: calls for other priorities may run at once.
+    current="$wanted.now"
     ip rule show 2>/dev/null | awk -v prios=" $* " '
         { p = $1; sub(":", "", p) }
         index(prios, " " p " ") {
-            sel = ""; addr = ""; tab = ""
+            sel = ""; addr = ""; tab = ""; iif = ""
             for (i = 2; i <= NF; i++) {
                 if ($i == "from" || $i == "to") { sel = $i; addr = $(i + 1) }
                 if ($i == "lookup") tab = $(i + 1)
+                if ($i == "iif") iif = $(i + 1)
             }
-            if (sel != "" && tab != "") print p, sel, addr, tab
+            if (sel != "" && tab != "") print p, sel, addr, tab (iif != "" ? " " iif : "")
         }' | sort -u >"$current"
     # Not "sort -o" (busybox 1.34 prints instead of writing).
     sort -u "$wanted" >"$wanted.sorted" && mv "$wanted.sorted" "$wanted"
@@ -202,12 +205,15 @@ sync_rules() {
     # also true for the second file when the first is empty, and then
     # nothing at all was added (no rules on a fresh start).
     awk -v other="$current" 'BEGIN { while ((getline line < other) > 0) have[line] = 1 } !have[$0]' "$wanted" |
-        while read -r p sel addr tab; do
-            ip rule add "$sel" "$addr" lookup "$tab" prio "$p" 2>/dev/null
+        while read -r p sel addr tab iif; do
+            ip rule add "$sel" "$addr" ${iif:+iif "$iif"} lookup "$tab" prio "$p" 2>/dev/null
         done
+    # SYNC_ADD_ONLY: rules are only added (a partial list must not remove
+    # the rules of what it could not find).
+    [ -n "$SYNC_ADD_ONLY" ] && return 0
     awk -v other="$wanted" 'BEGIN { while ((getline line < other) > 0) keep[line] = 1 } !keep[$0]' "$current" |
-        while read -r p sel addr tab; do
-            ip rule del "$sel" "$addr" lookup "$tab" prio "$p" 2>/dev/null
+        while read -r p sel addr tab iif; do
+            ip rule del "$sel" "$addr" ${iif:+iif "$iif"} lookup "$tab" prio "$p" 2>/dev/null
         done
 }
 
@@ -219,21 +225,29 @@ sync_rules() {
 # rules change without a gap.
 apply_server_bypass() {
     mkdir -p "$RUN"
-    wanted="$RUN/bypass.wanted"
+    read -r self _ </proc/self/stat
+    # The names are resolved first, outside the route lock (it can take a
+    # while); only the rule change itself is done under the lock.
+    wanted="$RUN/bypass.$self"
     : >"$wanted"
+    partial=
     for host in $(grep -E '^[A-Za-z0-9.:-]+$' "$DIR/servers" 2>/dev/null); do
         if echo "$host" | grep -qE '^[0-9.]+$'; then
             addresses=$host
         else
             addresses=$(resolve4 "$host")
         fi
+        [ -n "$addresses" ] || partial=1
         for address in $addresses; do
             echo "$BYPASS_PRIO to $address main" >>"$wanted"
         done
     done
-    # A failed lookup of every name keeps the rules there were.
-    [ -s "$wanted" ] || ip rule show | grep -q "^$BYPASS_PRIO:" || return 0
-    [ -s "$wanted" ] && sync_rules "$wanted" "$BYPASS_PRIO"
+    if [ -s "$wanted" ]; then
+        # A name that did not resolve keeps the rules it had: nothing is
+        # removed then, only added.
+        SYNC_ADD_ONLY=$partial with_route_lock sync_rules "$wanted" "$BYPASS_PRIO"
+    fi
+    rm -f "$wanted" "$wanted.now"
 }
 
 default_mode() {
@@ -347,7 +361,11 @@ direct_domains() {
 # cache) asks 1.1.1.1 through the tunnel; a query then costs a tunnel round
 # trip only once. The file is in /tmp: a reboot drops it with the routing.
 dns_upstream() {
-    while ip rule del prio "$DNS_PRIO" 2>/dev/null; do :; done
+    # The router's own queries to the tunnel resolvers: changed without a
+    # gap (sync_rules), so none leaves through the provider meanwhile.
+    dns_wanted="$RUN/dns_rules.wanted"
+    mkdir -p "$RUN"
+    : >"$dns_wanted"
     isp=$(isp_dns)
     # Without the provider's resolvers the server names could only be
     # resolved through the tunnel they build: keep the provider's DNS.
@@ -355,8 +373,10 @@ dns_upstream() {
     if [ "$1" = tunnel ]; then
         # $2: the routing table of the tunnel to ask through.
         for server in "$TUNNEL_DNS" "$TUNNEL_DNS2"; do
-            ip rule add to "$server" iif lo lookup "${2:-$TABLE}" prio "$DNS_PRIO"
+            echo "$DNS_PRIO to $server ${2:-$TABLE} lo" >>"$dns_wanted"
         done
+        # In place before dnsmasq asks the tunnel resolvers.
+        sync_rules "$dns_wanted" "$DNS_PRIO"
         want=$(
             printf 'no-resolv\nserver=%s\nserver=%s' "$TUNNEL_DNS" "$TUNNEL_DNS2"
             for domain in $(direct_domains); do
@@ -374,6 +394,8 @@ dns_upstream() {
         rm -f "$DNSMASQ_CONF"
         /etc/init.d/dnsmasq restart >/dev/null 2>&1
     fi
+    # Back to the provider: the rules go once dnsmasq asks it.
+    [ "$1" = tunnel ] || sync_rules "$dns_wanted" "$DNS_PRIO"
 }
 
 # Traffic through the tunnels by hour ("HOUR_EPOCH BYTES" lines). Counted in
@@ -462,27 +484,29 @@ clear_device_rules() {
 # busybox) holds the lock on an open file, so a run that dies frees it by
 # itself; a run that hangs is not waited for longer than two minutes.
 apply_routes() {
+    with_route_lock apply_routes_now
+}
+
+# Runs "$@" holding the route lock (see above).
+with_route_lock() {
     mkdir -p "$RUN"
     # The lock of the previous agent version was a directory.
     [ -d "$RUN/apply.lock" ] && rm -rf "$RUN/apply.lock"
-    # A redirect on a group, not on exec: if the lock file cannot be opened
-    # the group fails and the routes are still applied (a failed exec
-    # redirect would end the whole script).
     if command -v flock >/dev/null 2>&1 && touch "$RUN/apply.lock" 2>/dev/null; then
         {
             # busybox's flock has no -w (SNR's 1.34): tried once a second,
-            # at most two minutes, then the routes are applied anyway.
+            # at most two minutes, then run anyway.
             tries=0
             until flock -n 9; do
                 tries=$((tries + 1))
                 [ "$tries" -ge 120 ] && break
                 sleep 1
             done
-            apply_routes_now
+            "$@"
         } 9>>"$RUN/apply.lock"
         return
     fi
-    apply_routes_now
+    "$@"
 }
 
 apply_routes_now() {
@@ -552,7 +576,8 @@ apply_routes_now() {
     dns_hook
     # The servers' bypass is set at start and every 6 hours (names are
     # resolved then); here only if it is missing (after the core came back).
-    ip rule show | grep -q "^$BYPASS_PRIO:" || apply_server_bypass
+    # (In the background: names are not resolved while the lock is held.)
+    ip rule show | grep -q "^$BYPASS_PRIO:" || "$0" bypass >/dev/null 2>&1 &
     fw_open
 }
 
@@ -887,6 +912,7 @@ set-default)
     echo "saved=1"
     ;;
 apply) pidof xray >/dev/null && apply_routes; echo "applied=1" ;;
+bypass) apply_server_bypass; echo "bypass=1" ;;
 uninstall) uninstall ;;
 *) echo "usage: $0 start|stop|restart|status|uninstall|apply|devices|set-device|set-default" >&2; exit 2 ;;
 esac
