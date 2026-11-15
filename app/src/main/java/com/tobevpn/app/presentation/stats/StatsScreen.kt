@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.stats
 
+import com.tobevpn.app.presentation.components.FadingText
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.fadeIn
@@ -350,22 +351,6 @@ private fun StatsServerSourceSelector(
     }
 }
 
-/**
- * [target] reached by counting, not at once: the shown number moves to a new
- * value over the length of the screen's fade, and ends exactly on it.
- */
-@Composable
-private fun animatedCount(target: Long): Long {
-    val shown by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = target.toFloat(),
-        animationSpec = tween(COUNT_MS, easing = FastOutSlowInEasing),
-        label = "count",
-    )
-    return if (shown == target.toFloat()) target else shown.toLong()
-}
-
-private const val COUNT_MS = 540
-
 @Composable
 private fun HeroStatsCard(
     totalBytes: Long,
@@ -374,13 +359,8 @@ private fun HeroStatsCard(
     /** The router's traffic in the chosen period; null without a router. */
     routerBytes: Long? = null,
 ) {
-    // Another period or servers: the numbers count over to their new values
-    // with the chart's fade instead of jumping.
-    @Suppress("NAME_SHADOWING") val totalBytes = animatedCount(totalBytes)
-    @Suppress("NAME_SHADOWING") val totalSessions = animatedCount(totalSessions.toLong()).toInt()
-    @Suppress("NAME_SHADOWING") val totalSeconds = animatedCount(totalSeconds)
-    val routerCount = animatedCount(routerBytes ?: 0L)
-    @Suppress("NAME_SHADOWING") val routerBytes = routerBytes?.let { routerCount }
+    // Another period or servers: each number fades over to its new value
+    // with the chart's fade (FadingText), never counted or jumped.
     val isDarkTheme = isSystemInDarkTheme()
     val primaryContentColor = if (isDarkTheme) {
         Color.White
@@ -460,27 +440,21 @@ private fun HeroStatsCard(
                     }
                 }
                 Spacer(Modifier.height(12.dp))
-                Text(
+                FadingText(
                     text = formatBytes(totalBytes),
                     style = fixedLayoutTextStyle(MaterialTheme.typography.displaySmall),
                     fontWeight = FontWeight.Bold,
                     color = primaryContentColor,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
                 )
                 if (routerBytes != null) {
                     Spacer(Modifier.height(6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(RouterTrafficColor))
                         Spacer(Modifier.width(6.dp))
-                        Text(
+                        FadingText(
                             text = stringResource(R.string.stats_router_period, formatBytes(routerBytes)),
                             style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                             color = secondaryContentColor,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -538,14 +512,11 @@ private fun HeroMetric(
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.height(4.dp))
-        Text(
+        FadingText(
             text = value,
             style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
             fontWeight = FontWeight.SemiBold,
             color = primaryContentColor,
-            maxLines = 1,
-            softWrap = false,
-            overflow = TextOverflow.Ellipsis,
         )
         Text(
             text = label,
