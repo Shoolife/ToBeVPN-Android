@@ -11,6 +11,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -140,6 +141,51 @@ class RouterRepository @Inject constructor(
     }
 
     private fun network() = detector.homeLan()?.network
+
+    /** One finding of this network's router, reused by the background checks. */
+    private data class Here(
+        val network: Long?,
+        val gateway: String,
+        val links: Int,
+        val link: RouterLink?,
+        val at: Long,
+    )
+
+    @Volatile
+    private var here: Here? = null
+    private val hereLock = kotlinx.coroutines.sync.Mutex()
+
+    /**
+     * This network's connected router, found the way the Router screen finds
+     * it (login page, then the link by its mark or host key), for the checks
+     * that run in the background (Home, Stats, Devices). A finding stays good
+     * for [maxAgeMs] on the same network, the same gateway and the same
+     * connected routers, so these checks do not each ask the router's pages
+     * (and its host key) again. Concurrent callers share one finding.
+     */
+    suspend fun routerHere(maxAgeMs: Long = HERE_VALID_MS): RouterLink? = hereLock.withLock {
+        val lan = withContext(Dispatchers.IO) { detector.homeLan() } ?: return@withLock null
+        val handle = lan.network?.networkHandle
+        val linksNow = synchronized(links) { links.toList() }.hashCode()
+        val now = android.os.SystemClock.elapsedRealtime()
+        here?.takeIf {
+            it.network == handle && it.gateway == lan.gateway && it.links == linksNow && now - it.at < maxAgeMs
+        }?.let { cached ->
+            cached.link?.let { link -> if (_link.value != link) _link.value = link; ssh.pin(link.host, link.hostKey) }
+            return@withLock cached.link
+        }
+        // Only on a network with a connected router's address: elsewhere the
+        // gateway's pages are not even asked.
+        if (synchronized(links) { links.none { it.host == lan.gateway } }) {
+            here = Here(handle, lan.gateway, linksNow, null, now)
+            return@withLock null
+        }
+        runCatching { detect() }
+        val link = withContext(Dispatchers.IO) { runCatching { linkHere() }.getOrNull() }
+        // Stored under the links as they are now: linkHere may reorder them.
+        here = Here(handle, lan.gateway, synchronized(links) { links.toList() }.hashCode(), link, android.os.SystemClock.elapsedRealtime())
+        link
+    }
 
     // --------------------------------------------------------------- link ---
 
@@ -410,12 +456,9 @@ class RouterRepository @Inject constructor(
     suspend fun protection(): Protection? {
         // Only on a network with a connected router's address: elsewhere (or
         // with no router at all) the gateway's pages are not even asked.
-        val gateway = withContext(Dispatchers.IO) { detector.homeLan()?.gateway } ?: return null
-        if (synchronized(links) { links.none { it.host == gateway } }) return null
         // This network's router first: its mark picks the right one of
         // several connected routers (a stale one from another network would not).
-        runCatching { detect() }
-        withContext(Dispatchers.IO) { linkHere() } ?: return null
+        routerHere() ?: return null
         // One SSH session for both answers: this runs on every return to Home.
         val (status, network) = withRouter { shell ->
             val status = RouterAgent.parseStatus(shell.run("[ -x ${RouterAgent.SCRIPT} ] && ${RouterAgent.SCRIPT} status").first)
@@ -565,6 +608,8 @@ class RouterRepository @Inject constructor(
         private const val PING_TIMEOUT_MS = 2_000
         private const val KEY_ROUTER = "router_here"
         private const val KEY_TRAFFIC = "traffic"
+        /** How long one finding of this network's router serves the background checks. */
+        private const val HERE_VALID_MS = 60_000L
 
         /**
          * Slots that devices other than [exceptMac] go through. With the

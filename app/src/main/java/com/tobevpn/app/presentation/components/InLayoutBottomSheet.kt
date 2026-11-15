@@ -20,6 +20,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -65,6 +66,21 @@ class InLayoutSheetState internal constructor(private val scope: kotlinx.corouti
             after()
         }
     }
+}
+
+/**
+ * [value] as it was when the sheet last stood still: what arrives while it
+ * slides (a loaded list, a router card) is shown once it stops, so the sheet
+ * is not rebuilt and resized mid-motion. Kept outside the snapshot state, so
+ * holding it adds no recomposition; the sheet stopping recomposes the caller.
+ */
+@Composable
+fun <T> InLayoutSheetState.heldWhileMoving(value: T): T {
+    val settled by remember(this) { derivedStateOf { isSettled } }
+    val held = remember(this) { arrayOf<Any?>(value) }
+    if (settled) held[0] = value
+    @Suppress("UNCHECKED_CAST")
+    return held[0] as T
 }
 
 @Composable

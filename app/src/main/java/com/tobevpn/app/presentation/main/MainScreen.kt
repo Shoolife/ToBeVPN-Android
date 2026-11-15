@@ -162,6 +162,7 @@ import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.countryFlagForUi
 import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.heldWhileMoving
 import com.tobevpn.app.presentation.components.rememberInLayoutSheetState
 import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
 import com.tobevpn.app.presentation.components.serverCountryCodeForUi
@@ -2302,13 +2303,12 @@ private fun SubscriptionBottomSheet(
     val sheetState = rememberInLayoutSheetState()
     // Plans and limits that arrive while the sheet slides are applied once
     // it stands still: rebuilding the plans mid-motion made it stutter.
-    val sheetSettled by remember { derivedStateOf { sheetState.isSettled } }
-    val incoming = SubscriptionSheetInputs(
-        authState, trafficResetAt, rubToUsdRate, purchasePlans,
-        purchasePlansFromCache, purchasePlansLoading, purchasePlansLoaded, currentLimits,
+    val held = sheetState.heldWhileMoving(
+        SubscriptionSheetInputs(
+            authState, trafficResetAt, rubToUsdRate, purchasePlans,
+            purchasePlansFromCache, purchasePlansLoading, purchasePlansLoaded, currentLimits,
+        ),
     )
-    var held by remember { mutableStateOf(incoming) }
-    if (sheetSettled) held = incoming
     @Suppress("NAME_SHADOWING") val authState = held.authState
     @Suppress("NAME_SHADOWING") val trafficResetAt = held.trafficResetAt
     @Suppress("NAME_SHADOWING") val rubToUsdRate = held.rubToUsdRate

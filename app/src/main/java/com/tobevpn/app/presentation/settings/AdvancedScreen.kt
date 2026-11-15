@@ -131,6 +131,7 @@ import com.tobevpn.app.presentation.components.SpinningRefreshIcon
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.heldWhileMoving
 import com.tobevpn.app.presentation.components.rememberInLayoutSheetState
 import com.tobevpn.app.presentation.components.rememberResistantModalBottomSheetState
 import com.tobevpn.app.presentation.components.startEdgeFade
@@ -945,9 +946,7 @@ private fun LinkedDevicesBottomSheet(
     // What the sheet shows is held while it slides in: a list or router
     // card arriving then would rebuild and resize it mid-motion. Updates
     // land once it stands still.
-    val settled by remember { derivedStateOf { sheetState.isSettled } }
-    var shown by remember { mutableStateOf(Triple(state, routerHere, routerLink)) }
-    if (settled) shown = Triple(state, routerHere, routerLink)
+    val shown = sheetState.heldWhileMoving(Triple(state, routerHere, routerLink))
     LinkedDevicesSheetBody(
         state = shown.first,
         routerHere = shown.second,

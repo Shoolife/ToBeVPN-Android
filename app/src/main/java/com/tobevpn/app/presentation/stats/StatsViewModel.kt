@@ -59,10 +59,7 @@ class StatsViewModel @Inject constructor(
     )
 
     private suspend fun readRouterTraffic(): List<com.tobevpn.app.router.TrafficHour>? {
-        runCatching { routerRepository.detect() }
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching { routerRepository.linkHere() }.getOrNull()
-        } ?: return null
+        routerRepository.routerHere() ?: return null
         return try {
             routerRepository.traffic()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {

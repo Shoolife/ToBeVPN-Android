@@ -274,17 +274,7 @@ class RouterInstaller @Inject constructor(
                 shell.writeFile("/opt/tobevpn/packages", "${packages.joinToString(" ")}\n".toByteArray(), "644")
                 log(InstallLogLine("info", "installed ${packages.joinToString(", ")}"))
             }
-            downloads.forEach { (binary, content) ->
-                progress("upload:${binary.name}")
-                shell.writeFile("/opt/tobevpn/${binary.name}", content, "755")
-                log(InstallLogLine("info", "${binary.name}: uploaded ${content.size / 1024} KB"))
-                if (binary.name == "xray" && binary.version != null) {
-                    shell.writeFile("/opt/tobevpn/xray.version", "${binary.version}\n".toByteArray(), "644")
-                }
-                if (binary.name == "hev-socks5-tunnel") {
-                    shell.writeFile("/opt/tobevpn/hev.version", "$HEV_VERSION\n".toByteArray(), "644")
-                }
-            }
+            uploadBinaries(shell, downloads, progress, log)
 
             progress("configure")
             val mac = plan.facts["mac"].orEmpty().uppercase()
@@ -427,17 +417,7 @@ class RouterInstaller @Inject constructor(
     ): RouterStatus {
         return ssh.session(network, host, user, hostKey) { shell ->
             progress("configure")
-            downloads.forEach { (binary, content) ->
-                progress("upload:${binary.name}")
-                shell.writeFile("/opt/tobevpn/${binary.name}", content, "755")
-                log(InstallLogLine("info", "${binary.name}: uploaded ${content.size / 1024} KB"))
-                if (binary.name == "xray" && binary.version != null) {
-                    shell.writeFile("/opt/tobevpn/xray.version", "${binary.version}\n".toByteArray(), "644")
-                }
-                if (binary.name == "hev-socks5-tunnel") {
-                    shell.writeFile("/opt/tobevpn/hev.version", "$HEV_VERSION\n".toByteArray(), "644")
-                }
-            }
+            uploadBinaries(shell, downloads, progress, log)
             // The agent and its hooks only when this app's are newer: a newer
             // agent from the desktop app is not replaced with an older one.
             if (found.agent) {
@@ -465,6 +445,30 @@ class RouterInstaller @Inject constructor(
             val status = shell.runOk("${RouterAgent.SCRIPT} status")
             progress("done")
             RouterAgent.parseStatus(status)
+        }
+    }
+
+    /**
+     * The new binaries, each replaced in one step next to the running ones,
+     * with the versions the next update compares against. Shared by the
+     * install and the update.
+     */
+    private fun uploadBinaries(
+        shell: RouterShell,
+        downloads: List<Pair<Binary, ByteArray>>,
+        progress: (String) -> Unit,
+        log: (InstallLogLine) -> Unit,
+    ) {
+        downloads.forEach { (binary, content) ->
+            progress("upload:${binary.name}")
+            shell.writeFile("/opt/tobevpn/${binary.name}", content, "755")
+            log(InstallLogLine("info", "${binary.name}: uploaded ${content.size / 1024} KB"))
+            if (binary.name == "xray" && binary.version != null) {
+                shell.writeFile("/opt/tobevpn/xray.version", "${binary.version}\n".toByteArray(), "644")
+            }
+            if (binary.name == "hev-socks5-tunnel") {
+                shell.writeFile("/opt/tobevpn/hev.version", "$HEV_VERSION\n".toByteArray(), "644")
+            }
         }
     }
 
@@ -577,7 +581,7 @@ class RouterInstaller @Inject constructor(
     private suspend fun fetch(binary: Binary, log: (InstallLogLine) -> Unit): ByteArray {
         val cacheDir = File(context.cacheDir, "router").apply { mkdirs() }
         val cached = File(cacheDir, "${binary.name}-${binary.downloadSha256.take(16)}.download")
-        var downloaded = cached.takeIf { it.isFile }?.readBytes()?.takeIf { sha256(it) == binary.downloadSha256 }
+        var downloaded = cached.takeIf { it.isFile }?.readBytes()?.takeIf { RouterAgent.sha256Hex(it) == binary.downloadSha256 }
         if (downloaded != null) {
             log(InstallLogLine("info", "${binary.name}: taken from the app cache"))
         } else {
@@ -599,10 +603,10 @@ class RouterInstaller @Inject constructor(
             }
         }
         val bytes = downloaded!!
-        if (sha256(bytes) != binary.downloadSha256) throw RouterException("${binary.name}: download checksum mismatch")
+        if (RouterAgent.sha256Hex(bytes) != binary.downloadSha256) throw RouterException("${binary.name}: download checksum mismatch")
         runCatching { cached.writeBytes(bytes) }
         val content = binary.zipMember?.let { unzip(bytes, it) } ?: bytes
-        if (binary.sha256 != null && sha256(content) != binary.sha256) throw RouterException("${binary.name}: checksum mismatch")
+        if (binary.sha256 != null && RouterAgent.sha256Hex(content) != binary.sha256) throw RouterException("${binary.name}: checksum mismatch")
         return content
     }
 
@@ -696,9 +700,6 @@ class RouterInstaller @Inject constructor(
             }
             return 0
         }
-
-        fun sha256(data: ByteArray): String =
-            MessageDigest.getInstance("SHA-256").digest(data).joinToString("") { "%02x".format(it) }
 
         /** RFC 4122 version-5 (SHA-1) UUID, as the desktop app's uuid::new_v5. */
         fun uuidV5(namespace: UUID, name: String): UUID {

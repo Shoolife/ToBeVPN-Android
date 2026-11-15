@@ -456,9 +456,8 @@ class SettingsViewModel @Inject constructor(
         if (linkedDevicesRefreshJob?.isActive == true) return
 
         viewModelScope.launch {
-            runCatching { routerRepository.detect() }
             // Of the connected routers, the one of this network is the one shown.
-            withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { routerRepository.linkHere() } }
+            runCatching { routerRepository.routerHere() }
         }
         linkedDevicesRefreshJob = viewModelScope.launch {
             val before = _linkedDevicesState.value

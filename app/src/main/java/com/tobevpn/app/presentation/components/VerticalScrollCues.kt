@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -52,20 +53,39 @@ internal fun VerticalScrollEdgeArrow(
     )
 }
 
-/** Masks scrollable content into transparency at every edge that has more content. */
+/**
+ * Masks scrollable content into transparency at every edge that has more
+ * content. The offscreen layer the mask needs is used only while a fade shows.
+ */
 internal fun Modifier.verticalFadingEdges(
     topAlpha: Float,
     bottomAlpha: Float,
     fadeHeight: Dp,
+): Modifier = verticalFadingEdges({ topAlpha }, { bottomAlpha }, fadeHeight)
+
+/**
+ * The same with the fades read only while drawing: scrolling then redraws
+ * the list without recomposing it.
+ */
+internal fun Modifier.verticalFadingEdges(
+    topAlpha: () -> Float,
+    bottomAlpha: () -> Float,
+    fadeHeight: Dp,
 ): Modifier = this
-    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+    .graphicsLayer {
+        compositingStrategy = if (topAlpha() > 0.001f || bottomAlpha() > 0.001f) {
+            CompositingStrategy.Offscreen
+        } else {
+            CompositingStrategy.Auto
+        }
+    }
     .drawWithContent {
         drawContent()
 
         val fadeHeightPx = fadeHeight.toPx().coerceAtMost(size.height / 2f)
         if (fadeHeightPx <= 0f) return@drawWithContent
 
-        val topA = topAlpha.coerceIn(0f, 1f)
+        val topA = topAlpha().coerceIn(0f, 1f)
         if (topA > 0.001f) {
             drawRect(
                 brush = Brush.verticalGradient(
@@ -82,7 +102,7 @@ internal fun Modifier.verticalFadingEdges(
             )
         }
 
-        val bottomA = bottomAlpha.coerceIn(0f, 1f)
+        val bottomA = bottomAlpha().coerceIn(0f, 1f)
         if (bottomA > 0.001f) {
             drawRect(
                 brush = Brush.verticalGradient(
@@ -115,11 +135,7 @@ internal fun ScrollState.startEdgeFade(
     enabled: Boolean = true,
     fadeLength: Dp = EDGE_FADE_LENGTH,
 ): Float {
-    val fadePx = with(LocalDensity.current) { fadeLength.toPx() }
-    val state = this
-    val fraction by remember(state, fadePx, enabled) {
-        derivedStateOf { if (enabled) edgeFraction(state.value.toFloat(), fadePx) else 0f }
-    }
+    val fraction by startEdgeFadeState(enabled, fadeLength)
     return fraction
 }
 
@@ -128,21 +144,47 @@ internal fun ScrollState.endEdgeFade(
     enabled: Boolean = true,
     fadeLength: Dp = EDGE_FADE_LENGTH,
 ): Float {
-    val fadePx = with(LocalDensity.current) { fadeLength.toPx() }
-    val state = this
-    val fraction by remember(state, fadePx, enabled) {
-        derivedStateOf {
-            if (enabled) edgeFraction((state.maxValue - state.value).toFloat(), fadePx) else 0f
-        }
-    }
+    val fraction by endEdgeFadeState(enabled, fadeLength)
     return fraction
 }
 
 @Composable
-internal fun LazyListState.startEdgeFade(fadeLength: Dp = EDGE_FADE_LENGTH): Float {
+private fun ScrollState.startEdgeFadeState(enabled: Boolean, fadeLength: Dp): State<Float> {
     val fadePx = with(LocalDensity.current) { fadeLength.toPx() }
     val state = this
-    val fraction by remember(state, fadePx) {
+    return remember(state, fadePx, enabled) {
+        derivedStateOf { if (enabled) edgeFraction(state.value.toFloat(), fadePx) else 0f }
+    }
+}
+
+@Composable
+private fun ScrollState.endEdgeFadeState(enabled: Boolean, fadeLength: Dp): State<Float> {
+    val fadePx = with(LocalDensity.current) { fadeLength.toPx() }
+    val state = this
+    return remember(state, fadePx, enabled) {
+        derivedStateOf {
+            if (enabled) edgeFraction((state.maxValue - state.value).toFloat(), fadePx) else 0f
+        }
+    }
+}
+
+@Composable
+internal fun LazyListState.startEdgeFade(fadeLength: Dp = EDGE_FADE_LENGTH): Float {
+    val fraction by startEdgeFadeState(fadeLength)
+    return fraction
+}
+
+@Composable
+internal fun LazyListState.endEdgeFade(fadeLength: Dp = EDGE_FADE_LENGTH): Float {
+    val fraction by endEdgeFadeState(fadeLength)
+    return fraction
+}
+
+@Composable
+private fun LazyListState.startEdgeFadeState(fadeLength: Dp): State<Float> {
+    val fadePx = with(LocalDensity.current) { fadeLength.toPx() }
+    val state = this
+    return remember(state, fadePx) {
         derivedStateOf {
             when {
                 !state.canScrollBackward -> 0f
@@ -151,14 +193,13 @@ internal fun LazyListState.startEdgeFade(fadeLength: Dp = EDGE_FADE_LENGTH): Flo
             }
         }
     }
-    return fraction
 }
 
 @Composable
-internal fun LazyListState.endEdgeFade(fadeLength: Dp = EDGE_FADE_LENGTH): Float {
+private fun LazyListState.endEdgeFadeState(fadeLength: Dp): State<Float> {
     val fadePx = with(LocalDensity.current) { fadeLength.toPx() }
     val state = this
-    val fraction by remember(state, fadePx) {
+    return remember(state, fadePx) {
         derivedStateOf {
             val info = state.layoutInfo
             val last = info.visibleItemsInfo.lastOrNull()
@@ -173,7 +214,6 @@ internal fun LazyListState.endEdgeFade(fadeLength: Dp = EDGE_FADE_LENGTH): Float
             }
         }
     }
-    return fraction
 }
 
 private fun edgeFraction(distancePx: Float, fadePx: Float): Float = when {
@@ -191,25 +231,26 @@ private val EDGE_ARROW_INSET = 2.dp
  * any scrolling column gets the same cues as the lists that have them.
  */
 internal fun Modifier.verticalScrollWithCues(state: ScrollState): Modifier = composed {
-    val top = state.startEdgeFade()
-    val bottom = state.endEdgeFade()
+    // Read while drawing only: scrolling redraws, it does not recompose.
+    val top = state.startEdgeFadeState(enabled = true, fadeLength = EDGE_FADE_LENGTH)
+    val bottom = state.endEdgeFadeState(enabled = true, fadeLength = EDGE_FADE_LENGTH)
     this
-        .edgeArrows(top, bottom)
-        .verticalFadingEdges(topAlpha = top, bottomAlpha = bottom, fadeHeight = EDGE_FADE_LENGTH)
+        .edgeArrows({ top.value }, { bottom.value })
+        .verticalFadingEdges({ top.value }, { bottom.value }, EDGE_FADE_LENGTH)
         .verticalScroll(state)
 }
 
 /** The same cues for a lazy list; put it on the list's modifier with its [state]. */
 internal fun Modifier.lazyScrollCues(state: LazyListState): Modifier = composed {
-    val top = state.startEdgeFade()
-    val bottom = state.endEdgeFade()
+    val top = state.startEdgeFadeState(EDGE_FADE_LENGTH)
+    val bottom = state.endEdgeFadeState(EDGE_FADE_LENGTH)
     this
-        .edgeArrows(top, bottom)
-        .verticalFadingEdges(topAlpha = top, bottomAlpha = bottom, fadeHeight = EDGE_FADE_LENGTH)
+        .edgeArrows({ top.value }, { bottom.value })
+        .verticalFadingEdges({ top.value }, { bottom.value }, EDGE_FADE_LENGTH)
 }
 
 /** Arrows drawn over the faded content (outside its mask), centred at the edges. */
-private fun Modifier.edgeArrows(topAlpha: Float, bottomAlpha: Float): Modifier = composed {
+private fun Modifier.edgeArrows(topFade: () -> Float, bottomFade: () -> Float): Modifier = composed {
     val up = rememberVectorPainter(Icons.Filled.KeyboardArrowUp)
     val down = rememberVectorPainter(Icons.Filled.KeyboardArrowDown)
     val tint = ColorFilter.tint(MaterialTheme.colorScheme.onSurfaceVariant)
@@ -218,6 +259,8 @@ private fun Modifier.edgeArrows(topAlpha: Float, bottomAlpha: Float): Modifier =
         val side = EDGE_ARROW_SIZE.toPx()
         val inset = EDGE_ARROW_INSET.toPx()
         val left = (size.width - side) / 2f
+        val topAlpha = topFade()
+        val bottomAlpha = bottomFade()
         if (topAlpha > 0f) {
             translate(left, inset) {
                 with(up) { draw(Size(side, side), alpha = topAlpha.coerceIn(0f, 1f), colorFilter = tint) }
