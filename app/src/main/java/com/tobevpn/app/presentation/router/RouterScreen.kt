@@ -804,7 +804,7 @@ private fun DeviceRow(
         Spacer(Modifier.width(10.dp))
         ServerChip(
             server = choiceServer(device, network, state.servers),
-            fallbackName = network.slots.firstOrNull { it.slot == device.slot }?.serverName,
+            fallbackName = network.slots.firstOrNull { it.slot == network.slotOf(device) }?.serverName,
             vpn = device.mode == "vpn",
             saving = state.savingMac == device.mac,
             enabled = !state.busy && state.savingMac == null,
@@ -816,7 +816,7 @@ private fun DeviceRow(
 /** The server a device goes through, or null without VPN. */
 private fun choiceServer(device: RouterDevice, network: RouterNetwork, servers: List<Server>): Server? {
     if (device.mode != "vpn") return null
-    val slot = network.slots.firstOrNull { it.slot == device.slot } ?: network.slots.firstOrNull { it.slot == 0 }
+    val slot = network.slots.firstOrNull { it.slot == network.slotOf(device) } ?: network.slots.firstOrNull { it.slot == 0 }
     return slot?.let { item -> servers.firstOrNull { it.id == item.serverId } }
 }
 
@@ -887,7 +887,7 @@ private fun ServerSheet(
 ) {
     val network = state.network ?: return
     val current = choiceServer(device, network, state.servers)?.id?.let { "server:$it" }
-        ?: if (device.mode == "vpn") "server:" + network.slots.firstOrNull { it.slot == device.slot }?.serverId else "direct"
+        ?: if (device.mode == "vpn") "server:" + network.slots.firstOrNull { it.slot == network.slotOf(device) }?.serverId else "direct"
     val canAdd = RouterRepository.canAddServer(
         state.servers,
         network,

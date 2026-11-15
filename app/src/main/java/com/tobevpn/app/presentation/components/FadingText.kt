@@ -31,9 +31,16 @@ fun FadingText(
     fontWeight: FontWeight? = null,
     maxLines: Int = 1,
     overflow: TextOverflow = TextOverflow.Ellipsis,
+    /**
+     * What a fade follows: by default every change of the text; a live value
+     * (traffic counted each minute) passes what it belongs to (the period),
+     * so it changes in place and fades only when that changes.
+     */
+    fadeKey: Any? = text,
 ) {
     AnimatedContent(
-        targetState = text,
+        targetState = text to fadeKey,
+        contentKey = { it.second },
         modifier = modifier,
         contentAlignment = Alignment.CenterStart,
         transitionSpec = {
@@ -43,7 +50,7 @@ fun FadingText(
                 ).using(SizeTransform(clip = false) { _, _ -> tween(0) })
         },
         label = "fading-text",
-    ) { shown ->
+    ) { (shown, _) ->
         Text(
             text = shown,
             style = style,

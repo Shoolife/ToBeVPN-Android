@@ -116,7 +116,7 @@ class RouterSsh @Inject constructor(
         val jsch = JSch()
         jsch.setHostKeyRepository(PinnedHosts(expected = null, seen = seen))
         val session = jsch.getSession("tobevpn-scan", host, 22).apply {
-            configure(network)
+            configure(network, SCAN_TIMEOUT_MS)
             setConfig("PreferredAuthentications", "none")
         }
         runCatching { session.connect(SCAN_TIMEOUT_MS) }
@@ -137,6 +137,9 @@ class RouterSsh @Inject constructor(
         // address keeps them all rather than lose its own.
         if (seen == null && keepUnknown) return
         val left = if (seen != null) hostKeys(host) - seen else emptySet()
+        // A pin on a forgotten key would make every later session at this
+        // address fail ("not paired") until another link pins again.
+        if (seen == null || pins[host] == seen) pins.remove(host)
         if (left.isEmpty()) hosts.remove(host) else hosts.put(host, org.json.JSONArray(left.toList()))
         hostsFile.writeText(hosts.toString())
     }
@@ -183,12 +186,14 @@ class RouterSsh @Inject constructor(
         }
     }
 
-    private fun Session.configure(network: Network?) {
-        timeout = TIMEOUT_MS
+    private fun Session.configure(network: Network?, connectTimeout: Int = TIMEOUT_MS) {
+        timeout = connectTimeout
         setConfig("PreferredAuthentications", "publickey,password,keyboard-interactive")
         setServerAliveInterval(30_000)
         userInfo = SilentUserInfo
-        if (network != null) setSocketFactory(NetworkSockets(network))
+        // The socket's own connect timeout: JSch does not apply its own to a
+        // socket factory's connect.
+        if (network != null) setSocketFactory(NetworkSockets(network, connectTimeout))
     }
 
     private fun connect(session: Session) {
@@ -307,10 +312,10 @@ class RouterSsh @Inject constructor(
         override fun showMessage(message: String?) = Unit
     }
 
-    private class NetworkSockets(private val network: Network) : SocketFactory {
+    private class NetworkSockets(private val network: Network, private val timeoutMs: Int) : SocketFactory {
         override fun createSocket(host: String, port: Int): Socket =
             network.socketFactory.createSocket().apply {
-                connect(java.net.InetSocketAddress(host, port), TIMEOUT_MS)
+                connect(java.net.InetSocketAddress(host, port), timeoutMs)
             }
 
         override fun getInputStream(socket: Socket): InputStream = socket.getInputStream()

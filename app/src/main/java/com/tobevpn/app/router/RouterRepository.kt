@@ -376,7 +376,7 @@ class RouterRepository @Inject constructor(
         }
         shell.runOk("$saves${RouterAgent.SCRIPT} set-default direct")
         RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
-    }.also(::remember)
+    }.also(::accept)
 
     /** The router's VPN traffic by hour; kept, so the screen shows it at once next time. */
     suspend fun traffic(): List<TrafficHour> = withRouter { shell ->
@@ -384,8 +384,10 @@ class RouterRepository @Inject constructor(
     }.also(::cacheTraffic)
 
     private fun cacheTraffic(hours: List<TrafficHour>) {
+        // Kept only under the router's id: without one it could be shown for another.
+        val hwid = _link.value?.hwid ?: return
         val cache = JSONObject()
-            .put("hwid", _link.value?.hwid.orEmpty())
+            .put("hwid", hwid)
             .put("fetchedAt", System.currentTimeMillis())
             .put("hours", org.json.JSONArray().apply { hours.forEach { put("${it.hour} ${it.bytes}") } })
         prefs.edit().putString(KEY_TRAFFIC, cache.toString()).apply()
@@ -394,9 +396,11 @@ class RouterRepository @Inject constructor(
     /** The traffic read last from this router and when, or null. */
     fun cachedTraffic(): Pair<Long, List<TrafficHour>>? {
         val cache = runCatching { JSONObject(prefs.getString(KEY_TRAFFIC, null) ?: return null) }.getOrNull() ?: return null
-        val hwid = _link.value?.hwid
+        // Only the very router's: a cache without an id (saved before the
+        // link knew it) is not taken for any router.
+        val hwid = _link.value?.hwid ?: return null
         val cachedHwid = cache.optString("hwid")
-        if (hwid != null && cachedHwid.isNotEmpty() && cachedHwid != hwid) return null
+        if (!cachedHwid.equals(hwid, ignoreCase = true)) return null
         val array = cache.optJSONArray("hours") ?: return null
         val text = (0 until array.length()).joinToString("\n") { array.optString(it) }
         return cache.optLong("fetchedAt") to RouterAgent.parseTraffic(text)
@@ -410,7 +414,7 @@ class RouterRepository @Inject constructor(
         val clean = RouterAgent.cleanName(name)
         shell.runOk("${RouterAgent.SCRIPT} set-name '${RouterAgent.shellQuoteInner(clean)}'")
         RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
-    }.also(::remember)
+    }.also(::accept)
 
     suspend fun devices(): RouterNetwork = withRouter { shell ->
         val output = shell.runOk("${RouterAgent.SCRIPT} devices")
@@ -427,7 +431,7 @@ class RouterRepository @Inject constructor(
         }
         shell.runOk(command)
         RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
-    }.also(::remember)
+    }.also(::accept)
 
 
     /** Sets one device to "vpn" (through [slot]), "direct" or back to "default". */
@@ -576,9 +580,11 @@ class RouterRepository @Inject constructor(
             RouterAgent.writeServerConfig(shell, servers, ::ruSites, serverHosts + serviceHosts())
             // Applied by a restart only when the VPN runs: a VPN the owner
             // stopped stays stopped (the new config is used at its next start).
-            shell.runOk("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; fi")
+            // The new files are on the router either way: a start that fails shows
+            // in the status (failed), not as a change that did not happen.
+            shell.run("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; fi")
             RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
-        }.also(::remember)
+        }.also(::accept)
     }
 
     /**
@@ -594,15 +600,9 @@ class RouterRepository @Inject constructor(
         servers: List<Server>,
         subscriptionUrl: String?,
     ): RouterStatus? {
-        if (network.slots.none { it.slot == 0 }) return null
-        val list = network.slots.map { slot ->
-            servers.firstOrNull { it.id == slot.serverId }?.let { SlotServer(slot.slot, it) } ?: return null
-        }
-        val stale = list.any { item ->
-            network.slots.first { it.slot == item.slot }.key != RouterAgent.credentialKey(item.server)
-        }
-        if (!stale) return null
+        val list = credentialSlots(network, servers) ?: return null
         return withRouter { shell ->
+            if (!credentialsDiffer(shell, network, list, subscriptionUrl)) return@withRouter null
             RouterAgent.writeServerConfig(shell, list, ::ruSites, servers.map { it.address } + serviceHosts())
             if (subscriptionUrl != null) {
                 val conf = shell.run("cat /opt/tobevpn/subscription.conf 2>/dev/null").first
@@ -614,29 +614,69 @@ class RouterRepository @Inject constructor(
                     if (next != conf) shell.writeFile("/opt/tobevpn/subscription.conf", next.toByteArray(), "600")
                 }
             }
-            shell.runOk("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; fi")
+            // The new files are on the router either way: a start that fails shows
+            // in the status (failed), not as a change that did not happen.
+            shell.run("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; fi")
             RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
-        }.also(::remember)
+        }.also { status -> status?.let(::accept) }
+    }
+
+    /**
+     * Whether the router logs in differently from this app: another
+     * subscription link on it (the account's link was reset), or a slot whose
+     * written key differs from this app's servers (a server moved). A slot
+     * written by an older app has no key: alone that is not a difference,
+     * so nothing is restarted for it.
+     */
+    suspend fun credentialsStale(network: RouterNetwork, servers: List<Server>, subscriptionUrl: String?): Boolean {
+        val list = credentialSlots(network, servers) ?: return false
+        return withRouter { shell -> credentialsDiffer(shell, network, list, subscriptionUrl) }
+    }
+
+    /** The router's slots with this app's servers; null when one is not in [servers]. */
+    private fun credentialSlots(network: RouterNetwork, servers: List<Server>): List<SlotServer>? {
+        if (network.slots.none { it.slot == 0 }) return null
+        return network.slots.map { slot ->
+            servers.firstOrNull { it.id == slot.serverId }?.let { SlotServer(slot.slot, it) } ?: return null
+        }
+    }
+
+    private fun credentialsDiffer(
+        shell: RouterShell,
+        network: RouterNetwork,
+        list: List<SlotServer>,
+        subscriptionUrl: String?,
+    ): Boolean {
+        val routerSub = shell.run("sed -n \"s/^SUB_URL='\\(.*\\)'\$/\\1/p\" /opt/tobevpn/subscription.conf 2>/dev/null")
+            .first.trim().takeIf { it.isNotEmpty() }
+        val linkChanged = routerSub != null && subscriptionUrl != null && routerSub != subscriptionUrl
+        val keyChanged = list.any { item ->
+            val key = network.slots.first { it.slot == item.slot }.key
+            key != null && key != RouterAgent.credentialKey(item.server)
+        }
+        return linkChanged || keyChanged
     }
 
     /** Turns the Russian sites bypass on or off in the config on the router and restarts. */
     suspend fun setRuDirect(enabled: Boolean): RouterStatus {
-        val sites = if (enabled) {
-            withContext(Dispatchers.IO) { ruSites() } ?: throw RouterException("geosite.dat is missing")
-        } else {
-            null
-        }
         return withRouter { shell ->
-            if (sites != null) RouterAgent.writeRuSitesIfMissing(shell, sites)
+            // The phone's list only when the router has none of its own (the
+            // desktop app's fuller one is kept and is enough).
+            if (enabled && shell.run("[ -s ${RouterAgent.RU_SITES_PATH} ]").second != 0) {
+                val sites = ruSites() ?: throw RouterException("geosite.dat is missing")
+                RouterAgent.writeRuSitesIfMissing(shell, sites)
+            }
             val config = JSONObject(shell.run("cat /opt/tobevpn/xray.json 2>/dev/null").first)
             RouterAgent.applyRuDirect(config, enabled)
             shell.writeFile("/opt/tobevpn/xray.json", config.toString(2).toByteArray(), "600")
             shell.writeFile(RouterAgent.RU_DIRECT_FLAG, if (enabled) "1\n".toByteArray() else "0\n".toByteArray(), "644")
             // Applied by a restart only when the VPN runs: a VPN the owner
             // stopped stays stopped (the new config is used at its next start).
-            shell.runOk("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; fi")
+            // The new files are on the router either way: a start that fails shows
+            // in the status (failed), not as a change that did not happen.
+            shell.run("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; fi")
             RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
-        }.also(::remember)
+        }.also(::accept)
     }
 
     @Volatile
@@ -657,9 +697,19 @@ class RouterRepository @Inject constructor(
     internal fun serviceHosts(): List<String> = listOf(
         BuildConfig.SUBSCRIPTION_BASE_URL,
         BuildConfig.BOT_API_BASE_URL,
-    ).mapNotNull { url ->
-        runCatching { java.net.URI(url).host }.getOrNull()?.takeIf { it.isNotBlank() }
-    } + listOf(BuildConfig.FALLBACK_BOT_DOMAIN, BuildConfig.FALLBACK_SUBS_DOMAIN).filter { it.isNotBlank() }
+        // The fallback endpoints are full addresses (scheme, path, a
+        // template): only their host goes to the router.
+        BuildConfig.FALLBACK_BOT_DOMAIN,
+        BuildConfig.FALLBACK_SUBS_DOMAIN,
+    ).mapNotNull { url -> hostOf(url) }
+
+    private fun hostOf(url: String): String? {
+        val value = url.trim().takeIf { it.isNotEmpty() } ?: return null
+        val withScheme = if ("://" in value) value else "https://$value"
+        // A template ({key}, {ext}) is not part of the host; it is cut first.
+        return runCatching { java.net.URI(withScheme.replace(Regex("[{}]"), "")).host }
+            .getOrNull()?.takeIf { it.isNotBlank() }
+    }
 
     companion object {
         private const val KEY_LINK = "link"

@@ -174,6 +174,8 @@ fun StatsScreen(
                     totalSessions = totalSessions,
                     totalSeconds = totalSeconds,
                     routerBytes = if (withRouter) routerTotal else null,
+                    // Fades follow the period and servers, not each minute of traffic.
+                    fadeKey = shownPeriod to view?.source,
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -358,6 +360,7 @@ private fun HeroStatsCard(
     totalSeconds: Long,
     /** The router's traffic in the chosen period; null without a router. */
     routerBytes: Long? = null,
+    fadeKey: Any? = null,
 ) {
     // Another period or servers: each number fades over to its new value
     // with the chart's fade (FadingText), never counted or jumped.
@@ -445,6 +448,7 @@ private fun HeroStatsCard(
                     style = fixedLayoutTextStyle(MaterialTheme.typography.displaySmall),
                     fontWeight = FontWeight.Bold,
                     color = primaryContentColor,
+                    fadeKey = fadeKey,
                 )
                 if (routerBytes != null) {
                     Spacer(Modifier.height(6.dp))
@@ -455,6 +459,7 @@ private fun HeroStatsCard(
                             text = stringResource(R.string.stats_router_period, formatBytes(routerBytes)),
                             style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                             color = secondaryContentColor,
+                            fadeKey = fadeKey,
                         )
                     }
                 }
@@ -469,6 +474,7 @@ private fun HeroStatsCard(
                         value = totalSessions.toString(),
                         primaryContentColor = primaryContentColor,
                         secondaryContentColor = secondaryContentColor,
+                        fadeKey = fadeKey,
                     )
                     HeroDivider(color = dividerColor)
                     HeroMetric(
@@ -477,6 +483,7 @@ private fun HeroStatsCard(
                         value = formatTime(totalSeconds),
                         primaryContentColor = primaryContentColor,
                         secondaryContentColor = secondaryContentColor,
+                        fadeKey = fadeKey,
                     )
                     HeroDivider(color = dividerColor)
                     HeroMetric(
@@ -487,6 +494,7 @@ private fun HeroStatsCard(
                         ),
                         primaryContentColor = primaryContentColor,
                         secondaryContentColor = secondaryContentColor,
+                        fadeKey = fadeKey,
                     )
                 }
             }
@@ -501,6 +509,7 @@ private fun HeroMetric(
     value: String,
     primaryContentColor: Color,
     secondaryContentColor: Color,
+    fadeKey: Any? = null,
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -517,6 +526,7 @@ private fun HeroMetric(
             style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
             fontWeight = FontWeight.SemiBold,
             color = primaryContentColor,
+            fadeKey = fadeKey,
         )
         Text(
             text = label,

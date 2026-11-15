@@ -228,6 +228,11 @@ class RouterInstaller @Inject constructor(
             val check = assess(facts)
             log(InstallLogLine("info", summary(check)))
             checkError(check)?.let { throw RouterException(it) }
+            // Before anything is changed on the router: its id in the account
+            // comes from this MAC, and without one the install must not start.
+            if (!RouterAgent.validMac(facts["mac"].orEmpty().trim())) {
+                throw RouterException("could not read the router's LAN MAC address")
+            }
             val arch = Arch.fromUname(check.machine) ?: throw RouterException("unsupported router CPU: ${check.machine}")
             val binaries = listOf(xrayTarget(arch, log), hevTunnel(arch))
             facts += RouterAgent.keyValues(
@@ -391,15 +396,15 @@ class RouterInstaller @Inject constructor(
         progress("connect")
         val network = detector.homeLan()?.network
         progress("check")
-        val found = ssh.session(network, host, user, hostKey) { shell ->
+        val (found, freeKb) = ssh.session(network, host, user, hostKey) { shell ->
             val found = outdatedComponents(shell, log)
             found to (shell.runOk(FREE_KB_COMMAND).trim().toLongOrNull() ?: 0L)
-        }.let { (found, freeKb) -> freeKbAtCheck = freeKb; found }
+        }
         val downloads = found.binaries.map { binary ->
             progress("download:${binary.name}")
             binary to fetch(binary, log)
         }
-        checkSpace(freeKbAtCheck, downloads)
+        checkSpace(freeKb, downloads)
         // Nothing is stopped while the files go up (each one replaced in one
         // step), and the restart runs on the router to its end: a failure on
         // the way leaves the VPN as it was.
@@ -474,9 +479,6 @@ class RouterInstaller @Inject constructor(
         }
     }
 
-    @Volatile
-    private var freeKbAtCheck = 0L
-
     /**
      * Room for the files about to go up: each lands next to the running one
      * (which keeps its space until the restart), so the new files' size plus
@@ -547,7 +549,9 @@ class RouterInstaller @Inject constructor(
             },
             onFailure = {
                 log(InstallLogLine("warn", "xray: GitHub releases not readable (${it.message}), using $PINNED_XRAY_VERSION"))
-                return pinnedXray(arch)
+                // Kept like an answer: GitHub is not asked again (a 20 s wait
+                // where it is blocked) at every check until the next period.
+                pinnedXray(arch)
             },
         )
         cachedTarget[arch] = Instant.now() to target
@@ -653,7 +657,9 @@ class RouterInstaller @Inject constructor(
          * Free space where ToBeVPN lives: the overlay on OpenWrt, the root
          * filesystem on images without one (ext4 on a Raspberry Pi).
          */
-        private const val FREE_KB_COMMAND = "{ df -k /overlay 2>/dev/null || df -k /; } | awk 'NR==2{print \$4}'"
+        private const val FREE_KB_COMMAND =
+            "f=\$(df -k /overlay 2>/dev/null | awk 'NR==2 && \$4 ~ /^[0-9]+\$/ {print \$4}'); " +
+                "[ -n \"\$f\" ] || f=\$(df -k / 2>/dev/null | awk 'NR==2 && \$4 ~ /^[0-9]+\$/ {print \$4}'); echo \"\$f\""
         private val cachedTarget = java.util.concurrent.ConcurrentHashMap<Arch, Pair<Instant, Binary>>()
 
         /** RFC 4122 OID namespace: the router's id is the same as from the desktop app. */

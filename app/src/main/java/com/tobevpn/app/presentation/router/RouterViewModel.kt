@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.router
 
+import kotlinx.coroutines.flow.first
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -186,7 +187,7 @@ class RouterViewModel @Inject constructor(
                 } catch (error: CancellationException) {
                     throw error
                 } catch (_: Exception) {
-                    RouterInfo(gateway = known?.gateway)
+                    RouterInfo(gateway = known?.gateway ?: _state.value.info?.gateway)
                 }
             }
             val accountRouters = async { accountRouters() }
@@ -325,6 +326,9 @@ class RouterViewModel @Inject constructor(
             runRouter {
                 var mode = "direct"
                 var slot = 0
+                // Planned against the router's list as it is now, not as the
+                // screen last read it: a slot another app added meanwhile is kept.
+                val network = runCatching { repository.devices() }.getOrNull() ?: network
                 var current = network
                 if (choice.startsWith("server:")) {
                     val servers = _state.value.servers
@@ -759,15 +763,31 @@ class RouterViewModel @Inject constructor(
      */
     private fun refreshRouterCredentials() {
         val network = _state.value.network ?: return
-        val servers = _state.value.servers
-        if (servers.isEmpty() || _state.value.status?.installed != true || credentialsJob?.isActive == true) return
+        val status = _state.value.status ?: return
+        if (_state.value.servers.isEmpty() || !status.installed || credentialsJob?.isActive == true) return
         credentialsJob = viewModelScope.launch {
-            runRouter {
-                val next = repository.refreshCredentials(network, servers, subscriptionUrl()) ?: return@runRouter
-                val slots = network.slots.map { slot ->
-                    servers.firstOrNull { it.id == slot.serverId }?.let { slot.copy(key = RouterAgent.credentialKey(it)) } ?: slot
+            runRouter(onError = { false }) {
+                if (!repository.credentialsStale(network, _state.value.servers, subscriptionUrl())) return@runRouter
+                // This app may be the stale side (the link was reset on another
+                // device): its own subscription and servers are read anew first,
+                // so it never writes revoked credentials over fresh ones.
+                runCatching { authRepository.syncSubscription(force = true) }
+                runCatching { vpnRepository.refreshServers(forceRefresh = true) }
+                val servers = vpnRepository.observeServers().first().filter { it.isAvailable }
+                // Only this account's router gets this account's credentials.
+                val hwid = status.hwid ?: return@runRouter
+                if (accountRouters().none { it.first.equals(hwid, ignoreCase = true) }) return@runRouter
+                if (_state.value.busy || _state.value.savingMac != null) return@runRouter
+                _state.update { it.copy(busy = true) }
+                try {
+                    val next = repository.refreshCredentials(network, servers, subscriptionUrl()) ?: return@runRouter
+                    val slots = network.slots.map { slot ->
+                        servers.firstOrNull { it.id == slot.serverId }?.let { slot.copy(key = RouterAgent.credentialKey(it)) } ?: slot
+                    }
+                    _state.update { it.copy(status = next, network = it.network?.copy(slots = slots)) }
+                } finally {
+                    _state.update { it.copy(busy = false) }
                 }
-                _state.update { it.copy(status = next, network = it.network?.copy(slots = slots)) }
             }
         }
     }
