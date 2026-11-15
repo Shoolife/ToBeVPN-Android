@@ -46,6 +46,8 @@ fun rememberRefreshSwap(refreshing: Boolean): RefreshSwap {
     return swap
 }
 
-private const val REFRESH_FADE_OUT_MS = 160
+// Out and in take as long as the Router screen's crossfade (540 ms), so a
+// name fading with them (FadingText) ends with the rest.
+private const val REFRESH_FADE_OUT_MS = 180
 private const val REFRESH_LOW_ALPHA = 0.1f
 private const val REFRESH_FADE_IN_MS = 360

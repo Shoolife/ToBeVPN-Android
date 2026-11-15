@@ -18,8 +18,8 @@ import androidx.compose.ui.text.style.TextOverflow
 
 /**
  * A line of text whose change (a renamed router, a name read anew) fades:
- * the old text leaves quickly, the new one comes in evenly, as the refresh
- * swap does. Its width follows the new text at once, so a row around it
+ * the old text leaves quickly, the new one comes in evenly, in step with the
+ * screen's refresh fade so both end together. Its width follows the new text at once, so a row around it
  * does not slide.
  */
 @Composable
@@ -55,6 +55,8 @@ fun FadingText(
     }
 }
 
-private const val FADE_OUT_MS = 160
-private const val FADE_IN_DELAY_MS = 80
-private const val FADE_IN_MS = 360
+// The Router screen's own crossfade (out 220 ms, in 420 ms after 120 ms):
+// a name read with the refresh changes with the content and ends with it.
+private const val FADE_OUT_MS = 220
+private const val FADE_IN_DELAY_MS = 120
+private const val FADE_IN_MS = 420
