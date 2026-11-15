@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111510
+AGENT_VERSION=2026111511
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -385,7 +385,14 @@ v6_drop_jumps() {
 
 v6_hook() {
     if [ "$FW" = nft ]; then
-        nft -f "$RUN/v6.nft"
+        # One transaction: rules nft refuses leave the old ones in place, and
+        # the refusal is kept for diagnosis (system log, $RUN/v6.failed).
+        if nft -f "$RUN/v6.nft" 2>"$RUN/v6.err"; then
+            rm -f "$RUN/v6.failed" "$RUN/v6.err"
+        else
+            cp "$RUN/v6.nft" "$RUN/v6.failed"
+            logger -t tobevpn "IPv6 leak block refused by nft: $(head -c 300 "$RUN/v6.err")" 2>/dev/null
+        fi
         return 0
     fi
     command -v ip6tables >/dev/null 2>&1 || return 0
