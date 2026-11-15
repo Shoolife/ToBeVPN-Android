@@ -261,19 +261,15 @@ class ReferralsViewModel @Inject constructor(
     private companion object {
         const val TAG = "ReferralsViewModel"
         const val PAGE_SIZE = 20
-        const val MIN_REFRESH_FEEDBACK_MS = 900L
         const val HTTP_TOO_MANY_REQUESTS = 429
         // Retry-After missing or unreadable: the server's window is at most
         // 24 h, an hour is a safe pause that still lets the user retry today.
         const val DEFAULT_LIMIT_WAIT_SECONDS = 3_600L
     }
 
-    private suspend fun awaitMinimumRefreshFeedback(startedAt: Long?) {
-        if (startedAt == null) return
-        val elapsed = SystemClock.elapsedRealtime() - startedAt
-        val remaining = MIN_REFRESH_FEEDBACK_MS - elapsed
-        if (remaining > 0) delay(remaining)
-    }
+    // The result lands as the refresh icon comes to rest (as on every screen).
+    private suspend fun awaitMinimumRefreshFeedback(startedAt: Long?) =
+        com.tobevpn.app.presentation.components.awaitWholeRefreshTurns(startedAt)
 }
 
 data class ReferralsUiState(

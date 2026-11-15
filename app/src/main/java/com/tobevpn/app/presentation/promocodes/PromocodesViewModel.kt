@@ -275,17 +275,13 @@ class PromocodesViewModel @Inject constructor(
         }
     }
 
-    private suspend fun awaitMinimumRefreshFeedback(startedAt: Long?) {
-        if (startedAt == null) return
-        val remaining = MIN_REFRESH_FEEDBACK_MS -
-            (SystemClock.elapsedRealtime() - startedAt)
-        if (remaining > 0) delay(remaining)
-    }
+    // The result lands as the refresh icon comes to rest (as on every screen).
+    private suspend fun awaitMinimumRefreshFeedback(startedAt: Long?) =
+        com.tobevpn.app.presentation.components.awaitWholeRefreshTurns(startedAt)
 
     private companion object {
         const val TAG = "PromocodesViewModel"
         const val PAGE_SIZE = 20
-        const val MIN_REFRESH_FEEDBACK_MS = 800L
     }
 }
 

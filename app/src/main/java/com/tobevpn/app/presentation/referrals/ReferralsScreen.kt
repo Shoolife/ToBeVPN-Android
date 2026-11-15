@@ -1,5 +1,7 @@
 package com.tobevpn.app.presentation.referrals
 
+import com.tobevpn.app.presentation.components.rememberRefreshSwap
+import androidx.compose.ui.graphics.graphicsLayer
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -254,6 +256,9 @@ private fun ReferralContent(
     val shareChooserTitle = stringResource(R.string.referrals_share_chooser)
     val clipboardLabel = stringResource(R.string.referrals_clipboard_label)
     val items = data.referrals.orEmpty()
+    // Content and placeholders swap with a fade, as on every screen.
+    val refreshSwap = rememberRefreshSwap(isRefreshing)
+    @Suppress("NAME_SHADOWING") val isRefreshing = refreshSwap.refreshing
     val refreshPlaceholderAlpha = if (isRefreshing) {
         referralPlaceholderAlpha()
     } else {
@@ -334,14 +339,16 @@ private fun ReferralContent(
             }
 
             item {
-                if (isRefreshing) {
-                    ReferralSummaryLoadingCard(alpha = refreshPlaceholderAlpha)
-                } else {
-                    ReferralSummaryCard(
-                        total = data.total,
-                        onOpenList = { showInvitedFriendsSheet = true },
-                        onOpenRewards = { showRewardsDialog = true },
-                    )
+                Box(Modifier.graphicsLayer { alpha = refreshSwap.alpha }) {
+                    if (isRefreshing) {
+                        ReferralSummaryLoadingCard(alpha = refreshPlaceholderAlpha)
+                    } else {
+                        ReferralSummaryCard(
+                            total = data.total,
+                            onOpenList = { showInvitedFriendsSheet = true },
+                            onOpenRewards = { showRewardsDialog = true },
+                        )
+                    }
                 }
             }
 
@@ -875,6 +882,8 @@ private fun InvitedFriendsBottomSheet(
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val isDark = isSystemInDarkTheme()
+    val refreshSwap = rememberRefreshSwap(isRefreshing)
+    @Suppress("NAME_SHADOWING") val isRefreshing = refreshSwap.refreshing
     val refreshPlaceholderAlpha = if (isRefreshing) {
         referralPlaceholderAlpha()
     } else {
@@ -929,7 +938,8 @@ private fun InvitedFriendsBottomSheet(
                 modifier = Modifier
                     .lazyScrollCues(rewardsListState)
                     .fillMaxWidth()
-                    .heightIn(max = 560.dp),
+                    .heightIn(max = 560.dp)
+                    .graphicsLayer { alpha = refreshSwap.alpha },
                 contentPadding = PaddingValues(
                     start = 20.dp,
                     end = 20.dp,

@@ -97,6 +97,22 @@ fun SpinningRefreshIcon(
     }
 }
 
+/**
+ * Waits for the end of the refresh icon's current turn, at least one: a
+ * result shown then appears as the icon comes to rest, not mid-turn. Every
+ * screen with this icon waits this way, so refreshing feels the same everywhere.
+ * [startedAt] is SystemClock.elapsedRealtime() when the icon started; null
+ * when it did not spin (nothing to wait for).
+ */
+suspend fun awaitWholeRefreshTurns(startedAt: Long?) {
+    if (startedAt == null) return
+    val turn = ROTATION_DURATION_MS.toLong()
+    val elapsed = android.os.SystemClock.elapsedRealtime() - startedAt
+    val turns = maxOf(1L, (elapsed + turn - 1) / turn)
+    val left = turns * turn - elapsed
+    if (left > 0) kotlinx.coroutines.delay(left)
+}
+
 private const val FULL_ROTATION = 360f
 private const val ANGLE_EPSILON = 0.5f
 private const val ROTATION_DURATION_MS = 900

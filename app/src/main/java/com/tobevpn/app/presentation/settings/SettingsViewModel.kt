@@ -349,7 +349,6 @@ class SettingsViewModel @Inject constructor(
 
     private companion object {
         const val TAG = "SettingsViewModel"
-        const val MIN_DEVICES_REFRESH_FEEDBACK_MS = 900L
         const val LINKED_DEVICES_FRESH_MS = 30_000L
     }
 
@@ -541,12 +540,9 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private suspend fun awaitMinimumDevicesRefreshFeedback(startedAt: Long?) {
-        if (startedAt == null) return
-        val elapsed = SystemClock.elapsedRealtime() - startedAt
-        val remaining = MIN_DEVICES_REFRESH_FEEDBACK_MS - elapsed
-        if (remaining > 0) delay(remaining)
-    }
+    // The result lands as the refresh icon comes to rest (as on every screen).
+    private suspend fun awaitMinimumDevicesRefreshFeedback(startedAt: Long?) =
+        com.tobevpn.app.presentation.components.awaitWholeRefreshTurns(startedAt)
 
     fun disconnectDevice(deviceId: String, resetSubscription: Boolean = true) {
         val current = authState.value

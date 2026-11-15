@@ -1,5 +1,7 @@
 package com.tobevpn.app.presentation.promocodes
 
+import com.tobevpn.app.presentation.components.rememberRefreshSwap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -242,6 +244,10 @@ private fun PromocodeContent(
     var codeInput by rememberSaveable { mutableStateOf("") }
     val trimmedCode = codeInput.trim()
     val pageMaxWidth = responsiveMaxWidth(640.dp)
+    // Content and placeholders swap with a fade, as on every screen.
+    val refreshSwap = rememberRefreshSwap(isRefreshing)
+    @Suppress("NAME_SHADOWING") val isRefreshing = refreshSwap.refreshing
+    val swapFade = Modifier.graphicsLayer { alpha = refreshSwap.alpha }
     val refreshPlaceholderAlpha = if (isRefreshing) {
         promocodePlaceholderAlpha()
     } else {
@@ -280,26 +286,26 @@ private fun PromocodeContent(
         }
         if (isRefreshing) {
             if (effectiveDiscountPercent > 0) {
-                add { PromocodeDiscountLoadingCard(alpha = refreshPlaceholderAlpha) }
+                add { Box(swapFade) { PromocodeDiscountLoadingCard(alpha = refreshPlaceholderAlpha) } }
             }
-            add { PromocodeHistoryHeaderLoading(alpha = refreshPlaceholderAlpha) }
+            add { Box(swapFade) { PromocodeHistoryHeaderLoading(alpha = refreshPlaceholderAlpha) } }
         } else {
             if (effectiveDiscountPercent > 0) {
-                add { CurrentDiscountCard(discountPercent = effectiveDiscountPercent) }
+                add { Box(swapFade) { CurrentDiscountCard(discountPercent = effectiveDiscountPercent) } }
             }
-            add { PromocodeHistoryHeader(total = total) }
+            add { Box(swapFade) { PromocodeHistoryHeader(total = total) } }
         }
     }
     val historyItems: LazyListScope.() -> Unit = {
         if (isRefreshing) {
             repeat(items.size.coerceIn(2, 3)) { index ->
                 item(key = "promocode-refresh-placeholder-$index") {
-                    PromocodeHistoryLoadingCard(alpha = refreshPlaceholderAlpha)
+                    Box(swapFade) { PromocodeHistoryLoadingCard(alpha = refreshPlaceholderAlpha) }
                 }
             }
         } else {
             if (items.isEmpty()) {
-                item { PromocodeEmptyHistoryCard() }
+                item { Box(swapFade) { PromocodeEmptyHistoryCard() } }
             } else {
                 items(
                     items = items,
@@ -308,7 +314,7 @@ private fun PromocodeContent(
                             ?: "${item.promocodeId}:${item.code}:${item.activatedAt}"
                     },
                 ) { item ->
-                    PromocodeHistoryCard(item = item)
+                    Box(swapFade) { PromocodeHistoryCard(item = item) }
                 }
             }
 

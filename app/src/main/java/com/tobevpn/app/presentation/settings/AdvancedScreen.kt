@@ -1,5 +1,7 @@
 package com.tobevpn.app.presentation.settings
 
+import com.tobevpn.app.presentation.components.rememberRefreshSwap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -1029,7 +1031,12 @@ private fun LinkedDevicesSheetBody(
     }
     val routerDevices = notCurrent.filter { it.inferredKind() == DeviceKind.Router && !isRouterHere(it) }
     val otherDevices = notCurrent.filterNot { it.inferredKind() == DeviceKind.Router }
-    val refreshActive = state.isLoading || state.isRefreshing
+    // The icon and buttons follow the real state; content and placeholders
+    // swap with a fade (as on every screen), so the list follows the swap.
+    val refreshing = state.isLoading || state.isRefreshing
+    val refreshSwap = rememberRefreshSwap(refreshing)
+    val refreshActive = refreshSwap.refreshing
+    val swapFade = Modifier.graphicsLayer { alpha = refreshSwap.alpha }
     val canLinkMoreDevices = state.maxDevices == 0 || devicesCount < state.maxDevices
     // The sheet has its own Android window, so use the effective in-app theme
     // instead of the device theme for the sheet and all of its controls.
@@ -1199,7 +1206,7 @@ private fun LinkedDevicesSheetBody(
                             enabled = !state.isLoading,
                         ) {
                             SpinningRefreshIcon(
-                                spinning = refreshActive,
+                                spinning = refreshing,
                                 contentDescription = stringResource(R.string.devices_refresh),
                                 tint = refreshIconColor,
                             )
@@ -1214,7 +1221,7 @@ private fun LinkedDevicesSheetBody(
                     ) {
                         Button(
                             onClick = onScanQr,
-                            enabled = !refreshActive && canLinkMoreDevices,
+                            enabled = !refreshing && canLinkMoreDevices,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp),
                             colors = if (isDark) {
@@ -1230,7 +1237,7 @@ private fun LinkedDevicesSheetBody(
                         }
                         OutlinedButton(
                             onClick = onEnterCode,
-                            enabled = !refreshActive && canLinkMoreDevices,
+                            enabled = !refreshing && canLinkMoreDevices,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(14.dp),
                             colors = if (isDark) {
@@ -1270,23 +1277,8 @@ private fun LinkedDevicesSheetBody(
                     HorizontalDivider()
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    if (refreshActive) {
-                        Text(
-                            text = stringResource(R.string.devices_this_device),
-                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        LinkedDeviceLoadingCard(
-                            alpha = refreshPlaceholderAlpha,
-                            isCurrent = true,
-                        )
-                        Spacer(modifier = Modifier.height(20.dp))
-                    } else {
-                        currentDevice?.let { device ->
+                    Column(swapFade) {
+                        if (refreshActive) {
                             Text(
                                 text = stringResource(R.string.devices_this_device),
                                 style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
@@ -1296,68 +1288,87 @@ private fun LinkedDevicesSheetBody(
                                 overflow = TextOverflow.Ellipsis,
                             )
                             Spacer(modifier = Modifier.height(12.dp))
-                            LinkedDeviceCard(
-                                device = device,
+                            LinkedDeviceLoadingCard(
+                                alpha = refreshPlaceholderAlpha,
                                 isCurrent = true,
-                                isBusy = false,
-                                onDisconnect = askDisconnect,
                             )
                             Spacer(modifier = Modifier.height(20.dp))
+                        } else {
+                            currentDevice?.let { device ->
+                                Text(
+                                    text = stringResource(R.string.devices_this_device),
+                                    style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                LinkedDeviceCard(
+                                    device = device,
+                                    isCurrent = true,
+                                    isBusy = false,
+                                    onDisconnect = askDisconnect,
+                                )
+                                Spacer(modifier = Modifier.height(20.dp))
+                            }
                         }
                     }
 
-                    if (!refreshActive && (routerDevices.isNotEmpty() || gatewayHere != null)) {
-                        Text(
-                            text = stringResource(
-                                if (routerDevices.size + (if (gatewayHere != null) 1 else 0) > 1) {
-                                    R.string.devices_routers
-                                } else {
-                                    R.string.devices_router
-                                },
-                            ),
-                            style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            softWrap = false,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            if (gatewayHere != null) {
-                                RouterHereCard(
-                                    title = linkedHere?.name ?: routerHere.model
-                                        ?: stringResource(R.string.router_not_detected),
-                                    meta = when {
-                                        linkedHere != null -> listOfNotNull(
-                                            routerHere.model?.takeIf { it != linkedHere.name },
-                                            stringResource(R.string.router_this_network),
-                                        ).joinToString(" • ")
-                                        // ToBeVPN runs on it, set up from another device.
-                                        notCurrent.any { it.inferredKind() == DeviceKind.Router && isRouterHere(it) } ->
-                                            stringResource(R.string.router_card_installed)
-                                        routerHere.firmware != null -> stringResource(R.string.router_card_protect_home)
-                                        else -> gatewayHere
+                    Column(swapFade) {
+                        if (!refreshActive && (routerDevices.isNotEmpty() || gatewayHere != null)) {
+                            Text(
+                                text = stringResource(
+                                    if (routerDevices.size + (if (gatewayHere != null) 1 else 0) > 1) {
+                                        R.string.devices_routers
+                                    } else {
+                                        R.string.devices_router
                                     },
-                                    // The sheet slides away first, then the Router
-                                    // section comes in; it slides back on return.
-                                    onClick = {
-                                        // The sheet is part of this screen: it
-                                        // leaves with it and is there on return.
-                                        onOpenRouter()
-                                    },
-                                )
+                                ),
+                                style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                if (gatewayHere != null) {
+                                    RouterHereCard(
+                                        title = linkedHere?.name ?: routerHere.model
+                                            ?: stringResource(R.string.router_not_detected),
+                                        meta = when {
+                                            linkedHere != null -> listOfNotNull(
+                                                routerHere.model?.takeIf { it != linkedHere.name },
+                                                stringResource(R.string.router_this_network),
+                                            ).joinToString(" • ")
+                                            // ToBeVPN runs on it, set up from another device.
+                                            notCurrent.any { it.inferredKind() == DeviceKind.Router && isRouterHere(it) } ->
+                                                stringResource(R.string.router_card_installed)
+                                            routerHere.firmware != null -> stringResource(R.string.router_card_protect_home)
+                                            else -> gatewayHere
+                                        },
+                                        // The sheet slides away first, then the Router
+                                        // section comes in; it slides back on return.
+                                        onClick = {
+                                            // The sheet is part of this screen: it
+                                            // leaves with it and is there on return.
+                                            onOpenRouter()
+                                        },
+                                    )
+                                }
+                                routerDevices.forEach { device ->
+                                    LinkedDeviceCard(
+                                        device = device,
+                                        isCurrent = false,
+                                        isBusy = state.busyDeviceId == device.deviceId,
+                                        onDisconnect = askDisconnect,
+                                        subtitle = if (gatewayHere != null) stringResource(R.string.router_other_network) else null,
+                                    )
+                                }
                             }
-                            routerDevices.forEach { device ->
-                                LinkedDeviceCard(
-                                    device = device,
-                                    isCurrent = false,
-                                    isBusy = state.busyDeviceId == device.deviceId,
-                                    onDisconnect = askDisconnect,
-                                    subtitle = if (gatewayHere != null) stringResource(R.string.router_other_network) else null,
-                                )
-                            }
+                            Spacer(modifier = Modifier.height(20.dp))
                         }
-                        Spacer(modifier = Modifier.height(20.dp))
                     }
 
                     Text(
@@ -1376,7 +1387,7 @@ private fun LinkedDevicesSheetBody(
                             text = stringResource(R.string.devices_empty),
                             style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 24.dp),
+                            modifier = Modifier.padding(horizontal = 24.dp).then(swapFade),
                         )
                     } else {
                         Box(
@@ -1398,6 +1409,7 @@ private fun LinkedDevicesSheetBody(
                                         .fillMaxWidth()
                                         .nestedScroll(keepSheetStillAtListBounds)
                                         .verticalScroll(otherDevicesScrollState)
+                                        .then(swapFade)
                                         // The scrolling viewport spans the entire sheet. Cards keep
                                         // the same 24.dp side insets as the fixed content above.
                                         .padding(horizontal = 24.dp, vertical = 12.dp),

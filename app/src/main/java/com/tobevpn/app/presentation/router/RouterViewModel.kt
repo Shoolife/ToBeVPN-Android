@@ -712,17 +712,8 @@ class RouterViewModel @Inject constructor(
         }
     }
 
-    /**
-     * The refresh icon turns once per MIN_REFRESH_FEEDBACK_MS and, when told
-     * to stop, finishes its turn. A result waits for the end of the current
-     * turn, so it appears as the icon comes to rest, not before.
-     */
-    private suspend fun awaitWholeTurns(startedAt: Long) {
-        val elapsed = android.os.SystemClock.elapsedRealtime() - startedAt
-        val turns = maxOf(1L, (elapsed + MIN_REFRESH_FEEDBACK_MS - 1) / MIN_REFRESH_FEEDBACK_MS)
-        val left = turns * MIN_REFRESH_FEEDBACK_MS - elapsed
-        if (left > 0) kotlinx.coroutines.delay(left)
-    }
+    private suspend fun awaitWholeTurns(startedAt: Long) =
+        com.tobevpn.app.presentation.components.awaitWholeRefreshTurns(startedAt)
 
     fun clearNotice(id: Long) = _state.update { if (it.notice?.id == id) it.copy(notice = null) else it }
 
@@ -798,7 +789,6 @@ class RouterViewModel @Inject constructor(
     }
 
     companion object {
-        private const val MIN_REFRESH_FEEDBACK_MS = 900L
         private const val TRAFFIC_MIN_LOADING_MS = 600L
         private const val UPDATE_CHECK_EVERY_MS = 30 * 60_000L
         /** Wi-Fi is back on most phones within this after a reconnect. */
