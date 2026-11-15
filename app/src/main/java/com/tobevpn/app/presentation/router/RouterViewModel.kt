@@ -185,6 +185,10 @@ class RouterViewModel @Inject constructor(
             val accountRouters = async { accountRouters() }
             var lost = false
             var otherRouter = false
+            // The router's answer is kept until the end: status, name, devices
+            // and traffic change together with the rest of the screen (as on
+            // PC), not under the refresh placeholders.
+            var fresh: com.tobevpn.app.router.RouterRepository.Snapshot? = null
             if (here != null) {
                 runRouter(onError = { error ->
                     val raw = error.message.orEmpty()
@@ -199,15 +203,7 @@ class RouterViewModel @Inject constructor(
                     if (cached != null && _state.value.traffic.isEmpty()) _state.update { it.copy(traffic = cached.second) }
                     val snapshot = repository.snapshot(withTraffic = true)
                     val status = snapshot.status
-                    _state.update {
-                        it.copy(
-                            status = status,
-                            link = repository.link.value,
-                            // A choice being saved keeps its own view of the devices.
-                            network = if (it.savingMac != null) it.network else snapshot.network,
-                            traffic = snapshot.traffic ?: it.traffic,
-                        )
-                    }
+                    fresh = snapshot
                     // Another router than the one checked for updates: its own
                     // check, not the other router's banner.
                     val updateKey = repository.link.value?.let { it.host to it.hwid }
@@ -218,7 +214,12 @@ class RouterViewModel @Inject constructor(
                     }
                     if (status.installed) {
                         checkUpdate()
-                        snapshot.network?.let { network -> migrateDefaultDevices(status, network) }
+                        // Migrated devices land with the rest of the answer.
+                        snapshot.network?.let { network ->
+                            migrateDefaultDevices(status, network)?.let { (next, migrated) ->
+                                fresh = snapshot.copy(status = next, network = migrated)
+                            }
+                        }
                     }
                 }
             }
@@ -234,6 +235,7 @@ class RouterViewModel @Inject constructor(
             // A refresh that answers at once still shows one full turn of
             // its icon, as on PC (and the devices list).
             if (!initial) awaitWholeTurns(startedAt)
+            val answer = fresh
             _state.update {
                 it.copy(
                     info = info,
@@ -242,7 +244,10 @@ class RouterViewModel @Inject constructor(
                     checking = false,
                     refreshing = false,
                     accessLost = lost,
-                    status = if (lost || otherRouter) null else it.status,
+                    status = if (lost || otherRouter) null else answer?.status ?: it.status,
+                    // A choice being saved keeps its own view of the devices.
+                    network = if (answer == null || it.savingMac != null) it.network else answer.network,
+                    traffic = answer?.traffic ?: it.traffic,
                     // This network's router is not the linked one: shown as a
                     // router to connect to, with no error.
                     paired = if (otherRouter) false else it.paired,
@@ -722,8 +727,9 @@ class RouterViewModel @Inject constructor(
      * router's server. Each such device keeps that server as its own choice,
      * and new devices start without VPN. As the desktop app does.
      */
-    private suspend fun migrateDefaultDevices(status: RouterStatus, network: RouterNetwork) {
-        if (status.defaultMode != "vpn" || migrating) return
+    /** The router's status and devices after the migration; null when none was needed. */
+    private suspend fun migrateDefaultDevices(status: RouterStatus, network: RouterNetwork): Pair<RouterStatus, RouterNetwork>? {
+        if (status.defaultMode != "vpn" || migrating) return null
         migrating = true
         // A failure part-way is retried on the next load, not left half-done.
         val next = try {
@@ -731,14 +737,9 @@ class RouterViewModel @Inject constructor(
         } finally {
             migrating = false
         }
-        _state.update { state ->
-            state.copy(
-                status = next,
-                network = network.copy(
-                    devices = network.devices.map { if (it.mode == "default") it.copy(mode = "vpn") else it },
-                ),
-            )
-        }
+        return next to network.copy(
+            devices = network.devices.map { if (it.mode == "default") it.copy(mode = "vpn") else it },
+        )
     }
 
     private fun change(block: suspend () -> Unit) {
