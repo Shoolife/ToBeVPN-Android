@@ -350,6 +350,22 @@ private fun StatsServerSourceSelector(
     }
 }
 
+/**
+ * [target] reached by counting, not at once: the shown number moves to a new
+ * value over the length of the screen's fade, and ends exactly on it.
+ */
+@Composable
+private fun animatedCount(target: Long): Long {
+    val shown by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = target.toFloat(),
+        animationSpec = tween(COUNT_MS, easing = FastOutSlowInEasing),
+        label = "count",
+    )
+    return if (shown == target.toFloat()) target else shown.toLong()
+}
+
+private const val COUNT_MS = 540
+
 @Composable
 private fun HeroStatsCard(
     totalBytes: Long,
@@ -358,6 +374,13 @@ private fun HeroStatsCard(
     /** The router's traffic in the chosen period; null without a router. */
     routerBytes: Long? = null,
 ) {
+    // Another period or servers: the numbers count over to their new values
+    // with the chart's fade instead of jumping.
+    @Suppress("NAME_SHADOWING") val totalBytes = animatedCount(totalBytes)
+    @Suppress("NAME_SHADOWING") val totalSessions = animatedCount(totalSessions.toLong()).toInt()
+    @Suppress("NAME_SHADOWING") val totalSeconds = animatedCount(totalSeconds)
+    val routerCount = animatedCount(routerBytes ?: 0L)
+    @Suppress("NAME_SHADOWING") val routerBytes = routerBytes?.let { routerCount }
     val isDarkTheme = isSystemInDarkTheme()
     val primaryContentColor = if (isDarkTheme) {
         Color.White
