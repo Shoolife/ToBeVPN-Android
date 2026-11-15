@@ -15,7 +15,7 @@
 #
 # Files: default_mode ("vpn" or "direct" for devices without a choice),
 # devices (MAC<tab>vpn|direct|default<tab>name<tab>slot, one per line),
-# slots (slot<tab>server id<tab>server name), servers (ToBeVPN server hosts,
+# slots (slot<tab>server id<tab>server name<tab>credentials key), servers (ToBeVPN server hosts,
 # always reached directly so a device running its own ToBeVPN is not
 # tunnelled twice).
 #
@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111512
+AGENT_VERSION=2026111514
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -620,7 +620,7 @@ with_route_lock() {
 apply_routes_now() {
     # Checked again under the lock: the VPN may have stopped, or the
     # watchdog may have sent the home direct, while this run waited.
-    pidof xray >/dev/null || return 0
+    own_alive xray || return 0
     [ -f "$RUN/state" ] && return 0
     subnet=$(lan_subnet)
     router_ip=$(lan_address)
@@ -710,7 +710,9 @@ apply_routes_now() {
 }
 
 # One line per home device: device=MAC|IP|HOSTNAME|MODE|NAME|ONLINE|SLOT,
-# MODE being the saved choice or "default"; then slot=N|SERVER_ID|NAME.
+# MODE being the saved choice or "default"; then slot=N|SERVER_ID|NAME|KEY,
+# KEY a fingerprint of the server's credentials as written (empty when the
+# app that wrote them had none): an app sees from it that they changed.
 list_devices() {
     {
         awk '{print tolower($2) "\t" $3 "\t" $4}' /tmp/dhcp.leases 2>/dev/null
@@ -736,7 +738,7 @@ list_devices() {
                 print "device=" m "|" ip[m] "|" h "|" (m in mode && mode[m] != "" ? mode[m] : "default") "|" name[m] "|" (m in online ? 1 : 0) "|" s
             }
         }'
-    awk -F '\t' '$1 ~ /^[0-7]$/ {print "slot=" $1 "|" $2 "|" $3}' "$DIR/slots" 2>/dev/null
+    awk -F '\t' '$1 ~ /^[0-7]$/ {print "slot=" $1 "|" $2 "|" $3 "|" $4}' "$DIR/slots" 2>/dev/null
 }
 
 save_device() {
@@ -781,7 +783,7 @@ set_device() {
     with_devices_lock save_device "$mac" "$mode" "$name" "$slot"
     # Several devices saved at once (TOBEVPN_NO_APPLY=1) are applied once,
     # by the command that ends the batch.
-    [ -z "$TOBEVPN_NO_APPLY" ] && pidof xray >/dev/null && apply_routes
+    [ -z "$TOBEVPN_NO_APPLY" ] && own_alive xray && apply_routes
     echo "saved=1"
 }
 
@@ -808,17 +810,32 @@ kick_client() {
     echo "kicked=0"
 }
 
+# This agent's own processes of a program, never another package's (passwall
+# and others run their own xray): matched by the binary they run, also after
+# an update replaced the file under a running one ("(deleted)").
+own_pids() {
+    for pid in $(pidof "$1"); do
+        case "$(readlink "/proc/$pid/exe" 2>/dev/null)" in
+        "$DIR/$1" | "$DIR/$1 (deleted)") printf '%s ' "$pid" ;;
+        esac
+    done
+}
+
+own_alive() {
+    [ -n "$(own_pids "$1")" ]
+}
+
 hev_count() {
     echo $((1 + $(extra_slots | wc -l)))
 }
 
 start_core() {
-    if ! pidof xray >/dev/null; then
+    if ! own_alive xray; then
         XRAY_LOCATION_ASSET="$DIR" GOMEMLIMIT=40MiB GOGC=50 "$DIR/xray" run -c "$DIR/xray.json" >"$RUN/xray.log" 2>&1 &
     fi
-    if [ "$(pidof hev-socks5-tunnel | wc -w)" -lt "$(hev_count)" ]; then
+    if [ "$(own_pids hev-socks5-tunnel | wc -w)" -lt "$(hev_count)" ]; then
         # Restart every tunnel: hev does not tell which config a pid runs.
-        pids=$(pidof hev-socks5-tunnel)
+        pids=$(own_pids hev-socks5-tunnel)
         # shellcheck disable=SC2086 # several pids
         [ -n "$pids" ] && kill $pids && sleep 1
         "$DIR/hev-socks5-tunnel" "$DIR/hev.yml" >"$RUN/hev.log" 2>&1 &
@@ -829,7 +846,7 @@ start_core() {
 }
 
 core_alive() {
-    pidof xray >/dev/null && [ "$(pidof hev-socks5-tunnel | wc -w)" -ge "$(hev_count)" ]
+    own_alive xray && [ "$(own_pids hev-socks5-tunnel | wc -w)" -ge "$(hev_count)" ]
 }
 
 # Background watchdog. A crashed core is restarted; while it cannot start,
@@ -948,7 +965,7 @@ start_watch() {
 
 kill_core() {
     for name in hev-socks5-tunnel xray; do
-        pids=$(pidof "$name")
+        pids=$(own_pids "$name")
         # shellcheck disable=SC2086 # several pids
         [ -n "$pids" ] && kill $pids
     done
@@ -979,15 +996,16 @@ stop() {
         save_traffic
         rm -f "$RUN"/counter_*
     fi
-    # busybox killall matches the 15-character kernel name; pidof does not.
+    # busybox killall matches the 15-character kernel name; pidof does not,
+    # and own_pids keeps to this agent's processes.
     for name in hev-socks5-tunnel xray; do
-        pids=$(pidof "$name")
+        pids=$(own_pids "$name")
         # shellcheck disable=SC2086 # several pids
         [ -n "$pids" ] && kill $pids
     done
     # Wait for both to exit, so an immediate start does not see them alive.
     i=0
-    while [ $i -lt 3 ] && pidof xray hev-socks5-tunnel >/dev/null; do
+    while [ $i -lt 3 ] && [ -n "$(own_pids xray)$(own_pids hev-socks5-tunnel)" ]; do
         sleep 1
         i=$((i + 1))
     done
@@ -997,7 +1015,7 @@ stop() {
     # Stopped is not failed: nothing retries any more.
     rm -f "$RUN/down" "$RUN"/fails_* "$RUN/state"
     for name in hev-socks5-tunnel xray; do
-        pids=$(pidof "$name")
+        pids=$(own_pids "$name")
         # shellcheck disable=SC2086 # several pids
         [ -n "$pids" ] && kill -9 $pids
     done
@@ -1005,7 +1023,7 @@ stop() {
 }
 
 status() {
-    xray_pid=$(pidof xray)
+    xray_pid=$(own_pids xray | cut -d" " -f1)
     echo "installed=$([ -x "$DIR/xray" ] && echo 1 || echo 0)"
     echo "running=$(core_alive && echo 1 || echo 0)"
     [ -f "$RUN/state" ] && cat "$RUN/state"
@@ -1042,6 +1060,12 @@ uninstall() {
     echo "uninstalled=1"
 }
 
+# A command that changes the router runs to its end even when the app's
+# connection drops halfway (no VPN left stopped between stop and start).
+case "$1" in
+start | stop | restart | uninstall | apply | bypass | set-device | set-default) trap '' HUP PIPE ;;
+esac
+
 case "$1" in
 start) start ;;
 stop) stop ;;
@@ -1064,10 +1088,10 @@ traffic)
 set-device) set_device "$2" "$3" "$4" "$5" ;;
 set-default)
     case "$2" in vpn | direct) echo "$2" >"$DIR/default_mode" ;; *) echo "error=bad mode"; exit 2 ;; esac
-    pidof xray >/dev/null && apply_routes
+    own_alive xray && apply_routes
     echo "saved=1"
     ;;
-apply) pidof xray >/dev/null && apply_routes; echo "applied=1" ;;
+apply) own_alive xray && apply_routes; echo "applied=1" ;;
 bypass) apply_server_bypass; echo "bypass=1" ;;
 uninstall) uninstall ;;
 *) echo "usage: $0 start|stop|restart|status|uninstall|apply|devices|set-device|set-default" >&2; exit 2 ;;

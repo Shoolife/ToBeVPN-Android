@@ -452,7 +452,20 @@ class SettingsViewModel @Inject constructor(
             )
             return
         }
-        if (linkedDevicesRefreshJob?.isActive == true) return
+        if (linkedDevicesRefreshJob?.isActive == true) {
+            // A tap during a quiet background load is not dropped: it runs
+            // (with its spinning icon) as soon as that load ends.
+            if (userRequested && !userRefreshQueued) {
+                userRefreshQueued = true
+                val running = linkedDevicesRefreshJob
+                viewModelScope.launch {
+                    running?.join()
+                    userRefreshQueued = false
+                    refreshLinkedDevices(userRequested = true)
+                }
+            }
+            return
+        }
 
         viewModelScope.launch {
             // Of the connected routers, the one of this network is the one shown.
@@ -541,6 +554,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     // The result lands as the refresh icon comes to rest (as on every screen).
+    private var userRefreshQueued = false
+
     private suspend fun awaitMinimumDevicesRefreshFeedback(startedAt: Long?) =
         com.tobevpn.app.presentation.components.awaitWholeRefreshTurns(startedAt)
 

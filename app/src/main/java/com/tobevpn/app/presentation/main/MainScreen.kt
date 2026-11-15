@@ -255,7 +255,9 @@ fun MainScreen(
         onPauseOrDispose { viewModel.onPause() }
     }
 
-    var showSubscriptionSheet by remember { mutableStateOf(false) }
+    // Kept across a return (as the devices sheet), so the in-layout sheet is
+    // simply there again and its saved "open before" state matches.
+    var showSubscriptionSheet by rememberSaveable { mutableStateOf(false) }
     var selectCurrentTariffOnSubscriptionOpen by rememberSaveable {
         mutableStateOf(false)
     }

@@ -669,6 +669,9 @@ class MainViewModel @Inject constructor(
             if (request == purchaseLoadRequest && !freshPlansShown && _purchasePlans.value != null) {
                 _purchasePlansFromCache.value = true
             }
+            // Fresh plans with the limits of an earlier load would not match
+            // (a purchase or a plan change since): no limits rather than old ones.
+            if (request == purchaseLoadRequest && freshPlansShown) _currentLimits.value = null
             throw error
         } finally {
             if (request == purchaseLoadRequest) {

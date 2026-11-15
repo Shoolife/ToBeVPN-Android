@@ -153,6 +153,8 @@ class RouterViewModel @Inject constructor(
         viewModelScope.launch {
             vpnRepository.observeServers().collect { servers ->
                 _state.update { it.copy(servers = servers.filter { server -> server.isAvailable }) }
+                // New credentials (a reset link) reach the router too.
+                refreshRouterCredentials()
             }
         }
         load(initial = true)
@@ -160,8 +162,13 @@ class RouterViewModel @Inject constructor(
 
     fun refresh() = load(initial = false)
 
+    private var loadJob: kotlinx.coroutines.Job? = null
+
     private fun load(initial: Boolean, recheck: Boolean = true) {
-        viewModelScope.launch {
+        // One load at a time: a newer one (a second tap, the reload after a
+        // kick) replaces the running one instead of racing it.
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             val startedAt = android.os.SystemClock.elapsedRealtime()
             _state.update { it.copy(refreshing = !initial, error = null) }
             val known = if (initial) withContext(Dispatchers.IO) { repository.knownRouterHere() } else null
@@ -244,7 +251,9 @@ class RouterViewModel @Inject constructor(
                     checking = false,
                     refreshing = false,
                     accessLost = lost,
-                    status = if (lost || otherRouter) null else answer?.status ?: it.status,
+                    // No linked router here: nothing of the last one stays (its
+                    // name above another router's card).
+                    status = if (lost || otherRouter || here == null) null else answer?.status ?: it.status,
                     // A choice being saved keeps its own view of the devices.
                     network = if (answer == null || it.savingMac != null) it.network else answer.network,
                     traffic = answer?.traffic ?: it.traffic,
@@ -256,9 +265,14 @@ class RouterViewModel @Inject constructor(
             // Whether the linked router is this network's was decided with the
             // mark seen before (possibly another network's): read once more
             // when the fresh detection says otherwise.
+            refreshRouterCredentials()
             val hereNow = withContext(Dispatchers.IO) { repository.linkHere() }
             // A different router (not only none ↔ one) is read again too.
-            if (recheck && hereNow?.let { it.host to it.hwid } != here?.let { it.host to it.hwid }) {
+            // Ids compared only when both are known: a link that just learned its
+            // id from this very load is the same router.
+            val sameRouter = hereNow?.host == here?.host &&
+                (hereNow?.hwid == null || here?.hwid == null || hereNow.hwid == here.hwid)
+            if (recheck && !sameRouter) {
                 load(initial = false, recheck = false)
             }
         }
@@ -298,6 +312,14 @@ class RouterViewModel @Inject constructor(
         // One choice at a time: a second one planned against the list before
         // the first is saved would drop the first one's new slot.
         if (_state.value.savingMac != null) return
+        // The device's own choice picked again: nothing changes, so nothing is
+        // written and the device is not dropped from Wi-Fi for it.
+        val currentChoice = when (device.mode) {
+            "vpn" -> network.slots.firstOrNull { it.slot == network.slotOf(device) }?.let { "server:${it.serverId}" }
+            "direct" -> "direct"
+            else -> null
+        }
+        if (choice == currentChoice) return
         _state.update { it.copy(savingMac = device.mac, error = null, notice = null) }
         viewModelScope.launch {
             runRouter {
@@ -325,7 +347,11 @@ class RouterViewModel @Inject constructor(
                                 } finally {
                                     _state.update { it.copy(busy = false) }
                                 }
-                                current = network.copy(slots = list.map { RouterSlot(it.slot, it.server.id, it.server.name) })
+                                current = network.copy(
+                                    slots = list.map {
+                                        RouterSlot(it.slot, it.server.id, it.server.name, RouterAgent.credentialKey(it.server))
+                                    },
+                                )
                                 // The router has the new servers now, whatever happens next.
                                 _state.update { it.copy(network = current) }
                             }
@@ -455,14 +481,7 @@ class RouterViewModel @Inject constructor(
                 val server = _state.value.install.serverId?.let { id -> _state.value.servers.firstOrNull { it.id == id } }
                     ?: defaultInstallServer()
                     ?: throw RouterException("server-missing")
-                val shortUuid = sessionDao.getSession()?.shortUuid?.takeIf { it.isNotBlank() }
-                    ?: throw RouterException("no subscription")
-                // Built as the app builds its own (templates, a base without a
-                // trailing slash), so the router gets the same working link.
-                val subscriptionUrl = com.tobevpn.app.data.remote.buildSubscriptionUrlByKey(
-                    com.tobevpn.app.BuildConfig.SUBSCRIPTION_BASE_URL,
-                    shortUuid,
-                )?.toString() ?: throw RouterException("no subscription")
+                val subscriptionUrl = subscriptionUrl() ?: throw RouterException("no subscription")
                 val status = installer.install(
                     host = link.host,
                     user = link.user,
@@ -719,6 +738,41 @@ class RouterViewModel @Inject constructor(
 
     private suspend fun awaitWholeTurns(startedAt: Long) =
         com.tobevpn.app.presentation.components.awaitWholeRefreshTurns(startedAt)
+
+    /**
+     * The account's subscription link, built as the app builds its own
+     * (templates, a base without a trailing slash), so the router gets the
+     * same working link.
+     */
+    private suspend fun subscriptionUrl(): String? {
+        val shortUuid = sessionDao.getSession()?.shortUuid?.takeIf { it.isNotBlank() } ?: return null
+        return com.tobevpn.app.data.remote.buildSubscriptionUrlByKey(
+            com.tobevpn.app.BuildConfig.SUBSCRIPTION_BASE_URL,
+            shortUuid,
+        )?.toString()
+    }
+
+    /**
+     * After the account's link was reset (or a server moved) the router still
+     * logs in with the old credentials: its servers are written again, once,
+     * when the screen sees that. Quiet: no spinner, the status just follows.
+     */
+    private fun refreshRouterCredentials() {
+        val network = _state.value.network ?: return
+        val servers = _state.value.servers
+        if (servers.isEmpty() || _state.value.status?.installed != true || credentialsJob?.isActive == true) return
+        credentialsJob = viewModelScope.launch {
+            runRouter {
+                val next = repository.refreshCredentials(network, servers, subscriptionUrl()) ?: return@runRouter
+                val slots = network.slots.map { slot ->
+                    servers.firstOrNull { it.id == slot.serverId }?.let { slot.copy(key = RouterAgent.credentialKey(it)) } ?: slot
+                }
+                _state.update { it.copy(status = next, network = it.network?.copy(slots = slots)) }
+            }
+        }
+    }
+
+    private var credentialsJob: kotlinx.coroutines.Job? = null
 
     fun clearNotice(id: Long) = _state.update { if (it.notice?.id == id) it.copy(notice = null) else it }
 

@@ -50,7 +50,13 @@ data class RouterDevice(
     val slot: Int,
 )
 
-data class RouterSlot(val slot: Int, val serverId: String, val serverName: String)
+data class RouterSlot(
+    val slot: Int,
+    val serverId: String,
+    val serverName: String,
+    /** Fingerprint of the credentials written for it; null when not known (older apps). */
+    val key: String? = null,
+)
 
 data class RouterNetwork(val devices: List<RouterDevice>, val slots: List<RouterSlot>) {
     /**
@@ -157,10 +163,10 @@ object RouterAgent {
     fun parseSlots(text: String): List<RouterSlot> = text.lineSequence()
         .mapNotNull { it.removePrefix("slot=").takeIf { rest -> rest != it } }
         .mapNotNull { line ->
-            val fields = line.split('|', limit = 3)
+            val fields = line.split('|', limit = 4)
             val slot = fields.getOrNull(0)?.toIntOrNull()?.takeIf { it in 0..MAX_SLOT } ?: return@mapNotNull null
             val id = fields.getOrNull(1) ?: return@mapNotNull null
-            RouterSlot(slot, id, fields.getOrNull(2).orEmpty())
+            RouterSlot(slot, id, fields.getOrNull(2).orEmpty(), fields.getOrNull(3)?.trim()?.takeIf { it.isNotEmpty() })
         }
         .toList()
 
@@ -275,8 +281,17 @@ object RouterAgent {
 
     /** The slot list the agent reads: slot, server id and name. */
     fun slotsFile(servers: List<SlotServer>): String = servers.joinToString("") { item ->
-        "${item.slot}\t${clean(item.server.id)}\t${clean(item.server.name)}\n"
+        "${item.slot}\t${clean(item.server.id)}\t${clean(item.server.name)}\t${credentialKey(item.server)}\n"
     }
+
+    /**
+     * A fingerprint of what a server's tunnel logs in with (the account's
+     * user id, the address and port), as the desktop app computes it: when
+     * the account's link is reset these change, and an app sees from the
+     * router's slots that its servers must be written again.
+     */
+    fun credentialKey(server: Server): String =
+        sha256Hex("${server.uuid}|${server.address}|${server.port}".toByteArray()).take(16)
 
     private fun clean(value: String) = value.filter { !it.isISOControl() && it != '|' }.take(80)
 
@@ -310,11 +325,13 @@ object RouterAgent {
     fun writeServerConfig(
         shell: RouterShell,
         servers: List<SlotServer>,
-        sites: ByteArray?,
+        sites: () -> ByteArray?,
         bypassHosts: Collection<String>,
     ) {
         val ruDirect = shell.run("cat $RU_DIRECT_FLAG 2>/dev/null").first.trim() != "0"
-        if (ruDirect && sites != null) writeRuSitesIfMissing(shell, sites)
+        // The phone's list (trimmed from a large asset) only when the router
+        // has none: most routers have theirs, and it is not built for nothing.
+        if (ruDirect && shell.run("[ -s $RU_SITES_PATH ]").second != 0) sites()?.let { writeRuSitesIfMissing(shell, it) }
         // The rule goes in whenever the router has a list (its own, e.g. the
         // desktop app's, even when this phone has none to give).
         val withSites = ruDirect && shell.run("[ -s $RU_SITES_PATH ]").second == 0
@@ -419,6 +436,32 @@ object RouterAgent {
         if (found.none { it }) throw RouterException("geosite.dat has none of the Russian categories")
         return out.toByteArray()
     }
+
+    /**
+     * The pid of ToBeVPN's own Xray, never another package's (passwall and
+     * others run their own xray): matched by the binary it runs. Empty when
+     * none runs.
+     */
+    const val OWN_XRAY_PID =
+        "\$(for p in \$(pidof xray); do case \"\$(readlink /proc/\$p/exe 2>/dev/null)\" in " +
+            "/opt/tobevpn/xray | \"/opt/tobevpn/xray (deleted)\") echo \$p; break ;; esac; done)"
+
+    /**
+     * The VPN counts as on while its own core runs or its watchdog waits to
+     * bring it back (the failed state): a restart then keeps it on.
+     */
+    const val AGENT_RUNNING =
+        "{ [ -n \"$OWN_XRAY_PID\" ] || { [ -f /tmp/tobevpn/watch.pid ] && kill -0 \"\$(cat /tmp/tobevpn/watch.pid)\" 2>/dev/null; }; }"
+
+    /**
+     * Stop and start on the router, carried to its end there even if the
+     * connection drops (HUP ignored, output to a file): the home is never
+     * left with the VPN stopped halfway. Its output and exit code are the
+     * start's. Every restart of the apps goes through it.
+     */
+    const val RESTART_ON_ROUTER =
+        "(trap '' HUP PIPE; [ -x $SCRIPT ] && $SCRIPT stop >/dev/null; $SCRIPT start) " +
+            "</dev/null >/tmp/tobevpn-restart.log 2>&1 & pid=\$!; wait \$pid; code=\$?; cat /tmp/tobevpn-restart.log; exit \$code"
 
     fun sha256Hex(data: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(data).joinToString("") { "%02x".format(it) }

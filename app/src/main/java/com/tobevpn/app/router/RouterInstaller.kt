@@ -241,15 +241,13 @@ class RouterInstaller @Inject constructor(
                 val current = needed.none { it.name == binary.name }
                 log(InstallLogLine("info", "${binary.name}: ${if (current) "already on the router, up to date" else "will be installed"}"))
             }
-            if (needed.isNotEmpty() && (facts["free_kb"]?.toLongOrNull() ?: 0) < REQUIRED_FREE_KB) {
-                throw RouterException("not enough space on the router: ${(facts["free_kb"]?.toLongOrNull() ?: 0) / 1024} MB free")
-            }
             Plan(check, facts, needed)
         }
         val downloads = plan.needed.map { binary ->
             progress("download:${binary.name}")
             binary to fetch(binary, log)
         }
+        checkSpace(plan.facts["free_kb"]?.trim()?.toLongOrNull() ?: 0L, downloads)
 
         ssh.session(network, host, user, hostKey) { shell ->
             // Nothing is stopped while files go up (each one replaced in one
@@ -277,7 +275,10 @@ class RouterInstaller @Inject constructor(
             uploadBinaries(shell, downloads, progress, log)
 
             progress("configure")
-            val mac = plan.facts["mac"].orEmpty().uppercase()
+            val mac = plan.facts["mac"].orEmpty().trim().uppercase()
+            // The router's id in the account comes from this MAC: without one
+            // every such router would get the same id (and mark).
+            if (!RouterAgent.validMac(mac)) throw RouterException("could not read the router's LAN MAC address")
             val hwid = uuidV5(OID_NAMESPACE, "tobevpn-router:$mac")
             val model = plan.facts["model"]?.takeIf { it.isNotEmpty() } ?: "router"
             val subscription = "SUB_URL='${RouterAgent.shellQuoteInner(subscriptionUrl)}'\n" +
@@ -293,7 +294,7 @@ class RouterInstaller @Inject constructor(
             }
             // The servers and their configs, as when a device's server changes.
             // The servers as every later change writes them (one shared writer).
-            RouterAgent.writeServerConfig(shell, servers, ruSites, serverHosts)
+            RouterAgent.writeServerConfig(shell, servers, { ruSites }, serverHosts)
             shell.writeFile("/opt/tobevpn/subscription.conf", subscription.toByteArray(), "600")
             // New devices stay direct until the owner picks a server for
             // them; choices made earlier are kept when reinstalling.
@@ -302,13 +303,17 @@ class RouterInstaller @Inject constructor(
                     "touch /opt/tobevpn/devices; rm -f /opt/tobevpn/clients /opt/tobevpn/direct; " +
                     "mkdir -p /etc/hotplug.d/dhcp",
             )
-            shell.writeFile("/etc/hotplug.d/dhcp/90-tobevpn", DHCP_HOOK.toByteArray(), "755")
-            shell.writeFile("/etc/init.d/tobevpn", INIT_SCRIPT.toByteArray(), "755")
+            // The agent and its hooks come together: a newer agent from the
+            // desktop app keeps its own hooks and init script too.
+            if (agentOnRouter <= agentVersion(String(agentScript()))) {
+                shell.writeFile("/etc/hotplug.d/dhcp/90-tobevpn", DHCP_HOOK.toByteArray(), "755")
+                shell.writeFile("/etc/init.d/tobevpn", INIT_SCRIPT.toByteArray(), "755")
+            }
             shell.runOk(if (autostart) "/etc/init.d/tobevpn enable" else "/etc/init.d/tobevpn disable")
             log(InstallLogLine("info", "autostart ${if (autostart) "on" else "off"}"))
 
             progress("start")
-            logOutput(shell.runOk(RESTART_ON_ROUTER), log)
+            logOutput(shell.runOk(RouterAgent.RESTART_ON_ROUTER), log)
             val status = shell.runOk("${RouterAgent.SCRIPT} status")
             logOutput(status, log)
             progress("done")
@@ -388,16 +393,13 @@ class RouterInstaller @Inject constructor(
         progress("check")
         val found = ssh.session(network, host, user, hostKey) { shell ->
             val found = outdatedComponents(shell, log)
-            if (found.binaries.isNotEmpty()) {
-                val freeKb = shell.runOk("df -k /overlay 2>/dev/null | awk 'NR==2{print \$4}'").trim().toLongOrNull() ?: 0L
-                if (freeKb < REQUIRED_FREE_KB) throw RouterException("not enough space on the router: ${freeKb / 1024} MB free")
-            }
-            found
-        }
+            found to (shell.runOk(FREE_KB_COMMAND).trim().toLongOrNull() ?: 0L)
+        }.let { (found, freeKb) -> freeKbAtCheck = freeKb; found }
         val downloads = found.binaries.map { binary ->
             progress("download:${binary.name}")
             binary to fetch(binary, log)
         }
+        checkSpace(freeKbAtCheck, downloads)
         // Nothing is stopped while the files go up (each one replaced in one
         // step), and the restart runs on the router to its end: a failure on
         // the way leaves the VPN as it was.
@@ -441,7 +443,7 @@ class RouterInstaller @Inject constructor(
             progress("start")
             // Restarted onto the new files only if it runs (or retries after a
             // failure); a stopped VPN stays stopped.
-            logOutput(shell.runOk("if $AGENT_RUNNING; then $RESTART_ON_ROUTER; else echo kept=1; fi"), log)
+            logOutput(shell.runOk("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; else echo kept=1; fi"), log)
             val status = shell.runOk("${RouterAgent.SCRIPT} status")
             progress("done")
             RouterAgent.parseStatus(status)
@@ -470,6 +472,20 @@ class RouterInstaller @Inject constructor(
                 shell.writeFile("/opt/tobevpn/hev.version", "$HEV_VERSION\n".toByteArray(), "644")
             }
         }
+    }
+
+    @Volatile
+    private var freeKbAtCheck = 0L
+
+    /**
+     * Room for the files about to go up: each lands next to the running one
+     * (which keeps its space until the restart), so the new files' size plus
+     * a margin, not a fixed amount (a hev-only update needs little).
+     */
+    private fun checkSpace(freeKb: Long, downloads: List<Pair<Binary, ByteArray>>) {
+        if (downloads.isEmpty()) return
+        val neededKb = downloads.sumOf { it.second.size.toLong() } / 1024 + SPACE_MARGIN_KB
+        if (freeKb < neededKb) throw RouterException("not enough space on the router: ${freeKb / 1024} MB free")
     }
 
     private fun agentScript(): ByteArray = context.assets.open("router/tobevpn-router.sh").use { it.readBytes() }
@@ -622,19 +638,6 @@ class RouterInstaller @Inject constructor(
 
     companion object {
         private const val PINNED_XRAY_VERSION = "26.10.31"
-        /**
-         * Stop and start on the router, carried to its end there even if the
-         * connection drops (HUP ignored, output to a file): the home is never
-         * left with the VPN stopped halfway. Its output and exit code are the
-         * start's.
-         */
-        private val RESTART_ON_ROUTER =
-            "(trap '' HUP; [ -x ${RouterAgent.SCRIPT} ] && ${RouterAgent.SCRIPT} stop >/dev/null; ${RouterAgent.SCRIPT} start) " +
-                "</dev/null >/tmp/tobevpn-restart.log 2>&1 & pid=\$!; wait \$pid; code=\$?; cat /tmp/tobevpn-restart.log; exit \$code"
-        // The VPN counts as on while its core runs or its watchdog waits to
-        // bring it back (the failed state): an update restarts it either way.
-        private const val AGENT_RUNNING =
-            "{ pidof xray >/dev/null || { [ -f /tmp/tobevpn/watch.pid ] && kill -0 \"\$(cat /tmp/tobevpn/watch.pid)\" 2>/dev/null; }; }"
         /** The hev-socks5-tunnel build this app installs (also in its download URL). */
         private const val HEV_VERSION = "2.19.2"
         private const val RELEASE_MIN_AGE_DAYS = 3L
@@ -644,6 +647,13 @@ class RouterInstaller @Inject constructor(
         private const val MIN_TOTAL_MEMORY_KB = 120L * 1024
         private const val MIN_FREE_MEMORY_KB = 64L * 1024
         private const val REQUIRED_FREE_KB = 40L * 1024
+        /** Kept free besides the new files. */
+        private const val SPACE_MARGIN_KB = 4L * 1024
+        /**
+         * Free space where ToBeVPN lives: the overlay on OpenWrt, the root
+         * filesystem on images without one (ext4 on a Raspberry Pi).
+         */
+        private const val FREE_KB_COMMAND = "{ df -k /overlay 2>/dev/null || df -k /; } | awk 'NR==2{print \$4}'"
         private val cachedTarget = java.util.concurrent.ConcurrentHashMap<Arch, Pair<Instant, Binary>>()
 
         /** RFC 4122 OID namespace: the router's id is the same as from the desktop app. */
@@ -660,7 +670,7 @@ class RouterInstaller @Inject constructor(
             "[ -f /tmp/tobevpn/watch.pid ] && /opt/tobevpn/tobevpn-router.sh apply >/dev/null 2>&1\n"
 
         private const val BASE_FACTS_COMMAND =
-            "echo arch=\$(uname -m); echo free_kb=\$(df -k /overlay 2>/dev/null | awk 'NR==2{print \$4}'); " +
+            "echo arch=\$(uname -m); echo free_kb=\$($FREE_KB_COMMAND); " +
                 "echo tun=\$([ -c /dev/net/tun ] || grep -qw tun /proc/modules && echo 1 || echo 0); " +
                 "echo pkg=\$(command -v apk >/dev/null || command -v opkg >/dev/null && echo 1 || echo 0); " +
                 "echo curl=\$(command -v curl >/dev/null && echo 1 || echo 0); " +
@@ -668,7 +678,7 @@ class RouterInstaller @Inject constructor(
                 "echo installed=\$([ -x /opt/tobevpn/xray ] && echo 1 || echo 0); " +
                 "echo mem_total_kb=\$(awk '/^MemTotal:/{print \$2}' /proc/meminfo); " +
                 "echo mem_available_kb=\$(awk '/^MemAvailable:/{print \$2}' /proc/meminfo); " +
-                "echo own_xray_kb=\$(p=\$(pidof xray); [ -n \"\$p\" ] && awk '/^VmRSS:/{print \$2}' /proc/\$p/status || echo 0); " +
+                "echo own_xray_kb=\$(p=${RouterAgent.OWN_XRAY_PID}; [ -n \"\$p\" ] && awk '/^VmRSS:/{print \$2}' /proc/\$p/status || echo 0); " +
                 "echo mac=\$(cat /sys/class/net/br-lan/address 2>/dev/null); " +
                 ". /etc/openwrt_release 2>/dev/null; echo os=\"\$DISTRIB_ID \$DISTRIB_RELEASE\"; echo release=\"\$DISTRIB_RELEASE\"; " +
                 "echo model=\$(cat /tmp/sysinfo/model 2>/dev/null | tr ' ' '-')"

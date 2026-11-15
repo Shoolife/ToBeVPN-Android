@@ -256,6 +256,9 @@ private fun ReferralContent(
     val shareChooserTitle = stringResource(R.string.referrals_share_chooser)
     val clipboardLabel = stringResource(R.string.referrals_clipboard_label)
     val items = data.referrals.orEmpty()
+    // The sheet below runs its own swap from the real state (not from this
+    // one's, which lags by the fade).
+    val refreshingNow = isRefreshing
     // Content and placeholders swap with a fade, as on every screen.
     val refreshSwap = rememberRefreshSwap(isRefreshing)
     @Suppress("NAME_SHADOWING") val isRefreshing = refreshSwap.refreshing
@@ -368,7 +371,7 @@ private fun ReferralContent(
             items = items,
             total = data.total,
             error = error,
-            isRefreshing = isRefreshing,
+            isRefreshing = refreshingNow,
             isLoadingMore = isLoadingMore,
             onRetry = onRetry,
             onLoadMore = onLoadMore,

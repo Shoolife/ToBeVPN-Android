@@ -207,7 +207,7 @@ fun RouterScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = viewModel::refresh, enabled = !state.busy && !state.loading) {
+                    IconButton(onClick = viewModel::refresh, enabled = !state.busy && !state.loading && !state.refreshing) {
                         SpinningRefreshIcon(
                             spinning = state.refreshing,
                             contentDescription = stringResource(R.string.refresh),

@@ -572,12 +572,49 @@ class RouterRepository @Inject constructor(
         if (0 !in slots || slots.toSet().size != slots.size || slots.any { it !in 0..RouterAgent.MAX_SLOT }) {
             throw RouterException("invalid server slots")
         }
-        val sites = withContext(Dispatchers.IO) { ruSites() }
         return withRouter { shell ->
-            RouterAgent.writeServerConfig(shell, servers, sites, serverHosts + serviceHosts())
+            RouterAgent.writeServerConfig(shell, servers, ::ruSites, serverHosts + serviceHosts())
             // Applied by a restart only when the VPN runs: a VPN the owner
             // stopped stays stopped (the new config is used at its next start).
-            shell.runOk("if pidof xray >/dev/null; then ${RouterAgent.SCRIPT} restart; fi; true")
+            shell.runOk("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; fi")
+            RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
+        }.also(::remember)
+    }
+
+    /**
+     * The router's servers written again when the account's credentials for
+     * them changed (its link was reset, a server moved): the router would
+     * otherwise keep logging in with the old ones and quietly send the home
+     * direct. Same slots, same servers, the subscription link updated too.
+     * Null when nothing changed, or when a slot's server is not in [servers]
+     * (another app's, or gone: that one cannot be written from here).
+     */
+    suspend fun refreshCredentials(
+        network: RouterNetwork,
+        servers: List<Server>,
+        subscriptionUrl: String?,
+    ): RouterStatus? {
+        if (network.slots.none { it.slot == 0 }) return null
+        val list = network.slots.map { slot ->
+            servers.firstOrNull { it.id == slot.serverId }?.let { SlotServer(slot.slot, it) } ?: return null
+        }
+        val stale = list.any { item ->
+            network.slots.first { it.slot == item.slot }.key != RouterAgent.credentialKey(item.server)
+        }
+        if (!stale) return null
+        return withRouter { shell ->
+            RouterAgent.writeServerConfig(shell, list, ::ruSites, servers.map { it.address } + serviceHosts())
+            if (subscriptionUrl != null) {
+                val conf = shell.run("cat /opt/tobevpn/subscription.conf 2>/dev/null").first
+                if (conf.isNotBlank()) {
+                    val line = "SUB_URL='${RouterAgent.shellQuoteInner(subscriptionUrl)}'"
+                    val next = conf.lineSequence().filter { it.isNotEmpty() }
+                        .map { if (it.startsWith("SUB_URL=")) line else it }
+                        .joinToString("\n", postfix = "\n")
+                    if (next != conf) shell.writeFile("/opt/tobevpn/subscription.conf", next.toByteArray(), "600")
+                }
+            }
+            shell.runOk("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; fi")
             RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
         }.also(::remember)
     }
@@ -597,7 +634,7 @@ class RouterRepository @Inject constructor(
             shell.writeFile(RouterAgent.RU_DIRECT_FLAG, if (enabled) "1\n".toByteArray() else "0\n".toByteArray(), "644")
             // Applied by a restart only when the VPN runs: a VPN the owner
             // stopped stays stopped (the new config is used at its next start).
-            shell.runOk("if pidof xray >/dev/null; then ${RouterAgent.SCRIPT} restart; fi; true")
+            shell.runOk("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; fi")
             RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first)
         }.also(::remember)
     }
@@ -631,7 +668,7 @@ class RouterRepository @Inject constructor(
         private const val KEY_ROUTER = "router_here"
         private const val KEY_TRAFFIC = "traffic"
         /** How long one finding of this network's router serves the background checks. */
-        private const val HERE_VALID_MS = 60_000L
+        private const val HERE_VALID_MS = 150_000L
 
         /**
          * Slots that devices other than [exceptMac] go through. With the

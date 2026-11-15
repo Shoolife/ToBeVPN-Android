@@ -183,6 +183,16 @@ class RouterAgentTest {
     }
 
     @Test
+    fun credentialKeyMatchesTheDesktopApp() {
+        // The desktop app computes the same: sha256("uuid|address|port"), first 16 hex.
+        val server = Server(id = "de", name = "de", address = "de.example.com", port = 443, uuid = "uuid-1")
+        assertEquals("28ae8b0d2adbc151", RouterAgent.credentialKey(server))
+        val slots = RouterAgent.parseSlots("slot=0|de|Германия|28ae8b0d2adbc151\nslot=1|nl|Нидерланды\n")
+        assertEquals("28ae8b0d2adbc151", slots[0].key)
+        assertEquals(null, slots[1].key)
+    }
+
+    @Test
     fun aDeviceWhoseSlotHasNoServerKeepsSlotZeroInUse() {
         fun server(id: String) = Server(id = id, name = id, address = id, port = 443, uuid = "u")
         val servers = listOf(server("a"), server("b"))

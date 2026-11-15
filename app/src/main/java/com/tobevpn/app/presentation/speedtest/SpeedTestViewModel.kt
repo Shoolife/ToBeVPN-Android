@@ -170,8 +170,9 @@ class SpeedTestViewModel @Inject constructor(
             val throughVpn = viaVpn.value
             // Remembered at the start: the route may change while the test runs.
             val throughBypass = throughVpn && viaBaseStationBypass.value
-            // The router's VPN, asked fresh: the label must say how this run went.
-            val throughRouter = !throughVpn && checkRouter()
+            // The router's VPN, asked fresh alongside the test (the label must
+            // say how this run went), so Start reacts at once.
+            val routerCheck = if (throughVpn) null else async { checkRouter() }
             val startedAt = System.nanoTime()
             SafeDiagnostics.info(
                 TAG,
@@ -268,6 +269,7 @@ class SpeedTestViewModel @Inject constructor(
                 progress = 1f,
                 errorRes = if (downloadMbps <= 0) R.string.speed_measure_failed else null,
             )
+            val throughRouter = routerCheck?.await() == true
             saveHistoryEntry(
                 SpeedTestHistoryEntry(
                     timestampMillis = System.currentTimeMillis(),

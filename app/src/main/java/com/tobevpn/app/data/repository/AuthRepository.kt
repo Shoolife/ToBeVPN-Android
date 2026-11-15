@@ -478,7 +478,9 @@ class AuthRepository @Inject constructor(
         planInfo?.let { rememberTrafficReset(it) }
 
         val newShortUuid = sessionDao.getSession()?.shortUuid
-        if (oldShortUuid != newShortUuid || !newShortUuid.isNullOrBlank()) {
+        // Only a reset link makes the cached servers wrong: a kept link keeps
+        // them (and a failed refresh below does not leave the app without any).
+        if (linkReset || oldShortUuid != newShortUuid) {
             vpnRepository.clearCachedServers()
         }
         prefsDataStore.clearSubscriptionSyncTimestamp()
