@@ -66,6 +66,7 @@ enum class SpeedTestPhase {
 class SpeedTestViewModel @Inject constructor(
     private val connectionManager: VpnConnectionManager,
     private val prefsDataStore: PrefsDataStore,
+    private val routerRepository: com.tobevpn.app.router.RouterRepository,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(SpeedTestState())
@@ -92,11 +93,34 @@ class SpeedTestViewModel @Inject constructor(
         state is ConnectionState.Connected && server?.source == ServerSource.BASE_STATION_BYPASS
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    private val _viaRouter = MutableStateFlow(false)
+    /**
+     * With the app's VPN off, whether the home router sends this phone
+     * through its VPN: the test then measures that tunnel, not a direct line.
+     */
+    val viaRouter: StateFlow<Boolean> = _viaRouter.asStateFlow()
+
+    private suspend fun checkRouter(): Boolean {
+        val through = !viaVpn.value && try {
+            routerRepository.protection() != null
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        }
+        _viaRouter.value = through
+        return through
+    }
+
     private val _history = MutableStateFlow<List<SpeedTestHistoryEntry>>(emptyList())
     val history: StateFlow<List<SpeedTestHistoryEntry>> = _history.asStateFlow()
     private val historyMutationMutex = Mutex()
 
     init {
+        // Asked again whenever the app's own VPN goes on or off.
+        viewModelScope.launch {
+            viaVpn.collect { checkRouter() }
+        }
         viewModelScope.launch {
             prefsDataStore.speedTestHistoryJson.collect { raw ->
                 _history.value = decodeHistory(raw)
@@ -130,6 +154,8 @@ class SpeedTestViewModel @Inject constructor(
             val throughVpn = viaVpn.value
             // Remembered at the start: the route may change while the test runs.
             val throughBypass = throughVpn && viaBaseStationBypass.value
+            // The router's VPN, asked fresh: the label must say how this run went.
+            val throughRouter = !throughVpn && checkRouter()
             val startedAt = System.nanoTime()
             SafeDiagnostics.info(
                 TAG,
@@ -233,11 +259,12 @@ class SpeedTestViewModel @Inject constructor(
                     pingMs = measuredPing,
                     viaVpn = throughVpn,
                     baseStationBypass = throughBypass,
+                    viaRouter = throughRouter,
                 ),
             )
             SafeDiagnostics.info(
                 TAG,
-                "Speed test completed: route=${if (throughVpn) "VPN" else "DIRECT"} " +
+                "Speed test completed: route=${if (throughVpn) "VPN" else if (throughRouter) "ROUTER_VPN" else "DIRECT"} " +
                     "provider=${selectedProvider.name} ping_ms=$measuredPing " +
                     "download_mbps=${formatMbps(downloadMbps)} " +
                     "duration_ms=${(System.nanoTime() - startedAt) / 1_000_000L}",
@@ -631,7 +658,8 @@ class SpeedTestViewModel @Inject constructor(
                         .put(HISTORY_DOWNLOAD, item.downloadMbps)
                         .put(HISTORY_PING, item.pingMs)
                         .put(HISTORY_VIA_VPN, item.viaVpn)
-                        .put(HISTORY_BASE_STATION_BYPASS, item.baseStationBypass),
+                        .put(HISTORY_BASE_STATION_BYPASS, item.baseStationBypass)
+                        .put(HISTORY_VIA_ROUTER, item.viaRouter),
                 )
             }
         }.toString()
@@ -668,6 +696,7 @@ class SpeedTestViewModel @Inject constructor(
                             // Entries saved before this field are standard VPN ones.
                             baseStationBypass = viaVpn &&
                                 item.optBoolean(HISTORY_BASE_STATION_BYPASS, false),
+                            viaRouter = !viaVpn && item.optBoolean(HISTORY_VIA_ROUTER, false),
                         ),
                     )
                 }
@@ -713,6 +742,7 @@ class SpeedTestViewModel @Inject constructor(
         const val HISTORY_PING = "ping"
         const val HISTORY_VIA_VPN = "viaVpn"
         const val HISTORY_BASE_STATION_BYPASS = "baseStationBypass"
+        const val HISTORY_VIA_ROUTER = "viaRouter"
     }
 }
 
@@ -723,6 +753,8 @@ data class SpeedTestHistoryEntry(
     val viaVpn: Boolean,
     /** Measured through a base-station bypass server; implies [viaVpn]. */
     val baseStationBypass: Boolean = false,
+    /** Measured through the home router's VPN, the app's own VPN off. */
+    val viaRouter: Boolean = false,
 )
 
 private enum class SpeedTestProvider {

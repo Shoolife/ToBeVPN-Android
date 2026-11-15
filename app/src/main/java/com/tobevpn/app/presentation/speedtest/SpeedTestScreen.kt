@@ -49,6 +49,7 @@ import androidx.compose.material.icons.rounded.CellTower
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Public
+import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -123,6 +124,7 @@ fun SpeedTestScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val viaVpn by viewModel.viaVpn.collectAsStateWithLifecycle()
     val viaBaseStationBypass by viewModel.viaBaseStationBypass.collectAsStateWithLifecycle()
+    val viaRouter by viewModel.viaRouter.collectAsStateWithLifecycle()
     val history by viewModel.history.collectAsStateWithLifecycle()
 
     Scaffold(
@@ -153,6 +155,7 @@ fun SpeedTestScreen(
                     SpeedRouteBadge(
                         viaVpn = viaVpn,
                         viaBaseStationBypass = viaBaseStationBypass,
+                        viaRouter = viaRouter,
                         modifier = Modifier.padding(end = 12.dp),
                     )
                 },
@@ -417,20 +420,23 @@ fun SpeedTestHistoryScreen(
 private fun SpeedRouteBadge(
     viaVpn: Boolean,
     viaBaseStationBypass: Boolean,
+    viaRouter: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val routeColor = if (viaBaseStationBypass) BaseStationBypassRouteColor else VpnGreen
-    val backgroundColor = if (viaVpn) {
+    // The router's VPN is a VPN too: green, not the direct grey.
+    val protected = viaVpn || viaRouter
+    val backgroundColor = if (protected) {
         routeColor.copy(alpha = 0.16f)
     } else {
         MaterialTheme.colorScheme.surfaceContainerLow
     }
-    val contentColor = if (viaVpn) {
+    val contentColor = if (protected) {
         routeColor
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val borderColor = if (viaVpn) {
+    val borderColor = if (protected) {
         routeColor.copy(alpha = 0.32f)
     } else {
         MaterialTheme.colorScheme.outlineVariant
@@ -454,6 +460,7 @@ private fun SpeedRouteBadge(
                     when {
                         viaBaseStationBypass -> R.string.speed_via_base_station_bypass
                         viaVpn -> R.string.speed_via_vpn
+                        viaRouter -> R.string.speed_via_router_vpn
                         else -> R.string.speed_direct
                     },
                 ),
@@ -1061,13 +1068,14 @@ private fun HistoryEntryCard(
     }
     val routeColor = when {
         entry.baseStationBypass -> BaseStationBypassRouteColor
-        entry.viaVpn -> VpnGreen
+        entry.viaVpn || entry.viaRouter -> VpnGreen
         else -> VpnBlue
     }
     val routeLabel = stringResource(
         when {
             entry.baseStationBypass -> R.string.speed_via_base_station_bypass
             entry.viaVpn -> R.string.speed_via_vpn
+            entry.viaRouter -> R.string.speed_via_router_vpn
             else -> R.string.speed_direct
         },
     )
@@ -1103,6 +1111,7 @@ private fun HistoryEntryCard(
                         imageVector = when {
                             entry.baseStationBypass -> Icons.Rounded.CellTower
                             entry.viaVpn -> Icons.Rounded.Lock
+                            entry.viaRouter -> Icons.Rounded.Router
                             else -> Icons.Rounded.Public
                         },
                         contentDescription = null,
