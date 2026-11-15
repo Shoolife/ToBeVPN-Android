@@ -230,7 +230,12 @@ class RouterInstaller @Inject constructor(
             checkError(check)?.let { throw RouterException(it) }
             val arch = Arch.fromUname(check.machine) ?: throw RouterException("unsupported router CPU: ${check.machine}")
             val binaries = listOf(xrayTarget(arch, log), hevTunnel(arch))
-            facts += RouterAgent.keyValues(shell.runOk(componentFactsCommand(binaries)))
+            facts += RouterAgent.keyValues(
+                shell.runOk(
+                    componentFactsCommand(binaries) +
+                        "echo agent_version=\$(sed -n 's/^AGENT_VERSION=//p' ${RouterAgent.SCRIPT} 2>/dev/null)",
+                ),
+            )
             val needed = binaries.filter { outdated(it, facts) }
             binaries.forEach { binary ->
                 val current = needed.none { it.name == binary.name }
@@ -247,8 +252,8 @@ class RouterInstaller @Inject constructor(
         }
 
         ssh.session(network, host, user, hostKey) { shell ->
-            val stopped = shell.run("[ -x ${RouterAgent.SCRIPT} ] && ${RouterAgent.SCRIPT} stop").first
-            logOutput(stopped, log)
+            // Nothing is stopped while files go up (each one replaced in one
+            // step): a cut-off install leaves a running VPN as it was.
             shell.runOk("mkdir -p /opt/tobevpn")
             val packages = plan.check.packages
             if (packages.isNotEmpty()) {
@@ -290,7 +295,12 @@ class RouterInstaller @Inject constructor(
                 "APP_VERSION='${BuildConfig.VERSION_NAME}'\n" +
                 "OS_VERSION='${RouterAgent.shellQuoteInner(plan.facts["release"].orEmpty().trim('"'))}'\n" +
                 "MODEL='${RouterAgent.shellQuoteInner(model)}'\n"
-            shell.writeFile(RouterAgent.SCRIPT, agentScript(), "755")
+            // Never an older agent over a newer one the desktop app put there
+            // (the two apps would keep replacing each other's).
+            val agentOnRouter = plan.facts["agent_version"]?.trim()?.toLongOrNull() ?: 0L
+            if (agentOnRouter <= agentVersion(String(agentScript()))) {
+                shell.writeFile(RouterAgent.SCRIPT, agentScript(), "755")
+            }
             // The servers and their configs, as when a device's server changes.
             // The servers as every later change writes them (one shared writer).
             RouterAgent.writeServerConfig(shell, servers, ruSites, serverHosts)
@@ -308,7 +318,7 @@ class RouterInstaller @Inject constructor(
             log(InstallLogLine("info", "autostart ${if (autostart) "on" else "off"}"))
 
             progress("start")
-            logOutput(shell.runOk("${RouterAgent.SCRIPT} start"), log)
+            logOutput(shell.runOk(RESTART_ON_ROUTER), log)
             val status = shell.runOk("${RouterAgent.SCRIPT} status")
             logOutput(status, log)
             progress("done")
@@ -398,22 +408,10 @@ class RouterInstaller @Inject constructor(
             progress("download:${binary.name}")
             binary to fetch(binary, log)
         }
-        try {
-            replaceComponents(network, host, user, hostKey, downloads, found, ruSites, progress, log)
-        } catch (error: Exception) {
-            // The VPN was stopped before the files were replaced: a failure
-            // after that must not leave the home without it.
-            runCatching {
-                ssh.session(network, host, user, hostKey) { shell ->
-                    // Only when the VPN is down: a failure before the stop, or a
-                    // start still running on the router, needs no second start.
-                    // Only a VPN that ran before the update (its mark is left
-                    // only once the stop happened), and only when it is down.
-                    shell.run("[ -x ${RouterAgent.SCRIPT} ] && [ -f $UPDATE_RUNNING_MARK ] && ! pidof xray >/dev/null && ${RouterAgent.SCRIPT} start; rm -f $UPDATE_RUNNING_MARK")
-                }
-            }
-            throw error
-        }
+        // Nothing is stopped while the files go up (each one replaced in one
+        // step), and the restart runs on the router to its end: a failure on
+        // the way leaves the VPN as it was.
+        replaceComponents(network, host, user, hostKey, downloads, found, ruSites, progress, log)
     }
 
     private suspend fun replaceComponents(
@@ -429,9 +427,6 @@ class RouterInstaller @Inject constructor(
     ): RouterStatus {
         return ssh.session(network, host, user, hostKey) { shell ->
             progress("configure")
-            // Whether it ran, so the update leaves it as it found it.
-            shell.run("if $AGENT_RUNNING; then touch $UPDATE_RUNNING_MARK; else rm -f $UPDATE_RUNNING_MARK; fi")
-            logOutput(shell.run("${RouterAgent.SCRIPT} stop").first, log)
             downloads.forEach { (binary, content) ->
                 progress("upload:${binary.name}")
                 shell.writeFile("/opt/tobevpn/${binary.name}", content, "755")
@@ -464,8 +459,9 @@ class RouterInstaller @Inject constructor(
                 log(InstallLogLine("info", "Russian sites list: ${ruSites.size / 1024} KB"))
             }
             progress("start")
-            // Started again only if it ran before the update.
-            logOutput(shell.runOk("if [ -f $UPDATE_RUNNING_MARK ]; then rm -f $UPDATE_RUNNING_MARK; ${RouterAgent.SCRIPT} start; else echo kept=1; fi"), log)
+            // Restarted onto the new files only if it runs (or retries after a
+            // failure); a stopped VPN stays stopped.
+            logOutput(shell.runOk("if $AGENT_RUNNING; then $RESTART_ON_ROUTER; else echo kept=1; fi"), log)
             val status = shell.runOk("${RouterAgent.SCRIPT} status")
             progress("done")
             RouterAgent.parseStatus(status)
@@ -622,8 +618,15 @@ class RouterInstaller @Inject constructor(
 
     companion object {
         private const val PINNED_XRAY_VERSION = "26.10.31"
-        /** Left on the router by an update while the VPN ran; read back after it. */
-        private const val UPDATE_RUNNING_MARK = "/tmp/tobevpn-update-running"
+        /**
+         * Stop and start on the router, carried to its end there even if the
+         * connection drops (HUP ignored, output to a file): the home is never
+         * left with the VPN stopped halfway. Its output and exit code are the
+         * start's.
+         */
+        private val RESTART_ON_ROUTER =
+            "(trap '' HUP; [ -x ${RouterAgent.SCRIPT} ] && ${RouterAgent.SCRIPT} stop >/dev/null; ${RouterAgent.SCRIPT} start) " +
+                "</dev/null >/tmp/tobevpn-restart.log 2>&1 & pid=\$!; wait \$pid; code=\$?; cat /tmp/tobevpn-restart.log; exit \$code"
         // The VPN counts as on while its core runs or its watchdog waits to
         // bring it back (the failed state): an update restarts it either way.
         private const val AGENT_RUNNING =

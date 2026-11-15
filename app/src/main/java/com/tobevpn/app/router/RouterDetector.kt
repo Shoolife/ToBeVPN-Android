@@ -146,9 +146,10 @@ class RouterDetector @Inject constructor(
         }
 
         private fun pageTitle(page: String): String? {
-            val lower = page.lowercase()
-            val start = lower.indexOf("<title>").takeIf { it >= 0 }?.plus("<title>".length) ?: return null
-            val end = lower.indexOf("</title>", start).takeIf { it >= 0 } ?: return null
+            // Searched in the page itself, ignoring case: lowercasing can change
+            // the text's length ("İ"), and positions in it would not fit the page.
+            val start = page.indexOf("<title>", ignoreCase = true).takeIf { it >= 0 }?.plus("<title>".length) ?: return null
+            val end = page.indexOf("</title>", start, ignoreCase = true).takeIf { it >= 0 } ?: return null
             val title = page.substring(start, end).trim()
             // "SNR-CPE-AX2 - Обзор" on inner pages; the login page is the bare model.
             return title.split(" - ").first().trim()

@@ -314,8 +314,10 @@ object RouterAgent {
         bypassHosts: Collection<String>,
     ) {
         val ruDirect = shell.run("cat $RU_DIRECT_FLAG 2>/dev/null").first.trim() != "0"
-        val withSites = ruDirect && sites != null
-        if (withSites) writeRuSitesIfMissing(shell, sites!!)
+        if (ruDirect && sites != null) writeRuSitesIfMissing(shell, sites)
+        // The rule goes in whenever the router has a list (its own, e.g. the
+        // desktop app's, even when this phone has none to give).
+        val withSites = ruDirect && shell.run("[ -s $RU_SITES_PATH ]").second == 0
         shell.writeFile("/opt/tobevpn/xray.json", xrayConfig(servers, withSites).toByteArray(), "600")
         for (slot in 0..MAX_SLOT) {
             val path = if (slot == 0) "/opt/tobevpn/hev.yml" else "/opt/tobevpn/hev$slot.yml"

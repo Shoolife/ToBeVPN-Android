@@ -378,7 +378,8 @@ fun RouterScreen(
                             state = state,
                             onAutostart = { viewModel.control(if (it) "autostart-on" else "autostart-off") },
                             onRuDirect = viewModel::setRuDirect,
-                            onStartStop = { viewModel.control(if (status.running) "stop" else "start") },
+                            // A VPN in the failed state is on too: its watchdog keeps retrying.
+                            onStartStop = { viewModel.control(if (status.running || status.failed) "stop" else "start") },
                             onUninstall = viewModel::openUninstall,
                         )
                     }
@@ -1133,7 +1134,7 @@ private fun RouterControls(
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                 } else {
                     Text(
-                        stringResource(if (status.running) R.string.router_stop else R.string.router_start),
+                        stringResource(if (status.running || status.failed) R.string.router_stop else R.string.router_start),
                         textAlign = TextAlign.Center,
                         style = fixedLayoutTextStyle(MaterialTheme.typography.labelLarge),
                     )

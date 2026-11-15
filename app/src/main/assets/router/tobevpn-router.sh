@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111511
+AGENT_VERSION=2026111512
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -533,7 +533,10 @@ account_traffic() {
 
 save_traffic() {
     [ -f "$RUN/traffic" ] || return 0
-    tail -n "$TRAFFIC_KEEP" "$RUN/traffic" >"$DIR/traffic.tmp" && mv "$DIR/traffic.tmp" "$DIR/traffic"
+    tail -n "$TRAFFIC_KEEP" "$RUN/traffic" >"$DIR/traffic.tmp" || return 0
+    # The copy in memory is cut the same way: it would grow for months.
+    cp "$DIR/traffic.tmp" "$RUN/traffic.cut" && mv "$RUN/traffic.cut" "$RUN/traffic"
+    mv "$DIR/traffic.tmp" "$DIR/traffic"
     echo "${1:-$(($(date +%s) / 3600 * 3600))}" >"$RUN/traffic_saved"
 }
 
@@ -991,7 +994,8 @@ stop() {
     # The core is down first, so no apply running meanwhile (which checks
     # for it under the lock) puts the routing back.
     with_route_lock stop_routing
-    rm -f "$RUN/down" "$RUN"/fails_*
+    # Stopped is not failed: nothing retries any more.
+    rm -f "$RUN/down" "$RUN"/fails_* "$RUN/state"
     for name in hev-socks5-tunnel xray; do
         pids=$(pidof "$name")
         # shellcheck disable=SC2086 # several pids

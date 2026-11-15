@@ -183,6 +183,36 @@ class RouterAgentTest {
     }
 
     @Test
+    fun aDeviceWhoseSlotHasNoServerKeepsSlotZeroInUse() {
+        fun server(id: String) = Server(id = id, name = id, address = id, port = 443, uuid = "u")
+        val servers = listOf(server("a"), server("b"))
+        // m1 names slot 3, which has no server: it rides slot 0 (server a).
+        val network = RouterNetwork(
+            devices = listOf(RouterDevice("m1", null, null, "vpn", null, true, 3)),
+            slots = listOf(RouterSlot(0, "a", "a")),
+        )
+        assertEquals(0, network.slotOf(network.devices[0]))
+        val plan = RouterRepository.planSlots(servers, network, "m2", "b", limit = 4)
+            as RouterRepository.Companion.SlotPlan.Ready
+        // Neither slot 0 (m1 rides it) nor slot 3 (m1 would move to it).
+        assertEquals(1, plan.slot)
+        assertEquals(listOf(0, 1), plan.list!!.map { it.slot })
+    }
+
+    @Test
+    fun slotZeroStaysWithTheDefaultVpnEvenWithNoDefaultDevicesListed() {
+        fun server(id: String) = Server(id = id, name = id, address = id, port = 443, uuid = "u")
+        val servers = listOf(server("a"), server("b"))
+        val network = RouterNetwork(
+            devices = listOf(RouterDevice("m1", null, null, "direct", null, true, 0)),
+            slots = listOf(RouterSlot(0, "a", "a")),
+        )
+        val plan = RouterRepository.planSlots(servers, network, "m2", "b", limit = 4, defaultVpn = true)
+            as RouterRepository.Companion.SlotPlan.Ready
+        assertEquals(1, plan.slot)
+    }
+
+    @Test
     fun doesNotRewriteSlotsWhoseServerThePhoneDoesNotKnow() {
         fun server(id: String) = Server(id = id, name = id, address = id, port = 443, uuid = "u")
         val network = RouterNetwork(

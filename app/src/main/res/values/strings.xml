@@ -868,6 +868,7 @@
     <string name="router_uninstall_done_title">ToBeVPN removed</string>
     <string name="router_uninstall_done_text">The router works as before, without the VPN. ToBeVPN can be installed again at any time.</string>
     <string name="router_uninstall_account_failed">ToBeVPN is removed from the router, but taking the router off the account failed: %1$s. Try again, or disconnect it later under Devices.</string>
+    <string name="router_uninstall_id_unknown">the router\'s ID is unknown</string>
     <string name="router_uninstall_yes">Remove</string>
     <string name="router_retry">Try again</string>
     <string name="router_close">Close</string>

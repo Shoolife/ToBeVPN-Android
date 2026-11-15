@@ -660,7 +660,9 @@ private fun EnhancedTrafficChart(
                                 endY = bottom,
                             ),
                             topLeft = Offset(x, top),
-                            size = Size(barWidth, routerHeight - if (barHeight > 0.5f) 1.dp.toPx() else 0f),
+                            // A gap of up to 1dp above this phone's part, never more than
+                            // the router's part itself (a negative height draws upside down).
+                            size = Size(barWidth, (routerHeight - if (barHeight > 0.5f) 1.dp.toPx() else 0f).coerceAtLeast(0.5f)),
                             cornerRadius = corner,
                         )
                     }

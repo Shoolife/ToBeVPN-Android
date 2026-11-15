@@ -171,7 +171,17 @@ class RouterViewModel @Inject constructor(
             // The login page and the router's own status are asked at once,
             // and the account's devices tell whether the router already runs
             // ToBeVPN from another device.
-            val detection = async { repository.detect() }
+            // A failed detection must not take the screen down: nothing is
+            // known about the router then.
+            val detection = async {
+                try {
+                    repository.detect()
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    RouterInfo(gateway = known?.gateway)
+                }
+            }
             val accountRouters = async { accountRouters() }
             var lost = false
             var otherRouter = false
@@ -648,7 +658,10 @@ class RouterViewModel @Inject constructor(
             try {
                 if (!routerRemoved) {
                     step { it.copy(routerStep = UninstallUi.Step.Active) }
+                    // The router's id is read from the router itself when not
+                    // known yet: after the removal nothing can tell it any more.
                     removedHwid = _state.value.status?.hwid ?: repository.link.value?.hwid
+                        ?: runCatching { repository.status().hwid }.getOrNull()
                     repository.uninstall()
                     routerRemoved = true
                 }
@@ -677,7 +690,8 @@ class RouterViewModel @Inject constructor(
 
     /** The account's device with this router's id, if it is still linked. */
     private suspend fun unlinkFromAccount(hwid: String?, resetSubscription: Boolean) {
-        if (hwid.isNullOrBlank()) return
+        // Unknown id: the account step is not reported done when it was not done.
+        if (hwid.isNullOrBlank()) throw IllegalStateException(context.getString(R.string.router_uninstall_id_unknown))
         val devices = botApi.getDevices().data?.devices.orEmpty()
         val device = devices.firstOrNull {
             it.hwid.equals(hwid, ignoreCase = true) || it.deviceId.equals(hwid, ignoreCase = true)

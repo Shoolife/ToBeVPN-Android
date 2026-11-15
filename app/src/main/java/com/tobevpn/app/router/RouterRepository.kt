@@ -573,9 +573,28 @@ class RouterRepository @Inject constructor(
          * server.
          */
         fun usedSlots(network: RouterNetwork, exceptMac: String?, defaultVpn: Boolean = false): Set<Int> =
-            network.devices.filter { it.mac != exceptMac && it.mode == "vpn" }.map { it.slot }.toSet() +
-                // A "default" device rides the slot its entry names (0 unless another app set one).
-                (if (defaultVpn) network.devices.filter { it.mac != exceptMac && it.mode == "default" }.map { it.slot }.toSet() else emptySet())
+            // The slot each device really rides (slot 0 when its own has no
+            // server), as the agent reads it.
+            network.devices.filter { it.mac != exceptMac && it.mode == "vpn" }.map { network.slotOf(it) }.toSet() +
+                // A "default" device rides the slot its entry names (0 unless another
+                // app set one); devices not listed yet ride slot 0.
+                (
+                    if (defaultVpn) {
+                        network.devices.filter { it.mac != exceptMac && it.mode == "default" }.map { network.slotOf(it) }.toSet() + 0
+                    } else {
+                        emptySet()
+                    }
+                )
+
+        /**
+         * Slots other devices' entries name, server or not: a new server put
+         * in one would move them to it at once, so they are not handed out.
+         */
+        private fun namedSlots(network: RouterNetwork, exceptMac: String?, defaultVpn: Boolean): Set<Int> =
+            network.devices
+                .filter { it.mac != exceptMac && (it.mode == "vpn" || (it.mode == "default" && defaultVpn)) }
+                .map { it.slot }
+                .toSet()
 
         sealed interface SlotPlan {
             data class Ready(val list: List<SlotServer>?, val slot: Int) : SlotPlan
@@ -608,7 +627,7 @@ class RouterRepository @Inject constructor(
                 .map { item -> servers.firstOrNull { it.id == item.serverId }?.let { SlotServer(item.slot, it) } ?: return SlotPlan.Missing }
                 .toMutableList()
             if (list.size >= limit) return SlotPlan.Full
-            val taken = list.map { it.slot }.toSet() + used
+            val taken = list.map { it.slot }.toSet() + used + namedSlots(network, exceptMac, defaultVpn)
             val free = (0 until RouterAgent.MAX_SERVERS).firstOrNull { it !in taken } ?: return SlotPlan.Full
             list += SlotServer(free, server)
             return SlotPlan.Ready(list.sortedBy { it.slot }, free)

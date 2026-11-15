@@ -882,6 +882,7 @@
     <string name="router_uninstall_done_title">ToBeVPN удалён</string>
     <string name="router_uninstall_done_text">Роутер работает как раньше, без VPN. Установить ToBeVPN снова можно в любой момент.</string>
     <string name="router_uninstall_account_failed">ToBeVPN с роутера удалён, но отключить роутер от аккаунта не удалось: %1$s. Можно повторить или отключить его позже в «Устройствах».</string>
+    <string name="router_uninstall_id_unknown">не удалось узнать ID роутера</string>
     <string name="router_uninstall_yes">Удалить</string>
     <string name="router_retry">Повторить</string>
     <string name="router_close">Закрыть</string>
