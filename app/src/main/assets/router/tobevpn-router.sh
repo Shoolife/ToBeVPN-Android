@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111514
+AGENT_VERSION=2026111515
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -814,9 +814,19 @@ kick_client() {
 # and others run their own xray): matched by the binary they run, also after
 # an update replaced the file under a running one ("(deleted)").
 own_pids() {
+    # Without readlink nothing can be told apart: every such process counts.
+    if ! command -v readlink >/dev/null 2>&1; then
+        pidof "$1"
+        return
+    fi
+    # The binary's real path too: /opt may be a link (Entware, a USB disk),
+    # and the kernel names the resolved one.
+    real=$(readlink -f "$DIR/$1" 2>/dev/null)
     for pid in $(pidof "$1"); do
-        case "$(readlink "/proc/$pid/exe" 2>/dev/null)" in
+        exe=$(readlink "/proc/$pid/exe" 2>/dev/null)
+        case "$exe" in
         "$DIR/$1" | "$DIR/$1 (deleted)") printf '%s ' "$pid" ;;
+        *) [ -n "$real" ] && { [ "$exe" = "$real" ] || [ "$exe" = "$real (deleted)" ]; } && printf '%s ' "$pid" ;;
         esac
     done
 }

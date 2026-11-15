@@ -318,7 +318,9 @@ class RouterInstaller @Inject constructor(
             log(InstallLogLine("info", "autostart ${if (autostart) "on" else "off"}"))
 
             progress("start")
-            logOutput(shell.runOk(RouterAgent.RESTART_ON_ROUTER), log)
+            // The files are on the router: a start that fails shows as its
+            // state (failed, retried each minute), the install is not lost.
+            logOutput(shell.run(RouterAgent.RESTART_ON_ROUTER).first, log)
             val status = shell.runOk("${RouterAgent.SCRIPT} status")
             logOutput(status, log)
             progress("done")
@@ -448,7 +450,9 @@ class RouterInstaller @Inject constructor(
             progress("start")
             // Restarted onto the new files only if it runs (or retries after a
             // failure); a stopped VPN stays stopped.
-            logOutput(shell.runOk("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; else echo kept=1; fi"), log)
+            // The new files are in place either way: a start that fails shows as
+            // the router's state (failed), not as an update that did not happen.
+            logOutput(shell.run("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; else echo kept=1; fi").first, log)
             val status = shell.runOk("${RouterAgent.SCRIPT} status")
             progress("done")
             RouterAgent.parseStatus(status)

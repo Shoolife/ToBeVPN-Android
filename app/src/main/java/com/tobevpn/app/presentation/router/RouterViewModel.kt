@@ -154,8 +154,6 @@ class RouterViewModel @Inject constructor(
         viewModelScope.launch {
             vpnRepository.observeServers().collect { servers ->
                 _state.update { it.copy(servers = servers.filter { server -> server.isAvailable }) }
-                // New credentials (a reset link) reach the router too.
-                refreshRouterCredentials()
             }
         }
         load(initial = true)
@@ -313,14 +311,6 @@ class RouterViewModel @Inject constructor(
         // One choice at a time: a second one planned against the list before
         // the first is saved would drop the first one's new slot.
         if (_state.value.savingMac != null) return
-        // The device's own choice picked again: nothing changes, so nothing is
-        // written and the device is not dropped from Wi-Fi for it.
-        val currentChoice = when (device.mode) {
-            "vpn" -> network.slots.firstOrNull { it.slot == network.slotOf(device) }?.let { "server:${it.serverId}" }
-            "direct" -> "direct"
-            else -> null
-        }
-        if (choice == currentChoice) return
         _state.update { it.copy(savingMac = device.mac, error = null, notice = null) }
         viewModelScope.launch {
             runRouter {
@@ -328,7 +318,26 @@ class RouterViewModel @Inject constructor(
                 var slot = 0
                 // Planned against the router's list as it is now, not as the
                 // screen last read it: a slot another app added meanwhile is kept.
-                val network = runCatching { repository.devices() }.getOrNull() ?: network
+                val network = try {
+                    repository.devices()
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    network
+                }
+                // The device's own choice (as the router has it now) picked
+                // again: nothing changes, so nothing is written and the device
+                // is not dropped from Wi-Fi for it.
+                val routerDevice = network.devices.firstOrNull { it.mac == device.mac } ?: device
+                val currentChoice = when (routerDevice.mode) {
+                    "vpn" -> network.slots.firstOrNull { it.slot == network.slotOf(routerDevice) }?.let { "server:${it.serverId}" }
+                    "direct" -> "direct"
+                    else -> null
+                }
+                if (choice == currentChoice) {
+                    _state.update { it.copy(network = network) }
+                    return@runRouter
+                }
                 var current = network
                 if (choice.startsWith("server:")) {
                     val servers = _state.value.servers
@@ -764,34 +773,49 @@ class RouterViewModel @Inject constructor(
     private fun refreshRouterCredentials() {
         val network = _state.value.network ?: return
         val status = _state.value.status ?: return
+        val hwid = status.hwid ?: return
         if (_state.value.servers.isEmpty() || !status.installed || credentialsJob?.isActive == true) return
+        // Once per router while the screen is open: a router that stays
+        // different (another account's) is not asked again and again.
+        val routerKey = "${_state.value.link?.host}|${hwid.lowercase()}"
+        if (routerKey == credentialsCheckedFor) return
+        credentialsCheckedFor = routerKey
         credentialsJob = viewModelScope.launch {
             runRouter(onError = { false }) {
-                if (!repository.credentialsStale(network, _state.value.servers, subscriptionUrl())) return@runRouter
-                // This app may be the stale side (the link was reset on another
-                // device): its own subscription and servers are read anew first,
-                // so it never writes revoked credentials over fresh ones.
-                runCatching { authRepository.syncSubscription(force = true) }
-                runCatching { vpnRepository.refreshServers(forceRefresh = true) }
-                val servers = vpnRepository.observeServers().first().filter { it.isAvailable }
-                // Only this account's router gets this account's credentials.
-                val hwid = status.hwid ?: return@runRouter
+                val key = sessionDao.getSession()?.shortUuid
+                if (!repository.credentialsStale(network, _state.value.servers, key)) return@runRouter
+                // Only this account's router gets this account's credentials
+                // (an account list that cannot be read stops here too).
                 if (accountRouters().none { it.first.equals(hwid, ignoreCase = true) }) return@runRouter
+                // This app may be the stale side (the link was reset on another
+                // device): its own link is synced and must answer live with
+                // servers, or nothing is written.
+                try {
+                    authRepository.syncSubscription(force = true)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    return@runRouter
+                }
+                if (!vpnRepository.subscriptionIsLive()) return@runRouter
+                val servers = vpnRepository.refreshServers(forceRefresh = true).getOrNull()
+                    ?.filter { it.isAvailable } ?: return@runRouter
                 if (_state.value.busy || _state.value.savingMac != null) return@runRouter
                 _state.update { it.copy(busy = true) }
                 try {
-                    val next = repository.refreshCredentials(network, servers, subscriptionUrl()) ?: return@runRouter
-                    val slots = network.slots.map { slot ->
-                        servers.firstOrNull { it.id == slot.serverId }?.let { slot.copy(key = RouterAgent.credentialKey(it)) } ?: slot
-                    }
-                    _state.update { it.copy(status = next, network = it.network?.copy(slots = slots)) }
+                    val next = repository.refreshCredentials(servers, subscriptionUrl(), sessionDao.getSession()?.shortUuid)
+                        ?: return@runRouter
+                    _state.update { it.copy(status = next) }
                 } finally {
                     _state.update { it.copy(busy = false) }
                 }
+                // The slots and their new keys as the router has them now.
+                runCatching { repository.devices() }.getOrNull()?.let { fresh -> _state.update { it.copy(network = fresh) } }
             }
         }
     }
 
+    private var credentialsCheckedFor: String? = null
     private var credentialsJob: kotlinx.coroutines.Job? = null
 
     fun clearNotice(id: Long) = _state.update { if (it.notice?.id == id) it.copy(notice = null) else it }

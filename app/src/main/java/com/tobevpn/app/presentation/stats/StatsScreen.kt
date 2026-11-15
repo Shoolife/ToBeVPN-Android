@@ -175,7 +175,9 @@ fun StatsScreen(
                     totalSeconds = totalSeconds,
                     routerBytes = if (withRouter) routerTotal else null,
                     // Fades follow the period and servers, not each minute of traffic.
-                    fadeKey = shownPeriod to view?.source,
+                    fadeKey = shownPeriod to (view?.source ?: serverSource),
+                    // The total is for the servers chosen, whatever the period.
+                    totalFadeKey = view?.source ?: serverSource,
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -228,7 +230,9 @@ fun StatsScreen(
                 // new comes in evenly), each with the rows read for it. New
                 // traffic within the same period only updates them.
                 AnimatedContent(
-                    targetState = StatsSection(shownPeriod, view?.source, slots, rows, routerAt),
+                    // Keyed as the rows will be once read: the first rows appear
+                    // in place, with no "no data" moment fading out before them.
+                    targetState = StatsSection(shownPeriod, view?.source ?: serverSource, slots, rows, routerAt, loaded = view != null),
                     contentKey = { it.period to it.source },
                     transitionSpec = {
                         fadeIn(tween(420, delayMillis = 120, easing = FastOutSlowInEasing)) togetherWith
@@ -238,7 +242,9 @@ fun StatsScreen(
                     label = "stats-period",
                 ) { section ->
                 Column(Modifier.fillMaxSize()) {
-                if (section.rows.isEmpty()) {
+                if (!section.loaded) {
+                    Spacer(Modifier.fillMaxWidth().weight(1f))
+                } else if (section.rows.isEmpty()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -361,6 +367,7 @@ private fun HeroStatsCard(
     /** The router's traffic in the chosen period; null without a router. */
     routerBytes: Long? = null,
     fadeKey: Any? = null,
+    totalFadeKey: Any? = null,
 ) {
     // Another period or servers: each number fades over to its new value
     // with the chart's fade (FadingText), never counted or jumped.
@@ -448,7 +455,7 @@ private fun HeroStatsCard(
                     style = fixedLayoutTextStyle(MaterialTheme.typography.displaySmall),
                     fontWeight = FontWeight.Bold,
                     color = primaryContentColor,
-                    fadeKey = fadeKey,
+                    fadeKey = totalFadeKey,
                 )
                 if (routerBytes != null) {
                     Spacer(Modifier.height(6.dp))
@@ -1006,4 +1013,5 @@ private data class StatsSection(
     val slots: List<TrafficStat>,
     val rows: List<TrafficStat>,
     val routerAt: (Long) -> Long,
+    val loaded: Boolean = true,
 )

@@ -596,13 +596,17 @@ class RouterRepository @Inject constructor(
      * (another app's, or gone: that one cannot be written from here).
      */
     suspend fun refreshCredentials(
-        network: RouterNetwork,
         servers: List<Server>,
         subscriptionUrl: String?,
+        subscriptionKey: String?,
     ): RouterStatus? {
-        val list = credentialSlots(network, servers) ?: return null
         return withRouter { shell ->
-            if (!credentialsDiffer(shell, network, list, subscriptionUrl)) return@withRouter null
+            // The router's slots as they are now, in this very session: a slot
+            // another app or a device choice added meanwhile is kept.
+            val output = shell.runOk("${RouterAgent.SCRIPT} devices")
+            val network = RouterNetwork(RouterAgent.parseDevices(output), RouterAgent.parseSlots(output))
+            val list = credentialSlots(network, servers) ?: return@withRouter null
+            if (!credentialsDiffer(shell, network, list, subscriptionKey)) return@withRouter null
             RouterAgent.writeServerConfig(shell, list, ::ruSites, servers.map { it.address } + serviceHosts())
             if (subscriptionUrl != null) {
                 val conf = shell.run("cat /opt/tobevpn/subscription.conf 2>/dev/null").first
@@ -628,9 +632,9 @@ class RouterRepository @Inject constructor(
      * written by an older app has no key: alone that is not a difference,
      * so nothing is restarted for it.
      */
-    suspend fun credentialsStale(network: RouterNetwork, servers: List<Server>, subscriptionUrl: String?): Boolean {
+    suspend fun credentialsStale(network: RouterNetwork, servers: List<Server>, subscriptionKey: String?): Boolean {
         val list = credentialSlots(network, servers) ?: return false
-        return withRouter { shell -> credentialsDiffer(shell, network, list, subscriptionUrl) }
+        return withRouter { shell -> credentialsDiffer(shell, network, list, subscriptionKey) }
     }
 
     /** The router's slots with this app's servers; null when one is not in [servers]. */
@@ -645,11 +649,13 @@ class RouterRepository @Inject constructor(
         shell: RouterShell,
         network: RouterNetwork,
         list: List<SlotServer>,
-        subscriptionUrl: String?,
+        subscriptionKey: String?,
     ): Boolean {
         val routerSub = shell.run("sed -n \"s/^SUB_URL='\\(.*\\)'\$/\\1/p\" /opt/tobevpn/subscription.conf 2>/dev/null")
             .first.trim().takeIf { it.isNotEmpty() }
-        val linkChanged = routerSub != null && subscriptionUrl != null && routerSub != subscriptionUrl
+        // By the account's key in the link, not the whole address: two apps
+        // write the same link in their own form (base, slash, template).
+        val linkChanged = routerSub != null && !subscriptionKey.isNullOrBlank() && subscriptionKey !in routerSub
         val keyChanged = list.any { item ->
             val key = network.slots.first { it.slot == item.slot }.key
             key != null && key != RouterAgent.credentialKey(item.server)
@@ -697,10 +703,9 @@ class RouterRepository @Inject constructor(
     internal fun serviceHosts(): List<String> = listOf(
         BuildConfig.SUBSCRIPTION_BASE_URL,
         BuildConfig.BOT_API_BASE_URL,
-        // The fallback endpoints are full addresses (scheme, path, a
-        // template): only their host goes to the router.
-        BuildConfig.FALLBACK_BOT_DOMAIN,
-        BuildConfig.FALLBACK_SUBS_DOMAIN,
+        // Not the fallback endpoints: they live on shared CDN and cloud
+        // addresses, and the router sends whole addresses direct for the
+        // home (other sites there would skip the VPN too).
     ).mapNotNull { url -> hostOf(url) }
 
     private fun hostOf(url: String): String? {

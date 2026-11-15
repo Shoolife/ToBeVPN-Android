@@ -269,7 +269,12 @@ class SpeedTestViewModel @Inject constructor(
                 progress = 1f,
                 errorRes = if (downloadMbps <= 0) R.string.speed_measure_failed else null,
             )
-            val throughRouter = routerCheck?.await() == true
+            // Not waited for: a finished result is saved at once (leaving the
+            // screen must not lose it); a check still running counts as the
+            // route known when the test started.
+            // (checkRouter keeps its answer in viaRouter).
+            val throughRouter = routerCheck != null && _viaRouter.value
+            routerCheck?.cancel()
             saveHistoryEntry(
                 SpeedTestHistoryEntry(
                     timestampMillis = System.currentTimeMillis(),
