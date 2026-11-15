@@ -212,8 +212,8 @@ class RouterAgentTest {
 
     @Test
     fun routerMarkMatchesTheAgent() {
-        // Router shell: printf '%s' "befe0dc8-..." | sha256sum | cut -c1-16
-        assertEquals("b5eda37d94f713a3", routerMark("BEFE0DC8-F668-5434-847A-1D108CE7D224"))
+        // Router shell: printf '%s' "befe0dc8-..." | md5sum | cut -c1-16
+        assertEquals("5848f5aac4a78e07", routerMark("BEFE0DC8-F668-5434-847A-1D108CE7D224"))
     }
 
     @Test

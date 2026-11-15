@@ -38,7 +38,7 @@ data class RouterInfo(
 
 /** The mark a ToBeVPN router with this device id publishes (see the agent's publish_id). */
 fun routerMark(hwid: String): String =
-    java.security.MessageDigest.getInstance("SHA-256")
+    java.security.MessageDigest.getInstance("MD5")
         .digest(hwid.trim().lowercase().toByteArray())
         .joinToString("") { "%02x".format(it) }
         .take(16)

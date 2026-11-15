@@ -26,7 +26,7 @@
 # Raised with every change of this script. An app updates the router's copy
 # only when its own is newer, so two apps of different versions never keep
 # replacing each other's.
-AGENT_VERSION=2026111501
+AGENT_VERSION=2026111505
 DIR=/opt/tobevpn
 RUN=/tmp/tobevpn
 TABLE=100
@@ -196,12 +196,16 @@ sync_rules() {
             }
             if (sel != "" && tab != "") print p, sel, addr, tab
         }' | sort -u >"$current"
-    sort -u "$wanted" -o "$wanted"
-    awk 'NR == FNR { have[$0] = 1; next } !have[$0]' "$current" "$wanted" |
+    # Not "sort -o" (busybox 1.34 prints instead of writing).
+    sort -u "$wanted" >"$wanted.sorted" && mv "$wanted.sorted" "$wanted"
+    # The other list is read with getline, not "NR == FNR": that test is
+    # also true for the second file when the first is empty, and then
+    # nothing at all was added (no rules on a fresh start).
+    awk -v other="$current" 'BEGIN { while ((getline line < other) > 0) have[line] = 1 } !have[$0]' "$wanted" |
         while read -r p sel addr tab; do
             ip rule add "$sel" "$addr" lookup "$tab" prio "$p" 2>/dev/null
         done
-    awk 'NR == FNR { keep[$0] = 1; next } !keep[$0]' "$wanted" "$current" |
+    awk -v other="$wanted" 'BEGIN { while ((getline line < other) > 0) keep[line] = 1 } !keep[$0]' "$current" |
         while read -r p sel addr tab; do
             ip rule del "$sel" "$addr" lookup "$tab" prio "$p" 2>/dev/null
         done
@@ -466,7 +470,14 @@ apply_routes() {
     # redirect would end the whole script).
     if command -v flock >/dev/null 2>&1 && touch "$RUN/apply.lock" 2>/dev/null; then
         {
-            flock -w 120 9
+            # busybox's flock has no -w (SNR's 1.34): tried once a second,
+            # at most two minutes, then the routes are applied anyway.
+            tries=0
+            until flock -n 9; do
+                tries=$((tries + 1))
+                [ "$tries" -ge 120 ] && break
+                sleep 1
+            done
             apply_routes_now
         } 9>>"$RUN/apply.lock"
         return
@@ -711,8 +722,10 @@ publish_id() {
     [ -d /www ] || return 0
     hwid=$(sed -n "s/^HWID='\(.*\)'$/\1/p" "$DIR/subscription.conf" 2>/dev/null | tr 'A-F' 'a-f')
     [ -n "$hwid" ] || return 0
-    command -v sha256sum >/dev/null 2>&1 || return 0
-    mark=$(printf '%s' "$hwid" | sha256sum | cut -c1-16)
+    # MD5, which every busybox has (SNR's firmware has no sha256sum): the
+    # mark only names the router, it protects nothing.
+    command -v md5sum >/dev/null 2>&1 || return 0
+    mark=$(printf '%s' "$hwid" | md5sum | cut -c1-16)
     [ "$(cat /www/tobevpn-id 2>/dev/null)" = "tobevpn-router $mark" ] && return 0
     printf 'tobevpn-router %s\n' "$mark" >/www/tobevpn-id 2>/dev/null
 }
