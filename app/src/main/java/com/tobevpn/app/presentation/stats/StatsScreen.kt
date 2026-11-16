@@ -105,6 +105,7 @@ fun StatsScreen(
     val totalBytes by viewModel.totalBytes.collectAsStateWithLifecycle()
 
     val totalSessions = remember(stats) { stats.sumOf { it.sessions } }
+    val periodBytes = remember(stats) { stats.sumOf { it.totalBytes } }
     val totalSeconds = remember(stats) { stats.sumOf { it.totalSeconds } }
     // As on PC: the router's traffic (the whole home network) next to this
     // phone's, in the chart and the rows; only with "all servers", since the
@@ -179,7 +180,7 @@ fun StatsScreen(
                     // The total is for the servers chosen, whatever the period.
                     // (keyed as its own query is: by the chosen servers).
                     totalFadeKey = serverSource,
-                    periodBytes = stats.sumOf { it.totalBytes },
+                    periodBytes = periodBytes,
                 )
 
                 Spacer(Modifier.height(12.dp))
@@ -371,7 +372,7 @@ private fun HeroStatsCard(
     fadeKey: Any? = null,
     totalFadeKey: Any? = null,
     /** This device's traffic in the chosen period, for the average per session. */
-    periodBytes: Long = totalBytes,
+    periodBytes: Long,
 ) {
     // Another period or servers: each number fades over to its new value
     // with the chart's fade (FadingText), never counted or jumped.

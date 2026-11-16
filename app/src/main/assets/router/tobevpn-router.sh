@@ -816,7 +816,8 @@ kick_client() {
 # disk), after an update replaced the file, and without a readlink applet.
 own_pids() {
     for pid in $(pidof "$1"); do
-        [ "$(tr '\0' '\n' <"/proc/$pid/cmdline" 2>/dev/null | head -n 1)" = "$DIR/$1" ] && printf '%s ' "$pid"
+        # Quiet when the process ends meanwhile (its cmdline is gone).
+        [ "$({ tr '\0' '\n' <"/proc/$pid/cmdline"; } 2>/dev/null | head -n 1)" = "$DIR/$1" ] && printf '%s ' "$pid"
     done
 }
 

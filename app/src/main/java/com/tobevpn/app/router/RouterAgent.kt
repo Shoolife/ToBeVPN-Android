@@ -286,9 +286,8 @@ object RouterAgent {
 
     /**
      * A fingerprint of what a server's tunnel logs in with (the account's
-     * user id, the address and port), as the desktop app computes it: when
-     * the account's link is reset these change, and an app sees from the
-     * router's slots that its servers must be written again.
+     * user id, the address and port), as the desktop app computes it, kept
+     * next to each slot: it shows which credentials the router was given.
      */
     fun credentialKey(server: Server): String =
         sha256Hex("${server.uuid}|${server.address}|${server.port}".toByteArray()).take(16)
@@ -439,12 +438,12 @@ object RouterAgent {
 
     /**
      * The pid of ToBeVPN's own Xray, never another package's (passwall and
-     * others run their own xray): matched by the binary it runs. Empty when
-     * none runs.
+     * others run their own xray): matched by the path it was started with,
+     * as the agent's own_pids. Empty when none runs.
      */
     const val OWN_XRAY_PID =
         "\$(for p in \$(pidof xray); do " +
-            "[ \"\$(tr '\\0' '\\n' </proc/\$p/cmdline 2>/dev/null | head -n 1)\" = /opt/tobevpn/xray ] && { echo \$p; break; }; done)"
+            "[ \"\$({ tr '\\0' '\\n' </proc/\$p/cmdline; } 2>/dev/null | head -n 1)\" = /opt/tobevpn/xray ] && { echo \$p; break; }; done)"
 
     /**
      * The VPN counts as on while its own core runs or its watchdog waits to
