@@ -468,8 +468,11 @@ class SettingsViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            // Of the connected routers, the one of this network is the one shown.
-            runCatching { routerRepository.routerHere() }
+            // The router of this network is shown whatever it is (a card for
+            // it, recognised or not, as on PC), so it is detected here even
+            // with no router connected; of the connected ones, this network's.
+            runCatching { routerRepository.detect() }
+            withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { routerRepository.linkHere() } }
         }
         linkedDevicesRefreshJob = viewModelScope.launch {
             val before = _linkedDevicesState.value
