@@ -89,6 +89,7 @@ class MainViewModel @Inject constructor(
     private val paymentNotifications: PaymentNotifications,
     private val playBillingCountry: PlayBillingCountry,
     private val routerRepository: com.tobevpn.app.router.RouterRepository,
+    private val routerCredentials: com.tobevpn.app.router.RouterCredentials,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
 
@@ -935,6 +936,23 @@ class MainViewModel @Inject constructor(
                 throw cancelled
             } catch (_: Exception) {
                 null
+            }
+            // At home with a connected router: after a link reset elsewhere the
+            // router gets the new credentials without anyone opening its screen
+            // (at most every few hours; it writes only on proof).
+            // (Also when the router's VPN looks off: stale credentials are one
+            // reason for that.) Only with this network's router.
+            val routerHere = try {
+                routerRepository.routerHere()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            if (routerHere != null &&
+                routerCredentials.repairInBackground() == com.tobevpn.app.router.RouterCredentials.Result.UPDATED
+            ) {
+                _routerVpn.value = runCatching { routerRepository.protection() }.getOrNull()
             }
         }
     }

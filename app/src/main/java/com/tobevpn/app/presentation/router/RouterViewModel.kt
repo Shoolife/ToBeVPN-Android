@@ -129,6 +129,7 @@ class RouterViewModel @Inject constructor(
     private val sessionDao: com.tobevpn.app.data.local.dao.SessionDao,
     private val prefsDataStore: com.tobevpn.app.data.local.PrefsDataStore,
     private val vpnRepository: VpnRepository,
+    private val credentials: com.tobevpn.app.router.RouterCredentials,
 ) : ViewModel() {
     // Shown at once from what is already in memory (the devices list
     // detected the router just before); nothing here touches the system or
@@ -263,6 +264,7 @@ class RouterViewModel @Inject constructor(
             // Whether the linked router is this network's was decided with the
             // mark seen before (possibly another network's): read once more
             // when the fresh detection says otherwise.
+            repairRouterCredentials()
             val hereNow = withContext(Dispatchers.IO) { repository.linkHere() }
             // A different router (not only none ↔ one) is read again too.
             // Ids compared only when both are known: a link that just learned its
@@ -762,6 +764,42 @@ class RouterViewModel @Inject constructor(
             shortUuid,
         )?.toString()
     }
+
+    /**
+     * After the account's link was reset elsewhere the router still logs in
+     * with the revoked credentials: they are replaced on proof only (see
+     * RouterCredentials), quietly, with a short notice when done. Asked again
+     * at the next load while it is not known.
+     */
+    private fun repairRouterCredentials() {
+        val status = _state.value.status ?: return
+        if (!status.installed || credentialsJob?.isActive == true || credentialsSettled) return
+        credentialsJob = viewModelScope.launch {
+            var marked = false
+            val result = try {
+                credentials.repair(beforeWrite = {
+                    // Never alongside a change the owner is making.
+                    val free = !_state.value.busy && _state.value.savingMac == null
+                    if (free) {
+                        _state.update { it.copy(busy = true) }
+                        marked = true
+                    }
+                    free
+                })
+            } finally {
+                if (marked) _state.update { it.copy(busy = false) }
+            }
+            if (result != com.tobevpn.app.router.RouterCredentials.Result.NOT_KNOWN) credentialsSettled = true
+            if (result == com.tobevpn.app.router.RouterCredentials.Result.UPDATED) {
+                val text = context.getString(R.string.router_credentials_updated)
+                _state.update { it.copy(notice = RouterUiState.Notice(System.nanoTime(), text)) }
+                load(initial = false)
+            }
+        }
+    }
+
+    private var credentialsJob: kotlinx.coroutines.Job? = null
+    private var credentialsSettled = false
 
     fun clearNotice(id: Long) = _state.update { if (it.notice?.id == id) it.copy(notice = null) else it }
 

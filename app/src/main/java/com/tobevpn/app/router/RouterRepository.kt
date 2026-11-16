@@ -587,6 +587,46 @@ class RouterRepository @Inject constructor(
         }.also(::accept)
     }
 
+    /** The router's subscription link and its id in the account, as the router has them. */
+    data class SubscriptionLink(val url: String, val hwid: String?)
+
+    suspend fun subscriptionLink(): SubscriptionLink? = withRouter { shell ->
+        val conf = shell.run("cat /opt/tobevpn/subscription.conf 2>/dev/null").first
+        fun value(name: String) = conf.lineSequence()
+            .firstOrNull { it.startsWith("$name=") }
+            ?.removePrefix("$name=")?.trim()?.removeSurrounding("'")?.takeIf { it.isNotEmpty() }
+        value("SUB_URL")?.let { SubscriptionLink(it, value("HWID")) }
+    }
+
+    /**
+     * The router's servers written again with [servers]' credentials (its own
+     * slots, read in this session, so a slot added meanwhile is kept) and its
+     * subscription link set to [subscriptionUrl]; restarted when it runs.
+     * False when a slot's server is not in [servers] (nothing written then).
+     */
+    suspend fun rewriteServers(servers: List<Server>, subscriptionUrl: String): Boolean = withRouter { shell ->
+        val output = shell.runOk("${RouterAgent.SCRIPT} devices")
+        val slots = RouterAgent.parseSlots(output)
+        if (slots.none { it.slot == 0 }) return@withRouter false
+        val list = slots.map { slot ->
+            servers.firstOrNull { it.id == slot.serverId }?.let { SlotServer(slot.slot, it) } ?: return@withRouter false
+        }
+        RouterAgent.writeServerConfig(shell, list, ::ruSites, servers.map { it.address } + serviceHosts())
+        val conf = shell.run("cat /opt/tobevpn/subscription.conf 2>/dev/null").first
+        if (conf.isNotBlank()) {
+            val line = "SUB_URL='${RouterAgent.shellQuoteInner(subscriptionUrl)}'"
+            val next = conf.lineSequence().filter { it.isNotEmpty() }
+                .map { if (it.startsWith("SUB_URL=")) line else it }
+                .joinToString("\n", postfix = "\n")
+            shell.writeFile("/opt/tobevpn/subscription.conf", next.toByteArray(), "600")
+        }
+        // The new files are on the router either way: a start that fails shows
+        // in the status (failed), not as a change that did not happen.
+        shell.run("if ${RouterAgent.AGENT_RUNNING}; then ${RouterAgent.RESTART_ON_ROUTER}; fi")
+        accept(RouterAgent.parseStatus(shell.run("${RouterAgent.SCRIPT} status").first))
+        true
+    }
+
     /** Turns the Russian sites bypass on or off in the config on the router and restarts. */
     suspend fun setRuDirect(enabled: Boolean): RouterStatus {
         return withRouter { shell ->

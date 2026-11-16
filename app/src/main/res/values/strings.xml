@@ -665,6 +665,7 @@
     <string name="speed_checking_connection">Checking connection…</string>
     <string name="speed_via_vpn">Via VPN</string>
     <string name="speed_direct">Direct</string>
+    <string name="router_credentials_updated">The router\'s keys were updated: the subscription link had been reset</string>
     <string name="speed_via_router_vpn">Router VPN</string>
     <string name="speed_via_base_station_bypass">BS bypass</string>
     <string name="speed_no_tunnel">Connect to the VPN to measure tunnel speed.</string>

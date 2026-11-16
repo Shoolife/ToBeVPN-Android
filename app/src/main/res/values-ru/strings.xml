@@ -679,6 +679,7 @@
     <string name="speed_checking_connection">Проверка соединения…</string>
     <string name="speed_via_vpn">Через VPN</string>
     <string name="speed_direct">Напрямую</string>
+    <string name="router_credentials_updated">Ключи на роутере обновлены: ссылка подписки была сброшена</string>
     <string name="speed_via_router_vpn">VPN роутера</string>
     <string name="speed_via_base_station_bypass">Обход БС</string>
     <string name="speed_no_tunnel">Подключитесь к VPN, чтобы измерить скорость туннеля.</string>
