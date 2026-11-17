@@ -645,7 +645,7 @@ class RouterInstaller @Inject constructor(
     }
 
     companion object {
-        private const val PINNED_XRAY_VERSION = "26.10.31"
+        private const val PINNED_XRAY_VERSION = "26.11.9"
         /** The hev-socks5-tunnel build this app installs (also in its download URL). */
         private const val HEV_VERSION = "2.19.2"
         private const val RELEASE_MIN_AGE_DAYS = 3L
