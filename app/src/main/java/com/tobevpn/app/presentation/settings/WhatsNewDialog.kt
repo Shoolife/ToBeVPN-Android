@@ -22,12 +22,14 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.CloudOff
+import androidx.compose.material.icons.filled.Router
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.DataUsage
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Route
 import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.SettingsInputAntenna
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -149,24 +151,29 @@ private val WhatsNewHeroIcon: ImageVector by lazy {
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.Bolt,
-        titleRes = R.string.whats_new_quick_ping_title,
-        descriptionRes = R.string.whats_new_quick_ping_desc,
+        icon = Icons.Filled.Router,
+        titleRes = R.string.whats_new_router_vpn_title,
+        descriptionRes = R.string.whats_new_router_vpn_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.Route,
-        titleRes = R.string.whats_new_final_mask_title,
-        descriptionRes = R.string.whats_new_final_mask_desc,
+        icon = Icons.Filled.Devices,
+        titleRes = R.string.whats_new_several_routers_title,
+        descriptionRes = R.string.whats_new_several_routers_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.SettingsInputAntenna,
-        titleRes = R.string.whats_new_bypass_hysteria2_title,
-        descriptionRes = R.string.whats_new_bypass_hysteria2_desc,
+        icon = Icons.Filled.DataUsage,
+        titleRes = R.string.whats_new_router_traffic_title,
+        descriptionRes = R.string.whats_new_router_traffic_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.CloudOff,
-        titleRes = R.string.whats_new_fallback_subscription_title,
-        descriptionRes = R.string.whats_new_fallback_subscription_desc,
+        icon = Icons.Filled.Speed,
+        titleRes = R.string.whats_new_router_speed_test_title,
+        descriptionRes = R.string.whats_new_router_speed_test_desc,
+    ),
+    WhatsNewHighlight(
+        icon = Icons.Filled.AutoAwesome,
+        titleRes = R.string.whats_new_smoother_ui_title,
+        descriptionRes = R.string.whats_new_smoother_ui_desc,
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.Security,
