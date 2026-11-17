@@ -1935,8 +1935,12 @@ private fun trafficBytes(bytes: Long): String {
     val mb = stringResource(R.string.router_unit_mb)
     val gb = stringResource(R.string.router_unit_gb)
     val mib = 1024.0 * 1024.0
+    // The app's language as Compose sees it, so a language change reformats.
+    val locale = androidx.core.os.ConfigurationCompat
+        .getLocales(androidx.compose.ui.platform.LocalConfiguration.current)[0]
+        ?: java.util.Locale.ROOT
     return when {
-        bytes >= 1024L * 1024 * 1024 -> String.format(java.util.Locale.getDefault(), "%.1f %s", bytes / (mib * 1024), gb)
+        bytes >= 1024L * 1024 * 1024 -> String.format(locale, "%.1f %s", bytes / (mib * 1024), gb)
         bytes >= 1024L * 1024 || bytes == 0L -> "${Math.round(bytes / mib)} $mb"
         // Under a megabyte, kilobytes: "0,0 MB" next to visible bars read as nothing.
         else -> "${maxOf(1L, Math.round(bytes / 1024.0))} ${stringResource(R.string.router_unit_kb)}"
