@@ -872,6 +872,10 @@
     <string name="router_card_keenetic">Keenetic — поддержка скоро появится</string>
     <string name="router_keenetic_test_title">Хотите попробовать первым?</string>
     <string name="router_keenetic_test_description">Ищем владельцев Keenetic, которые помогут проверить VPN на роутере до выхода. Напишите нам — расскажем, что нужно сделать.</string>
+    <string name="keenetic_offer_title">У вас роутер Keenetic</string>
+    <string name="keenetic_offer_text">Мы готовим VPN на весь дом для роутеров Keenetic — без перепрошивки. Хотите попробовать первым?</string>
+    <string name="keenetic_offer_open">Подробнее</string>
+    <string name="keenetic_offer_later">Не сейчас</string>
     <string name="router_status_no_network">Телефон не подключён к Wi‑Fi: роутер не найден.</string>
     <string name="router_vpn_section">VPN на роутере</string>
     <string name="router_vpn_description">Роутер сам подключается к серверам ToBeVPN, и через VPN можно пустить любые устройства дома — телевизоры, приставки, гаджеты гостей. Роутер считается одним устройством подписки.</string>

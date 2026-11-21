@@ -954,7 +954,28 @@ class MainViewModel @Inject constructor(
             ) {
                 _routerVpn.value = runCatching { routerRepository.protection() }.getOrNull()
             }
+            // A Keenetic at home: its owner is invited once to test Keenetic
+            // support (signed in, no router of the account here).
+            if (routerHere == null && authState.value is AuthState.Authenticated && !_keeneticOffer.value) {
+                val due = try {
+                    routerRepository.keeneticOfferDue()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    false
+                }
+                if (due) _keeneticOffer.value = true
+            }
         }
+    }
+
+    private val _keeneticOffer = MutableStateFlow(false)
+    /** Whether Home shows the one-time invitation to test Keenetic support. */
+    val keeneticOffer: StateFlow<Boolean> = _keeneticOffer
+
+    fun dismissKeeneticOffer() {
+        routerRepository.markKeeneticOffered()
+        _keeneticOffer.value = false
     }
 
     init {

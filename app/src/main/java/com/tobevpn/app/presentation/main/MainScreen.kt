@@ -84,6 +84,7 @@ import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.outlined.Router
 import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
@@ -199,9 +200,11 @@ fun MainScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToStats: () -> Unit,
     onNavigateToSpeedTest: () -> Unit = {},
+    onNavigateToRouter: () -> Unit = {},
     quickSettingsConnectRequest: Int = 0,
     viewModel: MainViewModel = hiltViewModel(),
 ) {
+    val keeneticOffer by viewModel.keeneticOffer.collectAsStateWithLifecycle()
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val usageInfo by viewModel.usageInfo.collectAsStateWithLifecycle()
     val trafficResetAt by viewModel.trafficResetAt.collectAsStateWithLifecycle()
@@ -722,6 +725,20 @@ fun MainScreen(
         exit = fadeOut(tween(0)),
     ) {
         BlockedDialog(onDismiss = { showBlockedDialog = false })
+    }
+
+    AnimatedVisibility(
+        visible = keeneticOffer && !showBlockedDialog,
+        enter = fadeIn(tween(250)) + scaleIn(tween(250), initialScale = 0.95f),
+        exit = fadeOut(tween(0)),
+    ) {
+        KeeneticOfferDialog(
+            onOpen = {
+                viewModel.dismissKeeneticOffer()
+                onNavigateToRouter()
+            },
+            onDismiss = viewModel::dismissKeeneticOffer,
+        )
     }
 
     if (showSubscriptionSheet) {
@@ -2082,6 +2099,48 @@ private fun BlockedSubscriptionCard(onClick: () -> Unit) {
             )
         }
     }
+}
+
+/** The one-time invitation to test Keenetic support, on a Keenetic's network. */
+@Composable
+private fun KeeneticOfferDialog(onOpen: () -> Unit, onDismiss: () -> Unit) {
+    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+    val buttonTextColor = if (isDark) MaterialTheme.colorScheme.onSurface else Color.Black
+    AppAlertDialog(
+        onDismissRequest = onDismiss,
+        icon = {
+            Icon(
+                imageVector = Icons.Outlined.Router,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(36.dp),
+            )
+        },
+        title = {
+            Text(
+                text = stringResource(R.string.keenetic_offer_title),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        text = {
+            Text(
+                text = stringResource(R.string.keenetic_offer_text),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onOpen) {
+                Text(stringResource(R.string.keenetic_offer_open), color = buttonTextColor)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.keenetic_offer_later), color = buttonTextColor)
+            }
+        },
+    )
 }
 
 @Composable

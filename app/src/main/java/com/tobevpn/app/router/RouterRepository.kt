@@ -80,6 +80,26 @@ class RouterRepository @Inject constructor(
         }
     }
 
+    @Volatile private var keeneticCheckedGateway: String? = null
+
+    /**
+     * Whether to offer testing of Keenetic support: once per install, when the
+     * phone is on a Keenetic's network. Each network is asked at most once per
+     * run of the app (two password-free requests to its router).
+     */
+    suspend fun keeneticOfferDue(): Boolean {
+        if (prefs.getBoolean(KEY_KEENETIC_OFFERED, false)) return false
+        val gateway = detector.homeLan()?.gateway ?: return false
+        if (gateway == keeneticCheckedGateway) return false
+        keeneticCheckedGateway = gateway
+        return detect().firmware == "keenetic"
+    }
+
+    /** The Keenetic offer was shown: it is not shown again, whatever the answer. */
+    fun markKeeneticOffered() {
+        prefs.edit().putBoolean(KEY_KEENETIC_OFFERED, true).apply()
+    }
+
     /**
      * What is known at once about this network's router, without asking it:
      * the last detection when the gateway is the same, else just the gateway.
@@ -685,6 +705,7 @@ class RouterRepository @Inject constructor(
         private const val KEY_LINKS = "links"
         private const val PING_TIMEOUT_MS = 2_000
         private const val KEY_ROUTER = "router_here"
+        private const val KEY_KEENETIC_OFFERED = "keenetic_offered"
         private const val KEY_TRAFFIC = "traffic"
         /** How long one finding of this network's router serves the background checks. */
         private const val HERE_VALID_MS = 150_000L
