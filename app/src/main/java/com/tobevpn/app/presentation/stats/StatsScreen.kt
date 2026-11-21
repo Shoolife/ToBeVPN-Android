@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.stats
 
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
@@ -274,6 +275,8 @@ fun StatsScreen(
                     val listScope = rememberCoroutineScope()
                     // The bar tapped last: its row is scrolled to and lit up.
                     var selectedPeriod by remember(section.period, section.source) { mutableStateOf<Long?>(null) }
+                    // Raised when the list has arrived at the row: its outline plays then.
+                    var arrivals by remember(section.period, section.source) { mutableIntStateOf(0) }
                     // Animated chart card
                     EnhancedTrafficChart(
                         stats = section.slots,
@@ -284,7 +287,10 @@ fun StatsScreen(
                             val index = section.rows.indexOfFirst { it.period == tapped }
                             if (index >= 0) {
                                 selectedPeriod = tapped
-                                listScope.launch { statsListState.glideToCenter(index) }
+                                listScope.launch {
+                                    statsListState.glideToCenter(index)
+                                    arrivals++
+                                }
                             }
                         },
                         modifier = Modifier
@@ -322,6 +328,7 @@ fun StatsScreen(
                                 maxBytes = maxRowBytes,
                                 routerBytes = section.routerAt(stat.period),
                                 highlighted = stat.period == selectedPeriod,
+                                arrivals = arrivals,
                             )
                         }
                     }
@@ -958,7 +965,24 @@ private fun EnhancedStatRow(
     routerBytes: Long = 0L,
     /** The row of the bar tapped on the chart: lit up. */
     highlighted: Boolean = false,
+    /** Counts the list's arrivals at a tapped row: the outline plays on each. */
+    arrivals: Int = 0,
 ) {
+    // The outline shows which row the bar is: it fades in once the list has
+    // arrived, pulses twice and stays; it fades out when another row is picked.
+    val outline = remember { Animatable(0f) }
+    LaunchedEffect(highlighted, arrivals) {
+        if (!highlighted) {
+            outline.animateTo(0f, tween(250))
+        } else if (arrivals > 0) {
+            outline.snapTo(0f)
+            outline.animateTo(1f, tween(260, easing = FastOutSlowInEasing))
+            repeat(2) {
+                outline.animateTo(0.35f, tween(320, easing = FastOutSlowInEasing))
+                outline.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
+            }
+        }
+    }
     val fraction = ((stat.totalBytes + routerBytes).toFloat() / maxBytes).coerceIn(0f, 1f)
     val container by androidx.compose.animation.animateColorAsState(
         if (highlighted) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow,
@@ -971,7 +995,7 @@ private fun EnhancedStatRow(
             .padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = container),
-        border = if (highlighted) BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)) else null,
+        border = if (outline.value > 0.01f) BorderStroke(1.5.dp, VpnBlue.copy(alpha = outline.value)) else null,
     ) {
         Column(
             modifier = Modifier
