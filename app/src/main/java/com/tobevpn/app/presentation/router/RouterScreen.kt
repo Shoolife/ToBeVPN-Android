@@ -647,15 +647,21 @@ private fun KeeneticTestCard() {
     val context = LocalContext.current
     val supportLink = stringResource(R.string.block_appeal_link)
     RouterCard {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(
+            Modifier.padding(16.dp).fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Text(
                 stringResource(R.string.router_keenetic_test_title),
                 style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
                 fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
             )
             Text(
                 stringResource(R.string.router_keenetic_test_description),
                 style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+                textAlign = TextAlign.Center,
             )
             Button(
                 onClick = {
