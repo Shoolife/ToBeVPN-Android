@@ -299,7 +299,9 @@ fun StatsScreen(
                     }
                     // A bar or a row picked: its row comes to the middle (the last
                     // one only as far as the list scrolls), lit up with its bar.
-                    val pickRow: (Long) -> Unit = { tapped ->
+                    // The row's outline pulses only when the pick came from its bar
+                    // (to show where it went); a tapped row is simply outlined.
+                    val pickRow: (Long, Boolean) -> Unit = { tapped, fromBar ->
                         val index = section.rows.indexOfFirst { it.period == tapped }
                         if (index >= 0) {
                             selectedPeriod = tapped
@@ -311,11 +313,13 @@ fun StatsScreen(
                                 } finally {
                                     gliding = false
                                 }
-                                // The row's outline: fades in, pulses twice, stays.
+                                // The row's outline fades in; from a bar it also pulses twice.
                                 outline.animateTo(1f, tween(260, easing = FastOutSlowInEasing))
-                                repeat(2) {
-                                    outline.animateTo(0.35f, tween(320, easing = FastOutSlowInEasing))
-                                    outline.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
+                                if (fromBar) {
+                                    repeat(2) {
+                                        outline.animateTo(0.35f, tween(320, easing = FastOutSlowInEasing))
+                                        outline.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
+                                    }
                                 }
                             }
                         }
@@ -326,7 +330,7 @@ fun StatsScreen(
                         period = section.period,
                         routerAt = section.routerAt,
                         selectedPeriod = selectedPeriod,
-                        onBarClick = { tapped -> pickRow(tapped) },
+                        onBarClick = { tapped -> pickRow(tapped, true) },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(220.dp)
@@ -364,7 +368,7 @@ fun StatsScreen(
                                 routerBytes = section.routerAt(stat.period),
                                 highlighted = stat.period == selectedPeriod,
                                 outline = if (stat.period == selectedPeriod) outline.value else 0f,
-                                onClick = { pickRow(stat.period) },
+                                onClick = { pickRow(stat.period, false) },
                             )
                         }
                     }
