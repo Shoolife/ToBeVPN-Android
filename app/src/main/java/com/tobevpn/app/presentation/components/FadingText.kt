@@ -38,6 +38,8 @@ fun FadingText(
      * so it changes in place and fades only when that changes.
      */
     fadeKey: Any? = text,
+    /** Where the old and new text sit while they cross: as the text around them is aligned. */
+    contentAlignment: Alignment = Alignment.CenterStart,
 ) {
     // A fade only when the text itself changes: switching to another period
     // whose number is the same ("0", "0 B") leaves it standing instead of
@@ -52,7 +54,7 @@ fun FadingText(
         targetState = text to last.generation,
         contentKey = { it.second },
         modifier = modifier,
-        contentAlignment = Alignment.CenterStart,
+        contentAlignment = contentAlignment,
         transitionSpec = {
             (
                 fadeIn(tween(FADE_IN_MS, delayMillis = FADE_IN_DELAY_MS, easing = FastOutSlowInEasing)) togetherWith

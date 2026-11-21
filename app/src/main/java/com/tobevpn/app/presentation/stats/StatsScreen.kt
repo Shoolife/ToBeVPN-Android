@@ -534,6 +534,8 @@ private fun HeroStatsCard(
                         primaryContentColor = primaryContentColor,
                         secondaryContentColor = secondaryContentColor,
                         fadeKey = fadeKey,
+                        // Equal columns: a number changing width moves nothing around it.
+                        modifier = Modifier.weight(1f),
                     )
                     HeroDivider(color = dividerColor)
                     HeroMetric(
@@ -543,6 +545,8 @@ private fun HeroStatsCard(
                         primaryContentColor = primaryContentColor,
                         secondaryContentColor = secondaryContentColor,
                         fadeKey = fadeKey,
+                        // Equal columns: a number changing width moves nothing around it.
+                        modifier = Modifier.weight(1f),
                     )
                     HeroDivider(color = dividerColor)
                     HeroMetric(
@@ -554,6 +558,8 @@ private fun HeroStatsCard(
                         primaryContentColor = primaryContentColor,
                         secondaryContentColor = secondaryContentColor,
                         fadeKey = fadeKey,
+                        // Equal columns: a number changing width moves nothing around it.
+                        modifier = Modifier.weight(1f),
                     )
                 }
             }
@@ -569,8 +575,10 @@ private fun HeroMetric(
     primaryContentColor: Color,
     secondaryContentColor: Color,
     fadeKey: Any? = null,
+    modifier: Modifier = Modifier,
 ) {
     Column(
+        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
@@ -586,6 +594,7 @@ private fun HeroMetric(
             fontWeight = FontWeight.SemiBold,
             color = primaryContentColor,
             fadeKey = fadeKey,
+            contentAlignment = Alignment.Center,
         )
         Text(
             text = label,
