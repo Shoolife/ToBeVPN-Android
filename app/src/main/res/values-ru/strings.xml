@@ -884,6 +884,7 @@
     <string name="home_pause_notice_paused_title">VPN на паузе — работает VPN роутера</string>
     <string name="home_pause_notice_paused_text">VPN телефона включится сам, когда вы отключитесь от этой сети.</string>
     <string name="home_pause_notice_resumed_title">VPN снова включён</string>
+    <string name="home_pause_notice_staying_title">VPN остаётся включённым</string>
     <string name="home_pause_notice_resumed_text">Вы отключились от сети роутера — VPN телефона подключается к серверу «%1$s».</string>
     <string name="home_pause_notice_resumed_text_plain">Вы отключились от сети роутера — VPN телефона подключается.</string>
     <string name="router_status_no_network">Телефон не подключён к Wi‑Fi: роутер не найден.</string>

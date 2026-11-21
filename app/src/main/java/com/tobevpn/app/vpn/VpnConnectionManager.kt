@@ -355,12 +355,12 @@ class VpnConnectionManager @Inject constructor(
         cancelPendingNetworkResume("CONNECT_REQUEST")
         // Connecting by hand at home (paused, or behind the router's VPN with
         // the pause on): wanted here after all, so no pause on this Wi-Fi
-        // until it is left, and Home says so.
+        // until it is left, and a notification says so.
         if (homePause != null ||
             (pauseAtHomeEnabled && routerRepository.knownProtection()?.protection != null)
         ) {
             homePauseDeclined = true
-            _homeConnectNotices.tryEmit(Unit)
+            homePauseNotifications.showStayingOn()
         }
         homePause = null
         SafeDiagnostics.info(
@@ -1550,12 +1550,6 @@ class VpnConnectionManager @Inject constructor(
     /** The setting, kept at hand for a connect tap (no suspending there). */
     @Volatile
     private var pauseAtHomeEnabled = false
-
-    private val _homeConnectNotices =
-        kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-
-    /** A connect by hand at home that the pause will leave alone, for Home's notice. */
-    val homeConnectNotices: kotlinx.coroutines.flow.SharedFlow<Unit> = _homeConnectNotices
 
     private val homeNudges = Channel<Unit>(Channel.CONFLATED)
 

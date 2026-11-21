@@ -870,6 +870,7 @@
     <string name="home_pause_notice_paused_title">VPN paused — the router\'s VPN is on</string>
     <string name="home_pause_notice_paused_text">The phone\'s VPN comes back by itself when you leave this network.</string>
     <string name="home_pause_notice_resumed_title">VPN is back on</string>
+    <string name="home_pause_notice_staying_title">VPN stays on</string>
     <string name="home_pause_notice_resumed_text">You left the router\'s network — the phone\'s VPN is connecting to “%1$s”.</string>
     <string name="home_pause_notice_resumed_text_plain">You left the router\'s network — the phone\'s VPN is connecting.</string>
     <string name="router_status_no_network">The phone is not on Wi‑Fi: no router found.</string>

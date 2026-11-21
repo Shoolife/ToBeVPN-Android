@@ -31,6 +31,12 @@ class HomePauseNotifications @Inject constructor(
         context.getString(R.string.home_pause_notice_paused_text),
     )
 
+    /** Connected by hand on the router's network: it stays on there. */
+    fun showStayingOn() = show(
+        context.getString(R.string.home_pause_notice_staying_title),
+        context.getString(R.string.pause_at_home_connect_notice),
+    )
+
     fun showResumed(serverName: String) = show(
         context.getString(R.string.home_pause_notice_resumed_title),
         if (serverName.isBlank()) {
