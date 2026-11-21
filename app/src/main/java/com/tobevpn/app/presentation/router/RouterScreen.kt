@@ -101,6 +101,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -310,6 +311,12 @@ fun RouterScreen(
             }
             when {
                 state.info?.gateway == null -> Unit
+                // Keenetic: nothing to install yet; its owners are invited to
+                // test Keenetic support instead.
+                !state.paired && !state.installedByAnother && state.info?.firmware == "keenetic" -> {
+                    item { SectionTitle(stringResource(R.string.router_vpn_section)) }
+                    item { KeeneticTestCard() }
+                }
                 !state.paired || state.accessLost -> {
                     item { SectionTitle(stringResource(R.string.router_vpn_section)) }
                     item { InstallCard(state = state, onPair = viewModel::pair) }
@@ -626,6 +633,43 @@ private fun InstallCard(state: RouterUiState, onPair: (String, String) -> Unit) 
                     style = fixedLayoutTextStyle(MaterialTheme.typography.bodySmall),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+/**
+ * A Keenetic router: ToBeVPN does not install on it yet. Its owner is asked
+ * to write to support and join testing of Keenetic support.
+ */
+@Composable
+private fun KeeneticTestCard() {
+    val context = LocalContext.current
+    val supportLink = stringResource(R.string.block_appeal_link)
+    RouterCard {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                stringResource(R.string.router_keenetic_test_title),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.titleSmall),
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                stringResource(R.string.router_keenetic_test_description),
+                style = fixedLayoutTextStyle(MaterialTheme.typography.bodyMedium),
+            )
+            Button(
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(supportLink))
+                                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                    }
+                },
+                shape = RoundedCornerShape(13.dp),
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+            ) {
+                Text(stringResource(R.string.support_contact_button))
             }
         }
     }

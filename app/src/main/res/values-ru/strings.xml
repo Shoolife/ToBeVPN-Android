@@ -870,6 +870,8 @@
     <string name="router_status_unknown">Модель роутера определить не удалось. Сейчас поддерживаются роутеры на OpenWrt.</string>
     <string name="router_status_keenetic">Роутер Keenetic. Поддержку Keenetic мы готовим: ToBeVPN будет ставиться без перепрошивки, через пакеты Entware. Пока ToBeVPN устанавливается только на роутеры с OpenWrt.</string>
     <string name="router_card_keenetic">Keenetic — поддержка скоро</string>
+    <string name="router_keenetic_test_title">Помогите проверить поддержку Keenetic</string>
+    <string name="router_keenetic_test_description">Мы готовим ToBeVPN для роутеров Keenetic и ищем тех, кто первым попробует его на своём роутере. Напишите в поддержку — расскажем, как присоединиться к тестированию новых функций.</string>
     <string name="router_status_no_network">Телефон не подключён к Wi‑Fi: роутер не найден.</string>
     <string name="router_vpn_section">VPN на роутере</string>
     <string name="router_vpn_description">Роутер сам подключается к серверам ToBeVPN, и через VPN можно пустить любые устройства дома — телевизоры, приставки, гаджеты гостей. Роутер считается одним устройством подписки.</string>
