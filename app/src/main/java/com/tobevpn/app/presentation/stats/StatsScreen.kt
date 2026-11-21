@@ -1,5 +1,12 @@
 package com.tobevpn.app.presentation.stats
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.BorderStroke
 import com.tobevpn.app.presentation.components.FadingText
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.fadeOut
@@ -262,11 +269,23 @@ fun StatsScreen(
                         )
                     }
                 } else {
+                    val statsListState = rememberLazyListState()
+                    val listScope = rememberCoroutineScope()
+                    // The bar tapped last: its row is scrolled to and lit up.
+                    var selectedPeriod by remember(section.period, section.source) { mutableStateOf<Long?>(null) }
                     // Animated chart card
                     EnhancedTrafficChart(
                         stats = section.slots,
                         period = section.period,
                         routerAt = section.routerAt,
+                        selectedPeriod = selectedPeriod,
+                        onBarClick = { tapped ->
+                            val index = section.rows.indexOfFirst { it.period == tapped }
+                            if (index >= 0) {
+                                selectedPeriod = tapped
+                                listScope.launch { statsListState.animateScrollToItem(index) }
+                            }
+                        },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(220.dp)
@@ -291,7 +310,6 @@ fun StatsScreen(
                     val maxRowBytes = remember(section) {
                         section.rows.maxOfOrNull { it.totalBytes + section.routerAt(it.period) }?.coerceAtLeast(1L) ?: 1L
                     }
-                    val statsListState = rememberLazyListState()
                     LazyColumn(
                         state = statsListState,
                         modifier = Modifier.weight(1f).lazyScrollCues(statsListState),
@@ -302,6 +320,7 @@ fun StatsScreen(
                                 period = section.period,
                                 maxBytes = maxRowBytes,
                                 routerBytes = section.routerAt(stat.period),
+                                highlighted = stat.period == selectedPeriod,
                             )
                         }
                     }
@@ -566,6 +585,10 @@ private fun EnhancedTrafficChart(
     stats: List<TrafficStat>,
     period: StatsPeriod,
     routerAt: (Long) -> Long = { 0L },
+    /** The slot whose bar was tapped, outlined. */
+    selectedPeriod: Long? = null,
+    /** A tap on a bar (anywhere in its column), with the slot's start. */
+    onBarClick: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -610,7 +633,20 @@ private fun EnhancedTrafficChart(
             Canvas(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(top = 16.dp, start = 12.dp, end = 16.dp, bottom = 28.dp),
+                    .padding(top = 16.dp, start = 12.dp, end = 16.dp, bottom = 28.dp)
+                    // The same geometry as the bars below: a tap anywhere in a
+                    // bar's column (its spacing included) picks that bar.
+                    .pointerInput(slots) {
+                        detectTapGestures { tap ->
+                            if (slots.isEmpty()) return@detectTapGestures
+                            val chartLeft = yLabelWidthPx
+                            val chartWidth = size.width - chartLeft
+                            val spacing = chartWidth * 0.22f / (slots.size + 1)
+                            val barWidth = (chartWidth - chartWidth * 0.22f) / slots.size
+                            val index = ((tap.x - chartLeft - spacing / 2) / (barWidth + spacing)).toInt()
+                            if (tap.x >= chartLeft && index in slots.indices) onBarClick(slots[index].period)
+                        }
+                    },
             ) {
                 if (slots.isEmpty()) return@Canvas
 
@@ -686,6 +722,20 @@ private fun EnhancedTrafficChart(
                                 topLeft = Offset(x, barTop),
                                 size = Size(barWidth, barHeight),
                                 cornerRadius = corner,
+                                style = Stroke(width = 1.5.dp.toPx()),
+                            )
+                        }
+                    }
+
+                    // The tapped bar: outlined over its whole height.
+                    if (slot.period == selectedPeriod && progress > 0.95f) {
+                        val total = barHeight + routerBytes[index].toFloat() / maxBytes * usableHeight * progress
+                        if (total > 0.5f) {
+                            drawRoundRect(
+                                color = labelColor,
+                                topLeft = Offset(x - 1.5.dp.toPx(), chartHeight - total - 1.5.dp.toPx()),
+                                size = Size(barWidth + 3.dp.toPx(), total + 1.5.dp.toPx()),
+                                cornerRadius = CornerRadius(5.dp.toPx()),
                                 style = Stroke(width = 1.5.dp.toPx()),
                             )
                         }
@@ -878,16 +928,22 @@ private fun EnhancedStatRow(
     period: StatsPeriod,
     maxBytes: Long,
     routerBytes: Long = 0L,
+    /** The row of the bar tapped on the chart: lit up. */
+    highlighted: Boolean = false,
 ) {
     val fraction = ((stat.totalBytes + routerBytes).toFloat() / maxBytes).coerceIn(0f, 1f)
+    val container by androidx.compose.animation.animateColorAsState(
+        if (highlighted) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow,
+        animationSpec = tween(300),
+        label = "stats-row-highlight",
+    )
     Card(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-        ),
+        colors = CardDefaults.cardColors(containerColor = container),
+        border = if (highlighted) BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)) else null,
     ) {
         Column(
             modifier = Modifier
