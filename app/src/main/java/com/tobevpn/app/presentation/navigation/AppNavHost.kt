@@ -130,6 +130,7 @@ fun AppNavHost(
                     onNavigateToStats = { navController.navigateSingleTop(StatsRoute) },
                     onNavigateToSpeedTest = { navController.navigateSingleTop(SpeedTestRoute) },
                     onNavigateToRouter = { navController.navigateSingleTop(RouterRoute) },
+                    otherDialogShown = showDisplayScaleHint,
                     quickSettingsConnectRequest = quickSettingsConnectRequest,
                 )
             }

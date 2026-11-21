@@ -249,6 +249,9 @@ class MainActivity : AppCompatActivity() {
                     if (showStartupSplash) {
                         SplashScreen(onFinished = { showStartupSplash = false })
                     }
+                    androidx.compose.runtime.LaunchedEffect(showStartupSplash) {
+                        if (!showStartupSplash) com.tobevpn.app.presentation.StartupSplashState.finished()
+                    }
 
                     if (!showStartupSplash) {
                         MandatoryUpdateGate(

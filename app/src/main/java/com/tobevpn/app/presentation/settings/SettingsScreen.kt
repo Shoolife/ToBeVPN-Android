@@ -337,6 +337,31 @@ private fun LogoutConfirmDialog(
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    AppConfirmDialog(
+        visible = visible,
+        title = stringResource(R.string.logout_confirm_title),
+        message = stringResource(R.string.logout_confirm_message),
+        confirmText = stringResource(R.string.logout),
+        dismissText = stringResource(R.string.cancel),
+        onConfirm = onConfirm,
+        onDismiss = onDismiss,
+    )
+}
+
+/**
+ * The app's confirm window (logging out, the Keenetic offer): a title, a
+ * message and two wide buttons, the secondary one outlined.
+ */
+@Composable
+internal fun AppConfirmDialog(
+    visible: Boolean,
+    title: String,
+    message: String,
+    confirmText: String,
+    dismissText: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
     val darkTheme = isSystemInDarkTheme()
     val dialogTextColor = if (darkTheme) {
         MaterialTheme.colorScheme.onSurface
@@ -430,7 +455,7 @@ private fun LogoutConfirmDialog(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                             ) {
                             Text(
-                                text = stringResource(R.string.logout_confirm_title),
+                                text = title,
                                 style = fixedLayoutTextStyle(
                                     MaterialTheme.typography.headlineSmall,
                                 ),
@@ -440,7 +465,7 @@ private fun LogoutConfirmDialog(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = stringResource(R.string.logout_confirm_message),
+                                text = message,
                                 style = fixedLayoutTextStyle(
                                     MaterialTheme.typography.bodyMedium,
                                 ),
@@ -464,7 +489,7 @@ private fun LogoutConfirmDialog(
                                     contentPadding = PaddingValues(horizontal = 12.dp),
                                 ) {
                                     Text(
-                                        text = stringResource(R.string.cancel),
+                                        text = dismissText,
                                         style = fixedLayoutTextStyle(
                                             MaterialTheme.typography.labelLarge,
                                         ),
@@ -490,7 +515,7 @@ private fun LogoutConfirmDialog(
                                     contentPadding = PaddingValues(horizontal = 12.dp),
                                 ) {
                                     Text(
-                                        text = stringResource(R.string.logout),
+                                        text = confirmText,
                                         style = fixedLayoutTextStyle(
                                             MaterialTheme.typography.labelLarge,
                                         ),
