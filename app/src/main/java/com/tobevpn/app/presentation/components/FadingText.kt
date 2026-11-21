@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -38,8 +39,17 @@ fun FadingText(
      */
     fadeKey: Any? = text,
 ) {
+    // A fade only when the text itself changes: switching to another period
+    // whose number is the same ("0", "0 B") leaves it standing instead of
+    // blinking it out and in.
+    val last = remember { FadeMemory(fadeKey, text) }
+    if (fadeKey != last.key) {
+        if (text != last.text) last.generation++
+        last.key = fadeKey
+    }
+    last.text = text
     AnimatedContent(
-        targetState = text to fadeKey,
+        targetState = text to last.generation,
         contentKey = { it.second },
         modifier = modifier,
         contentAlignment = Alignment.CenterStart,
@@ -60,6 +70,11 @@ fun FadingText(
             overflow = overflow,
         )
     }
+}
+
+/** What a FadingText showed last: plain fields, read and written only while composing it. */
+private class FadeMemory(var key: Any?, var text: String) {
+    var generation = 0
 }
 
 // The Router screen's own crossfade (out 220 ms, in 420 ms after 120 ms):
