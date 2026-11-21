@@ -280,7 +280,9 @@ fun StatsScreen(
                     // The bar tapped last: its row is scrolled to and lit up.
                     var selectedPeriod by remember(section.period, section.source) { mutableStateOf<Long?>(null) }
                     // Raised when the list has arrived at the row: its outline plays then.
-                    var arrivals by remember(section.period, section.source) { mutableIntStateOf(0) }
+                    // The outline of the picked row and bar, played together: it
+                    // fades in once the list has arrived, pulses twice and stays.
+                    val outline = remember(section.period, section.source) { Animatable(0f) }
                     // How far the rows are pulled past the list's ends, so a row
                     // near the top or bottom can still stand in the middle.
                     val pull = remember(section.period, section.source) { mutableFloatStateOf(0f) }
@@ -301,18 +303,24 @@ fun StatsScreen(
                         period = section.period,
                         routerAt = section.routerAt,
                         selectedPeriod = selectedPeriod,
+                        selectedOutline = outline.value,
                         onBarClick = { tapped ->
                             val index = section.rows.indexOfFirst { it.period == tapped }
                             if (index >= 0) {
                                 selectedPeriod = tapped
                                 listScope.launch {
+                                    outline.snapTo(0f)
                                     gliding = true
                                     try {
                                         statsListState.glideToCenter(index, pull)
                                     } finally {
                                         gliding = false
                                     }
-                                    arrivals++
+                                    outline.animateTo(1f, tween(260, easing = FastOutSlowInEasing))
+                                    repeat(2) {
+                                        outline.animateTo(0.35f, tween(320, easing = FastOutSlowInEasing))
+                                        outline.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
+                                    }
                                 }
                             }
                         },
@@ -352,7 +360,7 @@ fun StatsScreen(
                                 maxBytes = maxRowBytes,
                                 routerBytes = section.routerAt(stat.period),
                                 highlighted = stat.period == selectedPeriod,
-                                arrivals = arrivals,
+                                outline = if (stat.period == selectedPeriod) outline.value else 0f,
                             )
                         }
                     }
@@ -673,8 +681,10 @@ private fun EnhancedTrafficChart(
     stats: List<TrafficStat>,
     period: StatsPeriod,
     routerAt: (Long) -> Long = { 0L },
-    /** The slot whose bar was tapped, outlined. */
+    /** The slot whose bar was tapped: the others dim, it is outlined. */
     selectedPeriod: Long? = null,
+    /** The picked bar's outline opacity, played with its row's. */
+    selectedOutline: Float = 0f,
     /** A tap on a bar (anywhere in its column), with the slot's start. */
     onBarClick: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
@@ -706,6 +716,12 @@ private fun EnhancedTrafficChart(
         )
     }
     val progress = animProgress.value
+    // The bars other than the picked one step back.
+    val dim by androidx.compose.animation.core.animateFloatAsState(
+        if (selectedPeriod != null) 1f else 0f,
+        animationSpec = tween(300, easing = FastOutSlowInEasing),
+        label = "stats-bars-dim",
+    )
 
     val density = LocalDensity.current
     val yLabelWidthPx = with(density) { 36.dp.toPx() }
@@ -769,23 +785,24 @@ private fun EnhancedTrafficChart(
                 val corner = CornerRadius(4.dp.toPx())
 
                 slots.forEachIndexed { index, slot ->
+                    val barAlpha = if (selectedPeriod != null && slot.period != selectedPeriod) 1f - 0.6f * dim else 1f
                     val frac = slot.totalBytes.toFloat() / maxBytes
                     val barHeight = frac * usableHeight * progress
                     val x = chartLeft + spacing + index * (barWidth + spacing)
 
                     if (barHeight > 0.5f) {
                         val isMax = index == maxIndex
-                        val topColor = if (isMax) VpnGreen else VpnBlue
+                        val topColor = (if (isMax) VpnGreen else VpnBlue).copy(alpha = barAlpha)
                         val bottomColor = if (isMax) {
-                            VpnGreen.copy(alpha = 0.2f)
+                            VpnGreen.copy(alpha = 0.2f * barAlpha)
                         } else {
-                            VpnBlue.copy(alpha = 0.18f)
+                            VpnBlue.copy(alpha = 0.18f * barAlpha)
                         }
                         val barTop = chartHeight - barHeight
 
                         // Glow below the bar
                         drawRoundRect(
-                            color = topColor.copy(alpha = 0.12f),
+                            color = topColor.copy(alpha = 0.12f * barAlpha),
                             topLeft = Offset(x - 2.dp.toPx(), barTop - 2.dp.toPx()),
                             size = Size(barWidth + 4.dp.toPx(), barHeight + 2.dp.toPx()),
                             cornerRadius = CornerRadius(6.dp.toPx()),
@@ -806,7 +823,7 @@ private fun EnhancedTrafficChart(
                         // Highlight stroke on max bar
                         if (isMax && progress > 0.95f) {
                             drawRoundRect(
-                                color = VpnGreen,
+                                color = VpnGreen.copy(alpha = barAlpha),
                                 topLeft = Offset(x, barTop),
                                 size = Size(barWidth, barHeight),
                                 cornerRadius = corner,
@@ -815,12 +832,12 @@ private fun EnhancedTrafficChart(
                         }
                     }
 
-                    // The tapped bar: outlined over its whole height.
-                    if (slot.period == selectedPeriod && progress > 0.95f) {
+                    // The tapped bar: outlined over its whole height, pulsing with its row.
+                    if (slot.period == selectedPeriod && progress > 0.95f && selectedOutline > 0.01f) {
                         val total = barHeight + routerBytes[index].toFloat() / maxBytes * usableHeight * progress
                         if (total > 0.5f) {
                             drawRoundRect(
-                                color = labelColor,
+                                color = VpnBlue.copy(alpha = selectedOutline),
                                 topLeft = Offset(x - 1.5.dp.toPx(), chartHeight - total - 1.5.dp.toPx()),
                                 size = Size(barWidth + 3.dp.toPx(), total + 1.5.dp.toPx()),
                                 cornerRadius = CornerRadius(5.dp.toPx()),
@@ -836,7 +853,7 @@ private fun EnhancedTrafficChart(
                         val top = bottom - routerHeight
                         drawRoundRect(
                             brush = Brush.verticalGradient(
-                                colors = listOf(RouterTrafficColor, RouterTrafficColor.copy(alpha = 0.45f)),
+                                colors = listOf(RouterTrafficColor.copy(alpha = barAlpha), RouterTrafficColor.copy(alpha = 0.45f * barAlpha)),
                                 startY = top,
                                 endY = bottom,
                             ),
@@ -1018,24 +1035,9 @@ private fun EnhancedStatRow(
     routerBytes: Long = 0L,
     /** The row of the bar tapped on the chart: lit up. */
     highlighted: Boolean = false,
-    /** Counts the list's arrivals at a tapped row: the outline plays on each. */
-    arrivals: Int = 0,
+    /** The outline's opacity: the picked row's, played with its bar's. */
+    outline: Float = 0f,
 ) {
-    // The outline shows which row the bar is: it fades in once the list has
-    // arrived, pulses twice and stays; it fades out when another row is picked.
-    val outline = remember { Animatable(0f) }
-    LaunchedEffect(highlighted, arrivals) {
-        if (!highlighted) {
-            outline.animateTo(0f, tween(250))
-        } else if (arrivals > 0) {
-            outline.snapTo(0f)
-            outline.animateTo(1f, tween(260, easing = FastOutSlowInEasing))
-            repeat(2) {
-                outline.animateTo(0.35f, tween(320, easing = FastOutSlowInEasing))
-                outline.animateTo(1f, tween(320, easing = FastOutSlowInEasing))
-            }
-        }
-    }
     val fraction = ((stat.totalBytes + routerBytes).toFloat() / maxBytes).coerceIn(0f, 1f)
     val container by androidx.compose.animation.animateColorAsState(
         if (highlighted) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1048,7 +1050,7 @@ private fun EnhancedStatRow(
             .padding(horizontal = 16.dp, vertical = 4.dp),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = container),
-        border = if (outline.value > 0.01f) BorderStroke(1.5.dp, VpnBlue.copy(alpha = outline.value)) else null,
+        border = if (outline > 0.01f) BorderStroke(1.5.dp, VpnBlue.copy(alpha = outline)) else null,
     ) {
         Column(
             modifier = Modifier
