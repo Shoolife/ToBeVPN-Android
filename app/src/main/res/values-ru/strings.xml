@@ -868,10 +868,10 @@
     <string name="router_status_supported">На этот роутер можно установить ToBeVPN без перепрошивки: VPN заработает для всех устройств дома.</string>
     <string name="router_status_openwrt_unverified">Роутер на OpenWrt: ToBeVPN можно установить, если у него процессор ARM64 или ARMv7 и хватает памяти. Это проверится при подключении.</string>
     <string name="router_status_unknown">Модель роутера определить не удалось. Сейчас поддерживаются роутеры на OpenWrt.</string>
-    <string name="router_status_keenetic">У вас роутер Keenetic. Скоро ToBeVPN можно будет поставить на него без перепрошивки. Пока установка работает только на роутерах с OpenWrt.</string>
+    <string name="router_status_keenetic">У вас роутер Keenetic. Мы готовим для него VPN на весь дом — без перепрошивки. Пока ToBeVPN можно установить только на роутеры с OpenWrt.</string>
     <string name="router_card_keenetic">Keenetic — поддержка скоро появится</string>
     <string name="router_keenetic_test_title">Хотите попробовать первым?</string>
-    <string name="router_keenetic_test_description">Мы ищем владельцев Keenetic, которые помогут проверить эту функцию до выхода. Напишите нам — расскажем, что нужно сделать.</string>
+    <string name="router_keenetic_test_description">Ищем владельцев Keenetic, которые помогут проверить VPN на роутере до выхода. Напишите нам — расскажем, что нужно сделать.</string>
     <string name="router_status_no_network">Телефон не подключён к Wi‑Fi: роутер не найден.</string>
     <string name="router_vpn_section">VPN на роутере</string>
     <string name="router_vpn_description">Роутер сам подключается к серверам ToBeVPN, и через VPN можно пустить любые устройства дома — телевизоры, приставки, гаджеты гостей. Роутер считается одним устройством подписки.</string>

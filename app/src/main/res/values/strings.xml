@@ -854,10 +854,10 @@
     <string name="router_status_supported">ToBeVPN can be installed on this router without reflashing it: the VPN will cover every device at home.</string>
     <string name="router_status_openwrt_unverified">An OpenWrt router: ToBeVPN can be installed if it has an ARM64 or ARMv7 CPU and enough memory. This is checked when connecting.</string>
     <string name="router_status_unknown">The router model could not be identified. OpenWrt routers are supported for now.</string>
-    <string name="router_status_keenetic">You have a Keenetic router. Soon ToBeVPN will install on it without reflashing. For now, installing works only on OpenWrt routers.</string>
+    <string name="router_status_keenetic">You have a Keenetic router. We are preparing whole-home VPN for it — no reflashing needed. For now, ToBeVPN installs only on OpenWrt routers.</string>
     <string name="router_card_keenetic">Keenetic — support is coming soon</string>
     <string name="router_keenetic_test_title">Want to try it first?</string>
-    <string name="router_keenetic_test_description">We are looking for Keenetic owners to help test this feature before release. Message us and we will tell you what to do.</string>
+    <string name="router_keenetic_test_description">We are looking for Keenetic owners to help test VPN on the router before release. Message us and we will tell you what to do.</string>
     <string name="router_status_no_network">The phone is not on Wi‑Fi: no router found.</string>
     <string name="router_vpn_section">VPN on the router</string>
     <string name="router_vpn_description">The router connects to ToBeVPN servers by itself, and any device at home can go through the VPN — TVs, consoles, guests’ gadgets. The router counts as one device of the subscription.</string>
