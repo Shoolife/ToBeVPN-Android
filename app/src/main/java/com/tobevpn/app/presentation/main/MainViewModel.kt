@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.main
 
+import kotlinx.coroutines.flow.first
 import com.tobevpn.app.billing.PlayBillingCountry
 import android.app.Activity
 import android.content.Context
@@ -956,6 +957,20 @@ class MainViewModel @Inject constructor(
                 routerCredentials.repairInBackground() == com.tobevpn.app.router.RouterCredentials.Result.UPDATED
             ) {
                 _routerVpn.value = runCatching { routerRepository.protection() }.getOrNull()
+            }
+            // The router keeps every server of the subscription direct (one
+            // added after its setup too), so this phone's own VPN reaches it.
+            if (routerHere != null) {
+                try {
+                    routerRepository.syncServerHosts(vpnRepository.observeServers().first().map { it.address })
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    com.tobevpn.app.util.SafeDiagnostics.warn(
+                        "MainViewModel",
+                        "Router server list sync failed: ${com.tobevpn.app.util.SafeDiagnostics.failureCategory(error)}",
+                    )
+                }
             }
             // A Keenetic at home: its owner is invited once to test Keenetic
             // support (signed in, no router of the account here).

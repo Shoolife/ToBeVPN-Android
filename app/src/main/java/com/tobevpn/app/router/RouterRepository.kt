@@ -684,6 +684,39 @@ class RouterRepository @Inject constructor(
      * The app's own services (subscription, bot API). The router sends them
      * direct too, so the app behind the router reaches them as without it.
      */
+    @Volatile
+    private var serverHostsSyncedAt = 0L
+
+    /**
+     * Adds the subscription's servers the router does not keep direct yet to
+     * its list (/opt/tobevpn/servers): a server added to the subscription
+     * after the router's last setup was otherwise left out, and a device with
+     * its own ToBeVPN could not reach it through the router's VPN at all.
+     * Nothing is removed (another device may use an older server); the agent
+     * reads the list again within 30 s, nothing restarts. At most every half
+     * hour, only on a network with a connected router.
+     */
+    suspend fun syncServerHosts(hosts: Collection<String>) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (serverHostsSyncedAt != 0L && now - serverHostsSyncedAt < SERVER_HOSTS_SYNC_MS) return
+        routerHere() ?: return
+        val wanted = RouterAgent.serverList(hosts + serviceHosts()).lines().filter { it.isNotEmpty() }
+        if (wanted.isEmpty()) return
+        withRouter { shell ->
+            val current = shell.run("cat /opt/tobevpn/servers 2>/dev/null").first
+                .lines().map { it.trim() }.filter { it.isNotEmpty() }
+            val missing = wanted - current.toSet()
+            if (missing.isNotEmpty()) {
+                shell.writeFile("/opt/tobevpn/servers", RouterAgent.serverList(current + wanted).toByteArray(), "644")
+            }
+            com.tobevpn.app.util.SafeDiagnostics.info(
+                "RouterRepository",
+                "Router server list checked: kept=${current.size} added=${missing.size}",
+            )
+        }
+        serverHostsSyncedAt = now
+    }
+
     internal fun serviceHosts(): List<String> = listOf(
         BuildConfig.SUBSCRIPTION_BASE_URL,
         BuildConfig.BOT_API_BASE_URL,
@@ -705,6 +738,7 @@ class RouterRepository @Inject constructor(
         private const val KEY_LINKS = "links"
         private const val PING_TIMEOUT_MS = 2_000
         private const val KEY_ROUTER = "router_here"
+        private const val SERVER_HOSTS_SYNC_MS = 30 * 60_000L
         private const val KEY_KEENETIC_OFFERED = "keenetic_offered"
         private const val KEY_TRAFFIC = "traffic"
         /** How long one finding of this network's router serves the background checks. */
