@@ -206,6 +206,15 @@ fun MainScreen(
     viewModel: MainViewModel = hiltViewModel(),
 ) {
     val keeneticOffer by viewModel.keeneticOffer.collectAsStateWithLifecycle()
+    // A connect by hand at home with "Pause VPN at home" on: it stays on.
+    val homeSnackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val homeConnectText = stringResource(R.string.pause_at_home_connect_notice)
+    LaunchedEffect(Unit) {
+        viewModel.homeConnectNotices.collect {
+            homeSnackbar.currentSnackbarData?.dismiss()
+            homeSnackbar.showSnackbar(homeConnectText, duration = androidx.compose.material3.SnackbarDuration.Long)
+        }
+    }
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val usageInfo by viewModel.usageInfo.collectAsStateWithLifecycle()
     val trafficResetAt by viewModel.trafficResetAt.collectAsStateWithLifecycle()
@@ -401,6 +410,7 @@ fun MainScreen(
                 ),
                 )
             },
+            snackbarHost = { androidx.compose.material3.SnackbarHost(homeSnackbar) },
         ) { paddingValues ->
         Box(
             modifier = Modifier

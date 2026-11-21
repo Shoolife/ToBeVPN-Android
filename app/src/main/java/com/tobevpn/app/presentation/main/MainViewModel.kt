@@ -118,6 +118,9 @@ class MainViewModel @Inject constructor(
     val paymentSuccessVisible: StateFlow<Boolean> = _paymentSuccessVisible
 
     val connectionState: StateFlow<ConnectionState> = connectionManager.connectionState
+
+    /** Connected by hand at home with "Pause VPN at home" on: stays on until leaving. */
+    val homeConnectNotices = connectionManager.homeConnectNotices
     val usageInfo: StateFlow<UsageInfo> = connectionManager.usageInfo
     val sessionTimeSeconds: StateFlow<Long> = connectionManager.sessionTimeSeconds
     val sessionBytes: StateFlow<Long> = connectionManager.sessionBytes
