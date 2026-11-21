@@ -283,23 +283,8 @@ fun StatsScreen(
                     // The picked row's outline: it fades in once the list has
                     // arrived, pulses twice and stays (the bar is simply outlined).
                     val outline = remember(section.period, section.source) { Animatable(0f) }
-                    // How far the rows are pulled past the list's ends, so a row
-                    // near the top or bottom can still stand in the middle.
-                    val pull = remember(section.period, section.source) { mutableFloatStateOf(0f) }
-                    var gliding by remember { mutableStateOf(false) }
-                    // Scrolling by hand lets the rows settle back.
-                    LaunchedEffect(statsListState) {
-                        snapshotFlow { statsListState.isScrollInProgress }.collect { scrolling ->
-                            if (scrolling && !gliding && pull.floatValue != 0f) {
-                                androidx.compose.animation.core.animate(pull.floatValue, 0f, animationSpec = tween(300)) { value, _ ->
-                                    pull.floatValue = value
-                                }
-                            }
-                        }
-                    }
-                    // A bar or a row picked: its row comes to the middle (the first
-                    // one, and the rows at the end, only as far as the list
-                    // scrolls), lit up with its bar.
+                    // A bar or a row picked: its row comes to the middle, or as near
+                    // it as the list scrolls (rows by its ends), lit up with its bar.
                     // The row's outline pulses only when the pick came from its bar
                     // (to show where it went); a tapped row is simply outlined.
                     val pickRow: (Long, Boolean) -> Unit = { tapped, fromBar ->
@@ -308,19 +293,7 @@ fun StatsScreen(
                             selectedPeriod = tapped
                             listScope.launch {
                                 outline.snapTo(0f)
-                                gliding = true
-                                try {
-                                    statsListState.glideToCenter(
-                                        index,
-                                        pull,
-                                        pullPastStart = index != 0,
-                                        // Never past the end: an empty space under the
-                                        // last row only read as a stray jump.
-                                        pullPastEnd = false,
-                                    )
-                                } finally {
-                                    gliding = false
-                                }
+                                statsListState.glideToCenter(index)
                                 // The row's outline fades in; from a bar it also pulses twice.
                                 outline.animateTo(1f, tween(260, easing = FastOutSlowInEasing))
                                 if (fromBar) {
@@ -363,10 +336,9 @@ fun StatsScreen(
                     val maxRowBytes = remember(section) {
                         section.rows.maxOfOrNull { it.totalBytes + section.routerAt(it.period) }?.coerceAtLeast(1L) ?: 1L
                     }
-                    Box(Modifier.weight(1f).clipToBounds().lazyScrollCues(statsListState)) {
                     LazyColumn(
                         state = statsListState,
-                        modifier = Modifier.fillMaxSize().graphicsLayer { translationY = pull.floatValue },
+                        modifier = Modifier.weight(1f).lazyScrollCues(statsListState),
                     ) {
                         items(section.rows) { stat ->
                             EnhancedStatRow(
@@ -379,7 +351,6 @@ fun StatsScreen(
                                 onClick = { pickRow(stat.period, false) },
                             )
                         }
-                    }
                     }
                 }
                 }
@@ -641,68 +612,35 @@ private fun HeroDivider(color: Color) {
 private val GlideEasing = androidx.compose.animation.core.CubicBezierEasing(0.65f, 0f, 0.35f, 1f)
 
 /**
- * Moves row [index] to the middle of the list, speeding up and slowing down
- * smoothly (ease in-out), however far it is. The list scrolls as far as it
- * can; the rest — a row near the top or bottom — is [pull], a shift of the
- * rows past the list's end, in the same motion. Rows are the same height, so
- * one out of sight is placed from the visible rows' size.
+ * Scrolls so that row [index] stands in the middle of the list, or as near it
+ * as the list scrolls (rows by its ends), speeding up and slowing down
+ * smoothly (ease in-out). Nothing is shifted past the list's ends. Rows are
+ * the same height, so one out of sight is placed from the visible rows' size.
  */
-private suspend fun androidx.compose.foundation.lazy.LazyListState.glideToCenter(
-    index: Int,
-    pull: androidx.compose.runtime.MutableFloatState,
-    /** False for the first row: it stays at the top, no room above it. */
-    pullPastStart: Boolean = true,
-    /** False for the last row: it stops where the list ends, no room below it. */
-    pullPastEnd: Boolean = true,
-) {
-    // A shift this row may not have (the first or last one) settles back first.
-    val pulled = pull.floatValue
-    if ((pulled > 0f && !pullPastStart) || (pulled < 0f && !pullPastEnd)) {
-        androidx.compose.animation.core.animate(pulled, 0f, animationSpec = tween(300, easing = GlideEasing)) { value, _ ->
-            pull.floatValue = value
-        }
-    }
+private suspend fun androidx.compose.foundation.lazy.LazyListState.glideToCenter(index: Int) {
     val info = layoutInfo
     val visible = info.visibleItemsInfo
     if (visible.isEmpty()) return
     val viewportCenter = (info.viewportStartOffset + info.viewportEndOffset) / 2f
     val target = visible.firstOrNull { it.index == index }
-    // How far up the row has to move to stand in the middle (pull included).
-    val delta = pull.floatValue + if (target != null) {
+    val step = visible.map { it.size }.average().toFloat() + info.mainAxisItemSpacing
+    val wanted = if (target != null) {
         target.offset + target.size / 2f - viewportCenter
     } else {
-        val step = visible.map { it.size }.average().toFloat() + info.mainAxisItemSpacing
         val first = visible.first()
         first.offset + (index - first.index) * step + first.size / 2f - viewportCenter
     }
+    // Only as far as the list scrolls, so the slow-down ends at its edge
+    // rather than the motion stopping short there.
+    val scrolled = firstVisibleItemIndex * step + firstVisibleItemScrollOffset
+    val content = info.totalItemsCount * step - info.mainAxisItemSpacing +
+        info.beforeContentPadding + info.afterContentPadding
+    val viewport = (info.viewportEndOffset - info.viewportStartOffset).toFloat()
+    val delta = wanted.coerceIn(-scrolled, (content - viewport - scrolled).coerceAtLeast(0f))
     if (kotlin.math.abs(delta) < 1f) return
     // Longer trips take a little longer, never abruptly fast or dragging.
     val duration = (450 + kotlin.math.abs(delta) / 3f).toInt().coerceIn(500, 1000)
-    scroll {
-        var done = 0f
-        androidx.compose.animation.core.animate(0f, delta, animationSpec = tween(duration, easing = GlideEasing)) { value, _ ->
-            var step = value - done
-            done = value
-            // A pull the other way is taken back first, then the list scrolls,
-            // and what it cannot scroll becomes pull.
-            val current = pull.floatValue
-            if (current > 0f && step > 0f) {
-                val back = minOf(current, step)
-                pull.floatValue = current - back
-                step -= back
-            } else if (current < 0f && step < 0f) {
-                val back = maxOf(current, step)
-                pull.floatValue = current - back
-                step -= back
-            }
-            if (step != 0f) {
-                val consumed = scrollBy(step)
-                val next = pull.floatValue - (step - consumed)
-                val allowed = if (next < 0f) pullPastEnd else pullPastStart
-                if (allowed || next == 0f) pull.floatValue = next
-            }
-        }
-    }
+    animateScrollBy(delta, tween(durationMillis = duration, easing = GlideEasing))
 }
 
 @Composable
