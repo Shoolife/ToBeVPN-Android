@@ -674,6 +674,12 @@ private fun KeeneticTestCard() {
                 },
                 shape = RoundedCornerShape(13.dp),
                 modifier = Modifier.fillMaxWidth().height(48.dp),
+                // As on the Support screen: dark grey on the light theme.
+                colors = if (com.tobevpn.app.presentation.theme.LocalAppDarkTheme.current) {
+                    ButtonDefaults.buttonColors()
+                } else {
+                    ButtonDefaults.buttonColors(containerColor = Color(0xFF3F3F3F), contentColor = Color.White)
+                },
             ) {
                 Text(stringResource(R.string.support_contact_button))
             }
