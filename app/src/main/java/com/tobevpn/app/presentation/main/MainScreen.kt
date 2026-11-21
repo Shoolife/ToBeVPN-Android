@@ -740,13 +740,17 @@ fun MainScreen(
             keeneticOfferReady = true
         }
     }
-    com.tobevpn.app.presentation.settings.AppConfirmDialog(
+    // "Learn more" removes the window at once (no fade-out over the router
+    // screen sliding in).
+    var keeneticOfferGone by remember { mutableStateOf(false) }
+    if (!keeneticOfferGone) com.tobevpn.app.presentation.settings.AppConfirmDialog(
         visible = keeneticOffer && keeneticOfferReady && !showBlockedDialog && !otherDialogShown,
         title = stringResource(R.string.keenetic_offer_title),
         message = stringResource(R.string.keenetic_offer_text),
         confirmText = stringResource(R.string.keenetic_offer_open),
         dismissText = stringResource(R.string.keenetic_offer_later),
         onConfirm = {
+            keeneticOfferGone = true
             viewModel.dismissKeeneticOffer()
             onNavigateToRouter()
         },
