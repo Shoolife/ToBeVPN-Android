@@ -297,8 +297,9 @@ fun StatsScreen(
                             }
                         }
                     }
-                    // A bar or a row picked: its row comes to the middle (the last
-                    // one only as far as the list scrolls), lit up with its bar.
+                    // A bar or a row picked: its row comes to the middle (the first
+                    // and last ones only as far as the list scrolls), lit up with
+                    // its bar.
                     // The row's outline pulses only when the pick came from its bar
                     // (to show where it went); a tapped row is simply outlined.
                     val pickRow: (Long, Boolean) -> Unit = { tapped, fromBar ->
@@ -309,7 +310,12 @@ fun StatsScreen(
                                 outline.snapTo(0f)
                                 gliding = true
                                 try {
-                                    statsListState.glideToCenter(index, pull, pullPastEnd = index != section.rows.lastIndex)
+                                    statsListState.glideToCenter(
+                                        index,
+                                        pull,
+                                        pullPastStart = index != 0,
+                                        pullPastEnd = index != section.rows.lastIndex,
+                                    )
                                 } finally {
                                     gliding = false
                                 }
@@ -642,9 +648,18 @@ private val GlideEasing = androidx.compose.animation.core.CubicBezierEasing(0.65
 private suspend fun androidx.compose.foundation.lazy.LazyListState.glideToCenter(
     index: Int,
     pull: androidx.compose.runtime.MutableFloatState,
+    /** False for the first row: it stays at the top, no room above it. */
+    pullPastStart: Boolean = true,
     /** False for the last row: it stops where the list ends, no room below it. */
     pullPastEnd: Boolean = true,
 ) {
+    // A shift this row may not have (the first or last one) settles back first.
+    val pulled = pull.floatValue
+    if ((pulled > 0f && !pullPastStart) || (pulled < 0f && !pullPastEnd)) {
+        androidx.compose.animation.core.animate(pulled, 0f, animationSpec = tween(300, easing = GlideEasing)) { value, _ ->
+            pull.floatValue = value
+        }
+    }
     val info = layoutInfo
     val visible = info.visibleItemsInfo
     if (visible.isEmpty()) return
@@ -681,7 +696,8 @@ private suspend fun androidx.compose.foundation.lazy.LazyListState.glideToCenter
             if (step != 0f) {
                 val consumed = scrollBy(step)
                 val next = pull.floatValue - (step - consumed)
-                if (pullPastEnd || next >= 0f) pull.floatValue = next
+                val allowed = if (next < 0f) pullPastEnd else pullPastStart
+                if (allowed || next == 0f) pull.floatValue = next
             }
         }
     }
