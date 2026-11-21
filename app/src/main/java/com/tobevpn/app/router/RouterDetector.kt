@@ -27,14 +27,20 @@ data class RouterInfo(
     val gateway: String? = null,
     /** Model from the login page title, e.g. "SNR-CPE-AX2". */
     val model: String? = null,
-    /** "easywrt" (SNR's OpenWrt), "openwrt", or null when not recognised. */
+    /**
+     * "easywrt" (SNR's OpenWrt), "openwrt", "keenetic" (KeeneticOS, which
+     * ToBeVPN cannot be installed on yet), or null when not recognised.
+     */
     val firmware: String? = null,
     /**
      * ToBeVPN's mark on the router (a hash of its device id in the account),
      * read without logging in; null without ToBeVPN or on older agents.
      */
     val mark: String? = null,
-)
+) {
+    /** OpenWrt or SNR's EasyWRT: the firmware ToBeVPN installs on. */
+    val openWrt: Boolean get() = firmware == "openwrt" || firmware == "easywrt"
+}
 
 /** The mark a ToBeVPN router with this device id publishes (see the agent's publish_id). */
 fun routerMark(hwid: String): String =
@@ -93,6 +99,13 @@ class RouterDetector @Inject constructor(
         // LuCI's index only redirects (meta refresh) to /cgi-bin/luci.
         val page = if (root.contains("/cgi-bin/luci")) httpGet(lan, "/cgi-bin/luci") ?: root else root
         val (model, firmware) = identify(page)
+        if (firmware == null) {
+            // Keenetic (and Netcraze, its Russian name): the login API answers
+            // without a password and names the router in X-NDM-Realm.
+            httpGet(lan, "/auth")?.let { ndmRealm(it) }?.let { realm ->
+                return@withContext info.copy(model = realm.ifEmpty { null }, firmware = "keenetic")
+            }
+        }
         val mark = httpGet(lan, "/tobevpn-id")
             ?.let { MARK.find(it)?.groupValues?.get(1) }
         info.copy(model = model, firmware = firmware, mark = mark)
@@ -129,6 +142,20 @@ class RouterDetector @Inject constructor(
                 lines.drop(1).takeWhile { it.isNotEmpty() }.any { it.lowercase().startsWith("location: https://") }
         }
         private const val MAX_PAGE_BYTES = 64 * 1024
+
+        /**
+         * The router's name from a KeeneticOS answer to /auth (X-NDM-Realm,
+         * e.g. "Keenetic Giga"); "" when the header is there but empty, null
+         * when the answer is not KeeneticOS's.
+         */
+        fun ndmRealm(response: String): String? = response.lineSequence()
+            .map { it.trimEnd('\r') }
+            .drop(1)
+            .takeWhile { it.isNotEmpty() }
+            .firstOrNull { it.startsWith("x-ndm-realm:", ignoreCase = true) }
+            ?.substringAfter(':')
+            ?.trim()
+            ?.take(64)
 
         /** Model and firmware family from a router's login page. */
         fun identify(page: String): Pair<String?, String?> {

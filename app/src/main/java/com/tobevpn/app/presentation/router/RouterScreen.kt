@@ -459,6 +459,7 @@ private fun RouterHeader(state: RouterUiState, onRename: () -> Unit) {
     val firmware = when (info?.firmware) {
         "easywrt" -> "EasyWRT"
         "openwrt" -> "OpenWrt"
+        "keenetic" -> "KeeneticOS"
         else -> null
     }
     val meta = listOfNotNull(
@@ -548,7 +549,8 @@ private fun StatusText(state: RouterUiState) {
         info?.gateway == null -> stringResource(R.string.router_status_no_network)
         state.installedByAnother -> stringResource(R.string.router_status_installed_elsewhere)
         info.model in SUPPORTED_MODELS -> stringResource(R.string.router_status_supported)
-        info.firmware != null -> stringResource(R.string.router_status_openwrt_unverified)
+        info.firmware == "keenetic" -> stringResource(R.string.router_status_keenetic)
+        info.openWrt -> stringResource(R.string.router_status_openwrt_unverified)
         else -> stringResource(R.string.router_status_unknown)
     }
     Text(
@@ -571,7 +573,7 @@ private fun InstallCard(state: RouterUiState, onPair: (String, String) -> Unit) 
     // The router took ToBeVPN from another device, or no longer takes this
     // phone's key: logging in connects to it (nothing is reinstalled).
     val reconnect = state.installedByAnother || state.accessLost
-    val canInstall = state.info?.firmware != null || reconnect
+    val canInstall = state.info?.openWrt == true || reconnect
     RouterCard {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(

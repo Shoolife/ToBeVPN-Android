@@ -1352,7 +1352,8 @@ private fun LinkedDevicesSheetBody(
                                                 // ToBeVPN runs on it, set up from another device.
                                                 notCurrent.any { it.inferredKind() == DeviceKind.Router && isRouterHere(it) } ->
                                                     stringResource(R.string.router_card_installed)
-                                                routerHere.firmware != null -> stringResource(R.string.router_card_protect_home)
+                                                routerHere.openWrt -> stringResource(R.string.router_card_protect_home)
+                                                routerHere.firmware == "keenetic" -> stringResource(R.string.router_card_keenetic)
                                                 else -> gatewayHere
                                             },
                                             // The sheet slides away first, then the Router
