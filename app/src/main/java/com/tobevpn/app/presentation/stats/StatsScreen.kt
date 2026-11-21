@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.stats
 
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import kotlinx.coroutines.launch
@@ -283,7 +284,7 @@ fun StatsScreen(
                             val index = section.rows.indexOfFirst { it.period == tapped }
                             if (index >= 0) {
                                 selectedPeriod = tapped
-                                listScope.launch { statsListState.animateScrollToItem(index) }
+                                listScope.launch { statsListState.glideToCenter(index) }
                             }
                         },
                         modifier = Modifier
@@ -578,6 +579,33 @@ private fun HeroDivider(color: Color) {
             .height(36.dp)
             .background(color),
     )
+}
+
+/** Ease in-out (cubic): starts gently, speeds up, and slows down as gently. */
+private val GlideEasing = androidx.compose.animation.core.CubicBezierEasing(0.65f, 0f, 0.35f, 1f)
+
+/**
+ * Scrolls so that row [index] ends up in the middle of the list, speeding up
+ * and slowing down smoothly (ease in-out), however far it is. Rows are the
+ * same height, so one out of sight is placed from the visible rows' size.
+ */
+private suspend fun androidx.compose.foundation.lazy.LazyListState.glideToCenter(index: Int) {
+    val info = layoutInfo
+    val visible = info.visibleItemsInfo
+    if (visible.isEmpty()) return
+    val viewportCenter = (info.viewportStartOffset + info.viewportEndOffset) / 2f
+    val target = visible.firstOrNull { it.index == index }
+    val delta = if (target != null) {
+        target.offset + target.size / 2f - viewportCenter
+    } else {
+        val step = visible.map { it.size }.average().toFloat() + info.mainAxisItemSpacing
+        val first = visible.first()
+        first.offset + (index - first.index) * step + first.size / 2f - viewportCenter
+    }
+    if (kotlin.math.abs(delta) < 1f) return
+    // Longer trips take a little longer, never abruptly fast or dragging.
+    val duration = (450 + kotlin.math.abs(delta) / 3f).toInt().coerceIn(500, 1000)
+    animateScrollBy(delta, tween(durationMillis = duration, easing = GlideEasing))
 }
 
 @Composable
