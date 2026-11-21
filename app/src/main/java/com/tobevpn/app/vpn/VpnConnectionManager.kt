@@ -89,6 +89,7 @@ class VpnConnectionManager @Inject constructor(
     private val baseStationBypassProfileProbeRepository:
         BaseStationBypassProfileProbeRepository,
     private val routerRepository: com.tobevpn.app.router.RouterRepository,
+    private val homePauseNotifications: com.tobevpn.app.util.HomePauseNotifications,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val mutex = Mutex()
@@ -1664,6 +1665,7 @@ class VpnConnectionManager @Inject constructor(
             if (kept) {
                 homePause = HomePause(server, requestedOperation.get(), generation)
                 homeMissedChecks = 0
+                homePauseNotifications.showPaused()
             } else {
                 sendStopIntent(stopBeforeGeneration)
             }
@@ -1683,6 +1685,7 @@ class VpnConnectionManager @Inject constructor(
             return
         }
         SafeDiagnostics.info(TAG, "Leaving home: the VPN resumes on the same server reason=$reason")
+        homePauseNotifications.showResumed(paused.server.name)
         startVpnInternal(
             server = paused.server,
             resetWatchdogRecovery = true,

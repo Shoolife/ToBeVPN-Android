@@ -866,6 +866,12 @@
     <string name="pause_at_home_description">When the router at home already sends this phone through its VPN, the phone\'s VPN pauses and comes back by itself when you leave. Needs a router connected to ToBeVPN.</string>
     <string name="vpn_paused_at_home">At home the router\'s VPN is on. The phone\'s VPN comes back by itself when you leave</string>
     <string name="pause_at_home_connect_notice">The router\'s VPN is already on at home. The phone\'s VPN stays on until you leave this network.</string>
+    <string name="home_pause_notice_channel">Pause VPN at home</string>
+    <string name="home_pause_notice_paused_title">VPN paused — you are home</string>
+    <string name="home_pause_notice_paused_text">The router\'s VPN is on. The phone\'s VPN comes back by itself when you leave this network.</string>
+    <string name="home_pause_notice_resumed_title">VPN is back on</string>
+    <string name="home_pause_notice_resumed_text">You left the home network — the phone\'s VPN is connecting to “%1$s”.</string>
+    <string name="home_pause_notice_resumed_text_plain">You left the home network — the phone\'s VPN is connecting.</string>
     <string name="router_status_no_network">The phone is not on Wi‑Fi: no router found.</string>
     <string name="router_vpn_section">VPN on the router</string>
     <string name="router_vpn_description">The router connects to ToBeVPN servers by itself, and any device at home can go through the VPN — TVs, consoles, guests’ gadgets. The router counts as one device of the subscription.</string>
