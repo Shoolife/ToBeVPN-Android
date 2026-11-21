@@ -298,8 +298,8 @@ fun StatsScreen(
                         }
                     }
                     // A bar or a row picked: its row comes to the middle (the first
-                    // and last ones only as far as the list scrolls), lit up with
-                    // its bar.
+                    // one, and the rows at the end, only as far as the list
+                    // scrolls), lit up with its bar.
                     // The row's outline pulses only when the pick came from its bar
                     // (to show where it went); a tapped row is simply outlined.
                     val pickRow: (Long, Boolean) -> Unit = { tapped, fromBar ->
@@ -314,7 +314,9 @@ fun StatsScreen(
                                         index,
                                         pull,
                                         pullPastStart = index != 0,
-                                        pullPastEnd = index != section.rows.lastIndex,
+                                        // Never past the end: an empty space under the
+                                        // last row only read as a stray jump.
+                                        pullPastEnd = false,
                                     )
                                 } finally {
                                     gliding = false
