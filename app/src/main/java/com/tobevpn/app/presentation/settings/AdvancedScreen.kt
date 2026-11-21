@@ -185,6 +185,7 @@ fun AdvancedScreen(
     val appFilterState by viewModel.appFilterSummary.collectAsStateWithLifecycle()
     val emailSaveResult by viewModel.emailSaveResult.collectAsStateWithLifecycle()
     val savedEmail by viewModel.userEmail.collectAsStateWithLifecycle()
+    val pauseAtHomeRouter by viewModel.pauseAtHomeRouter.collectAsStateWithLifecycle()
     val serverPingTimeoutSeconds by viewModel.serverPingTimeoutSeconds.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val devicesLimitReachedText = stringResource(R.string.devices_limit_reached)
@@ -361,6 +362,21 @@ fun AdvancedScreen(
                         },
                     )
                 }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // The phone's VPN pauses at home while the router carries it.
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+            ) {
+                TextStyleToggleRow(
+                    title = stringResource(R.string.pause_at_home_title),
+                    description = stringResource(R.string.pause_at_home_description),
+                    checked = pauseAtHomeRouter,
+                    onCheckedChange = viewModel::setPauseAtHomeRouter,
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))

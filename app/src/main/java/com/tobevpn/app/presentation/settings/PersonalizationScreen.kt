@@ -1057,7 +1057,7 @@ private fun ScaleStepButton(
 }
 
 @Composable
-private fun TextStyleToggleRow(
+internal fun TextStyleToggleRow(
     title: String,
     description: String?,
     checked: Boolean,

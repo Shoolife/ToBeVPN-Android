@@ -143,6 +143,13 @@ class SettingsViewModel @Inject constructor(
     val personalDataHiddenSetting: StateFlow<Boolean> = prefsDataStore.personalDataHidden
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    val pauseAtHomeRouter: StateFlow<Boolean> = prefsDataStore.pauseAtHomeRouter
+        .stateIn(viewModelScope, SharingStarted.Eagerly, false)
+
+    fun setPauseAtHomeRouter(enabled: Boolean) {
+        viewModelScope.launch { prefsDataStore.setPauseAtHomeRouter(enabled) }
+    }
+
     fun setPersonalDataHidden(hidden: Boolean) {
         viewModelScope.launch { prefsDataStore.setPersonalDataHidden(hidden) }
     }

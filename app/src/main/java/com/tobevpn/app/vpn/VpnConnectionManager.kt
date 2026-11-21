@@ -1,5 +1,7 @@
 package com.tobevpn.app.vpn
 
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.channels.Channel
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
@@ -86,6 +88,7 @@ class VpnConnectionManager @Inject constructor(
     private val baseStationBypassRepository: BaseStationBypassRepository,
     private val baseStationBypassProfileProbeRepository:
         BaseStationBypassProfileProbeRepository,
+    private val routerRepository: com.tobevpn.app.router.RouterRepository,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val mutex = Mutex()
@@ -188,6 +191,7 @@ class VpnConnectionManager @Inject constructor(
         .build()
 
     init {
+        startHomePauseWatch()
         SafeDiagnostics.installStateSnapshotProvider(::diagnosticStateSnapshot)
         scope.launch {
             try {
@@ -348,6 +352,10 @@ class VpnConnectionManager @Inject constructor(
     fun startVpn(server: Server, onAttemptHandled: (() -> Unit)? = null) {
         cancelPendingRecovery("CONNECT_REQUEST")
         cancelPendingNetworkResume("CONNECT_REQUEST")
+        // Connecting by hand while paused at home: wanted here after all, so
+        // no pause on this Wi-Fi until it is left.
+        if (homePause != null) homePauseDeclined = true
+        homePause = null
         SafeDiagnostics.info(
             TAG,
             "VPN connect requested: ${diagnosticServerDescriptor(server)} " +
@@ -723,6 +731,12 @@ class VpnConnectionManager @Inject constructor(
         )
         permittedServiceStartGeneration.set(-1)
         val request = requestedOperation.incrementAndGet()
+        // Paused at home: the waiting service goes too, and nothing resumes.
+        if (homePause != null) {
+            homePause = null
+            ToBeVpnService.cleanupActiveInstance()
+            sendStopIntent(force = true)
+        }
         if (_connectionState.value !is ConnectionState.Disconnected ||
             XRayCore.isRunning ||
             isOwnVpnNetworkActive()
@@ -1511,6 +1525,167 @@ class VpnConnectionManager @Inject constructor(
         )
     }
 
+    // ---------------------------------------------------- home pause ---
+
+    /** The tunnel paused at home behind the router's VPN, resumed on leaving. */
+    private class HomePause(val server: Server, val request: Int, val serviceGeneration: Int)
+
+    @Volatile
+    private var homePause: HomePause? = null
+
+    /** A connect by hand at home: no pause on this Wi-Fi until it is left. */
+    @Volatile
+    private var homePauseDeclined = false
+
+    @Volatile
+    private var homeMissedChecks = 0
+
+    private val homeNudges = Channel<Unit>(Channel.CONFLATED)
+
+    /**
+     * Watches for home ("Pause VPN at home"): on every Wi-Fi change and every
+     * few minutes, the linked router is asked whether it already sends this
+     * phone through its VPN. Only while the setting is on and the VPN is
+     * connected or paused here; otherwise nothing is asked.
+     */
+    private fun startHomePauseWatch() {
+        runCatching {
+            val cm = context.getSystemService(ConnectivityManager::class.java) ?: return@runCatching
+            cm.registerNetworkCallback(
+                NetworkRequest.Builder()
+                    .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                    .build(),
+                object : ConnectivityManager.NetworkCallback() {
+                    override fun onAvailable(network: Network) {
+                        homeNudges.trySend(Unit)
+                    }
+
+                    override fun onLost(network: Network) {
+                        homePauseDeclined = false
+                        homeNudges.trySend(Unit)
+                    }
+                },
+            )
+        }.onFailure {
+            SafeDiagnostics.warn(TAG, "Home Wi-Fi watch unavailable: ${SafeDiagnostics.failureCategory(it)}")
+        }
+        scope.launch {
+            while (true) {
+                withTimeoutOrNull(HOME_CHECK_MS) { homeNudges.receive() }
+                // A moment for the Wi-Fi to settle (address, gateway).
+                delay(HOME_SETTLE_MS)
+                try {
+                    checkHomePause()
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    SafeDiagnostics.warn(TAG, "Home check failed: ${SafeDiagnostics.failureCategory(error)}")
+                }
+            }
+        }
+    }
+
+    private fun onPhysicalWifi(): Boolean {
+        val cm = context.getSystemService(ConnectivityManager::class.java) ?: return false
+        @Suppress("DEPRECATION")
+        return cm.allNetworks.any { network ->
+            val caps = cm.getNetworkCapabilities(network) ?: return@any false
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) &&
+                !caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        }
+    }
+
+    private suspend fun checkHomePause() {
+        val enabled = prefsDataStore.pauseAtHomeRouter.first()
+        val paused = homePause
+        if (paused != null) {
+            val onWifi = onPhysicalWifi()
+            val protection = if (enabled && onWifi) {
+                runCatching { routerRepository.protection() }.getOrNull()
+            } else {
+                null
+            }
+            if (protection != null) {
+                homeMissedChecks = 0
+                return
+            }
+            homeMissedChecks += 1
+            // Off the Wi-Fi, or the setting off: at once. A missed answer at
+            // home (the router busy a moment) only on the second in a row,
+            // asked again soon rather than in a few minutes.
+            when {
+                !enabled -> resumeFromHome("SETTING_OFF")
+                !onWifi -> resumeFromHome("LEFT_WIFI")
+                homeMissedChecks >= 2 -> resumeFromHome("ROUTER_VPN_GONE")
+                else -> scope.launch {
+                    delay(HOME_RECHECK_MS)
+                    homeNudges.trySend(Unit)
+                }
+            }
+            return
+        }
+        if (!enabled || homePauseDeclined || _connectionState.value !is ConnectionState.Connected) return
+        if (!onPhysicalWifi()) return
+        routerRepository.protection() ?: return
+        pauseAtHome()
+    }
+
+    private suspend fun pauseAtHome() {
+        cancelPendingRecovery("HOME_PAUSE")
+        mutex.withLock {
+            if (_connectionState.value !is ConnectionState.Connected || homePause != null) return
+            val server = _currentServer.value ?: return
+            val generation = connectionGeneration
+            val stopBeforeGeneration = advanceGeneration()
+            permittedServiceStartGeneration.set(-1)
+            stopUsageTracking()
+            flushPendingUsage()
+            saveSessionLog()
+            _sessionTimeSeconds.value = 0L
+            val kept = ToBeVpnService.pauseActiveTunnelAtHome(generation)
+            _connectionState.value = ConnectionState.Disconnected
+            if (kept) {
+                homePause = HomePause(server, requestedOperation.get(), generation)
+                homeMissedChecks = 0
+            } else {
+                sendStopIntent(stopBeforeGeneration)
+            }
+            SafeDiagnostics.info(TAG, "VPN paused at home behind the router's VPN: service_kept=$kept")
+        }
+    }
+
+    private suspend fun resumeFromHome(reason: String) {
+        val paused = homePause ?: return
+        homePause = null
+        val stale = mutex.withLock {
+            paused.request != requestedOperation.get() ||
+                _connectionState.value !is ConnectionState.Disconnected
+        }
+        if (stale) {
+            ToBeVpnService.cleanupActiveInstance(expectedGeneration = paused.serviceGeneration)
+            return
+        }
+        SafeDiagnostics.info(TAG, "Leaving home: the VPN resumes on the same server reason=$reason")
+        startVpnInternal(
+            server = paused.server,
+            resetWatchdogRecovery = true,
+            request = paused.request,
+            preserveServerSelection = true,
+        )
+        scope.launch {
+            delay(NETWORK_RESUME_START_GUARD_MS)
+            val rejected = mutex.withLock {
+                paused.request == requestedOperation.get() &&
+                    _connectionState.value !is ConnectionState.Connecting &&
+                    _connectionState.value !is ConnectionState.Connected
+            }
+            if (rejected) {
+                SafeDiagnostics.warn(TAG, "Home resume did not start; releasing the paused service")
+                ToBeVpnService.cleanupActiveInstance(expectedGeneration = paused.serviceGeneration)
+            }
+        }
+    }
+
     private fun cancelPendingNetworkResume(reason: String) {
         val (callback, timeoutJob) = synchronized(networkResumeLock) {
             val pendingCallback = networkResumeCallback
@@ -1654,6 +1829,7 @@ class VpnConnectionManager @Inject constructor(
 
     fun handleNetworkWaitServiceDestroyed() {
         cancelPendingNetworkResume("WAIT_SERVICE_DESTROYED")
+        homePause = null
         SafeDiagnostics.warn(
             TAG,
             "Foreground network-wait service was destroyed before connectivity returned",
@@ -3133,6 +3309,10 @@ class VpnConnectionManager @Inject constructor(
         private const val TUNNEL_STARTUP_VALIDATION_ATTEMPTS = 1
         private const val QUALITY_DOWNLINK_CONFIRM_BYTES = 64L * 1024L
         private const val NETWORK_RESUME_START_GUARD_MS = 10_000L
+        /** How often home is checked while connected or paused there. */
+        private const val HOME_CHECK_MS = 120_000L
+        private const val HOME_SETTLE_MS = 3_000L
+        private const val HOME_RECHECK_MS = 20_000L
         private const val NETWORK_RESUME_WAIT_TIMEOUT_MS = 15L * 60L * 1_000L
         private const val NETWORK_RESUME_MAX_ATTEMPTS = 5
         private const val NETWORK_RESUME_RATE_LIMIT_WINDOW_MS = 60L * 60L * 1_000L

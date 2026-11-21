@@ -430,7 +430,11 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
      * the service lets the manager deliver a normal start command when a
      * physical network returns.
      */
-    private fun pauseTunnelForNetworkResume(expectedGeneration: Int): Boolean {
+    private fun pauseTunnelForNetworkResume(
+        expectedGeneration: Int,
+        /** The notification while paused; the network wait's by default. */
+        notificationText: String? = null,
+    ): Boolean {
         val loopGenerationToStop: Int
         val tunToClose: ParcelFileDescriptor?
         synchronized(coreLifecycleLock) {
@@ -454,7 +458,7 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
             runCatching { tunToClose?.close() }
             XRayCore.stopLoop(loopGenerationToStop)
             if (cleanedUp || !waitingForNetworkResume) return false
-            updateNotification(getString(R.string.vpn_waiting_for_network_resume))
+            updateNotification(notificationText ?: getString(R.string.vpn_waiting_for_network_resume))
         }
         SafeDiagnostics.warn(
             TAG,
@@ -1124,6 +1128,19 @@ class ToBeVpnService : VpnService(), CoreCallbackHandler {
         fun pauseActiveTunnelForNetworkResume(expectedGeneration: Int): Boolean {
             val service = activeInstance.get() ?: return false
             return service.pauseTunnelForNetworkResume(expectedGeneration)
+        }
+
+        /**
+         * At home behind the router's VPN: the tunnel closes as for a network
+         * wait, the foreground service stays (so leaving home can start the
+         * tunnel again from the background) with its own notification.
+         */
+        fun pauseActiveTunnelAtHome(expectedGeneration: Int): Boolean {
+            val service = activeInstance.get() ?: return false
+            return service.pauseTunnelForNetworkResume(
+                expectedGeneration,
+                service.getString(R.string.vpn_paused_at_home),
+            )
         }
     }
 }

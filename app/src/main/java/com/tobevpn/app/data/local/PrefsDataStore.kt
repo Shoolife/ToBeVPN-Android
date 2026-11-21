@@ -97,6 +97,7 @@ class PrefsDataStore @Inject constructor(
         val INTERFACE_SCALE = doublePreferencesKey("interface_scale")
         val FONT_SCALE = doublePreferencesKey("font_scale")
         val BOLD_TEXT = booleanPreferencesKey("bold_text")
+        val PAUSE_AT_HOME_ROUTER = booleanPreferencesKey("pause_at_home_router")
         val OUTLINED_TEXT = booleanPreferencesKey("outlined_text")
         val DIAGNOSTIC_MODE_ENABLED = booleanPreferencesKey("diagnostic_mode_enabled")
         val DIAGNOSTIC_LOGGING_ENABLED = booleanPreferencesKey("diagnostic_logging_enabled")
@@ -264,6 +265,18 @@ class PrefsDataStore @Inject constructor(
 
     suspend fun setBoldText(enabled: Boolean) {
         context.dataStore.edit { it[Keys.BOLD_TEXT] = enabled }
+    }
+
+    /**
+     * At home behind the linked router that already sends this phone through
+     * its VPN, the phone's own tunnel pauses, and comes back on leaving.
+     */
+    val pauseAtHomeRouter: Flow<Boolean> = context.dataStore.data
+        .map { it[Keys.PAUSE_AT_HOME_ROUTER] ?: false }
+        .distinctUntilChanged()
+
+    suspend fun setPauseAtHomeRouter(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.PAUSE_AT_HOME_ROUTER] = enabled }
     }
 
     val outlinedText: Flow<Boolean> = context.dataStore.data
