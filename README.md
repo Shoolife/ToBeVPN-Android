@@ -51,7 +51,7 @@ ToBeVPN — нативный Android-клиент к VPN-сети: подклю�
     <tr>
       <td><img src="docs/screenshots/android/home.jpg" alt="Главный экран — ToBeVPN Android" width="200" /></td>
       <td><img src="docs/screenshots/android/servers.jpg" alt="Серверы — ToBeVPN Android" width="200" /></td>
-      <td><img src="docs/screenshots/android/statistics.jpg" alt="Статистика — ToBeVPN Android" width="200" /></td>
+      <td><img src="docs/screenshots/android/stats.jpg" alt="Статистика — ToBeVPN Android" width="200" /></td>
       <td><img src="docs/screenshots/android/router.jpg" alt="Роутер — ToBeVPN Android" width="200" /></td>
     </tr>
     <tr>
@@ -60,8 +60,8 @@ ToBeVPN — нативный Android-клиент к VPN-сети: подклю�
       <td align="center"><b>Настройки</b></td>
     </tr>
     <tr>
-      <td><img src="docs/screenshots/android/speed-test.jpg" alt="Тест скорости — ToBeVPN Android" width="200" /></td>
-      <td><img src="docs/screenshots/android/subscription.jpg" alt="Подписка — ToBeVPN Android" width="200" /></td>
+      <td><img src="docs/screenshots/android/speedtest.jpg" alt="Тест скорости — ToBeVPN Android" width="200" /></td>
+      <td><img src="docs/screenshots/android/subscription-plans.jpg" alt="Подписка — ToBeVPN Android" width="200" /></td>
       <td><img src="docs/screenshots/android/settings.jpg" alt="Настройки — ToBeVPN Android" width="200" /></td>
     </tr>
   </table>
