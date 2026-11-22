@@ -58,11 +58,13 @@ ToBeVPN — нативный Android-клиент к VPN-сети: подклю�
       <td align="center"><b>Тест скорости</b></td>
       <td align="center"><b>Подписка</b></td>
       <td align="center"><b>Настройки</b></td>
+      <td align="center"><b>Рефералы</b></td>
     </tr>
     <tr>
       <td><img src="docs/screenshots/android/speedtest.jpg" alt="Тест скорости — ToBeVPN Android" width="200" /></td>
       <td><img src="docs/screenshots/android/subscription-plans.jpg" alt="Подписка — ToBeVPN Android" width="200" /></td>
       <td><img src="docs/screenshots/android/settings.jpg" alt="Настройки — ToBeVPN Android" width="200" /></td>
+      <td><img src="docs/screenshots/android/referrals.jpg" alt="Рефералы — ToBeVPN Android" width="200" /></td>
     </tr>
   </table>
 </div>
