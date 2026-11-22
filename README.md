@@ -44,23 +44,25 @@ ToBeVPN — нативный Android-клиент к VPN-сети: подклю�
   <table>
     <tr>
       <td align="center"><b>Главный экран</b></td>
-      <td align="center"><b>Подписка</b></td>
       <td align="center"><b>Серверы</b></td>
-    </tr>
-    <tr>
-      <td><img src="docs/screenshots/android/home-connected.jpg" alt="Главный экран ToBeVPN Android" width="240" /></td>
-      <td><img src="docs/screenshots/android/subscription.jpg" alt="Экран подписки ToBeVPN Android" width="240" /></td>
-      <td><img src="docs/screenshots/android/servers-original.png" alt="Экран выбора сервера ToBeVPN Android" width="240" /></td>
-    </tr>
-    <tr>
       <td align="center"><b>Статистика</b></td>
-      <td align="center"><b>Тест скорости</b></td>
-      <td align="center"><b>Приложения VPN</b></td>
+      <td align="center"><b>Роутер</b></td>
     </tr>
     <tr>
-      <td><img src="docs/screenshots/android/statistics.jpg" alt="Экран статистики ToBeVPN Android" width="240" /></td>
-      <td><img src="docs/screenshots/android/speed-test.jpg" alt="Экран теста скорости ToBeVPN Android" width="240" /></td>
-      <td><img src="docs/screenshots/android/app-filter.jpg" alt="Экран фильтрации приложений ToBeVPN Android" width="240" /></td>
+      <td><img src="docs/screenshots/android/home.jpg" alt="Главный экран — ToBeVPN Android" width="200" /></td>
+      <td><img src="docs/screenshots/android/servers.jpg" alt="Серверы — ToBeVPN Android" width="200" /></td>
+      <td><img src="docs/screenshots/android/statistics.jpg" alt="Статистика — ToBeVPN Android" width="200" /></td>
+      <td><img src="docs/screenshots/android/router.jpg" alt="Роутер — ToBeVPN Android" width="200" /></td>
+    </tr>
+    <tr>
+      <td align="center"><b>Тест скорости</b></td>
+      <td align="center"><b>Подписка</b></td>
+      <td align="center"><b>Настройки</b></td>
+    </tr>
+    <tr>
+      <td><img src="docs/screenshots/android/speed-test.jpg" alt="Тест скорости — ToBeVPN Android" width="200" /></td>
+      <td><img src="docs/screenshots/android/subscription.jpg" alt="Подписка — ToBeVPN Android" width="200" /></td>
+      <td><img src="docs/screenshots/android/settings.jpg" alt="Настройки — ToBeVPN Android" width="200" /></td>
     </tr>
   </table>
 </div>
