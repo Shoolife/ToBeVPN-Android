@@ -63,7 +63,7 @@ class RouterSsh @Inject constructor(
         val seen = arrayOfNulls<String>(1)
         jsch.setHostKeyRepository(PinnedHosts(expected = null, seen = seen))
         val session = jsch.getSession(user, host, 22).apply {
-            setPassword(password)
+            setPassword(password.toByteArray(Charsets.UTF_8))
             configure(network)
         }
         try {

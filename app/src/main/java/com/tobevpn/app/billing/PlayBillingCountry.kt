@@ -188,7 +188,7 @@ fun paymentUnavailableMessage(): String {
     val country = LocalPlayBillingCountry.current
     val locale = LocalConfiguration.current.locales[0]
     val countryName = country
-        ?.let { Locale("", it).getDisplayCountry(locale) }
+        ?.let { code -> regionLocale(code)?.getDisplayCountry(locale) }
         ?.takeIf { it.isNotBlank() && !it.equals(country, ignoreCase = true) }
     return if (countryName != null) {
         stringResource(R.string.payment_unavailable_country, countryName)
@@ -196,3 +196,10 @@ fun paymentUnavailableMessage(): String {
         stringResource(R.string.payment_unavailable)
     }
 }
+
+/**
+ * A locale for a country code alone, or null when the code is not a valid
+ * region (the builder rejects what the old two-string constructor let pass).
+ */
+internal fun regionLocale(code: String): Locale? =
+    runCatching { Locale.Builder().setRegion(code).build() }.getOrNull()

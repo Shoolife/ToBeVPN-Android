@@ -56,6 +56,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
@@ -87,7 +88,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.lerp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.data.repository.CurrentSubscriptionPlanInfo
@@ -273,7 +274,7 @@ fun PersonalizationScreen(
                             ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
                         },
                         border = if (isDark) {
-                            ButtonDefaults.outlinedButtonBorder
+                            ButtonDefaults.outlinedButtonBorder()
                         } else {
                             BorderStroke(1.dp, Color(0xFFD6D6D6))
                         },
@@ -984,8 +985,16 @@ private fun DiscreteScaleSetting(
                     onValueChangeFinished(selected)
                 },
             )
+            // The state-based Slider is the one that takes a custom track
+            // (Material3 1.5); the value is pushed into it as the
+            // value-based one did.
+            val scaleRange = MIN_INTERFACE_SCALE..MAX_INTERFACE_SCALE
+            val scaleState = remember(scaleRange) {
+                SliderState(normalizedValue, INTERFACE_SCALE_SLIDER_STEPS, scaleRange)
+            }
+            scaleState.value = normalizedValue
             Slider(
-                value = normalizedValue,
+                state = scaleState,
                 onValueChange = ::select,
                 onValueChangeFinished = {
                     onValueChangeFinished(normalize(sliderValue))
@@ -993,8 +1002,6 @@ private fun DiscreteScaleSetting(
                 modifier = Modifier
                     .weight(1f)
                     .padding(horizontal = 6.dp),
-                valueRange = MIN_INTERFACE_SCALE..MAX_INTERFACE_SCALE,
-                steps = INTERFACE_SCALE_SLIDER_STEPS,
                 colors = sliderColors,
                 track = { sliderState ->
                     SliderDefaults.Track(

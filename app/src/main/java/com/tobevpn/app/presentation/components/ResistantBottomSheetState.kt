@@ -32,7 +32,7 @@ fun rememberResistantModalBottomSheetState(): SheetState {
 
     return remember(positionalThresholdPx, velocityThresholdPx) {
         SheetState(
-            skipPartiallyExpanded = true,
+            enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
             positionalThreshold = { positionalThresholdPx },
             velocityThreshold = { velocityThresholdPx },
             initialValue = SheetValue.Hidden,

@@ -62,13 +62,13 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -77,7 +77,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.zxing.BarcodeFormat
@@ -545,7 +545,8 @@ private fun PairingQrContent(
     secondaryActionText: String? = null,
     onSecondaryAction: (() -> Unit)? = null,
 ) {
-    val clipboard = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
+    val clipboardScope = rememberCoroutineScope()
     val context = LocalContext.current
     val copiedMessage = stringResource(R.string.auth_pairing_code_copied)
 
@@ -592,7 +593,9 @@ private fun PairingQrContent(
             )
             IconButton(
                 onClick = {
-                    clipboard.setText(AnnotatedString(code))
+                    clipboardScope.launch {
+                        clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("plain text", code)))
+                    }
                     Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
                 },
             ) {

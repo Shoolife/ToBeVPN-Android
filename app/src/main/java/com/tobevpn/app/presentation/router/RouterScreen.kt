@@ -1,5 +1,8 @@
 package com.tobevpn.app.presentation.router
 
+import androidx.compose.foundation.text.input.TextFieldState
+import androidx.compose.foundation.text.input.TextObfuscationMode
+import androidx.compose.material3.OutlinedSecureTextField
 import com.tobevpn.app.presentation.components.FadingText
 import androidx.compose.animation.AnimatedVisibility
 import com.tobevpn.app.presentation.components.BrandLoader
@@ -108,8 +111,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -313,7 +314,7 @@ fun RouterScreen(
                 state.info?.gateway == null -> Unit
                 // Keenetic: nothing to install yet; its owners are invited to
                 // test Keenetic support instead.
-                !state.paired && !state.installedByAnother && state.info?.firmware == "keenetic" -> {
+                !state.paired && !state.installedByAnother && state.info.firmware == "keenetic" -> {
                     item { SectionTitle(stringResource(R.string.router_vpn_section)) }
                     item { KeeneticTestCard() }
                 }
@@ -690,7 +691,8 @@ private fun KeeneticTestCard() {
 @Composable
 private fun PairForm(busy: Boolean, onPair: (String, String) -> Unit, label: String) {
     var user by rememberSaveable { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    // Not saved with the screen state: the router password stays in memory only.
+    val password = remember { TextFieldState() }
     var visible by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         run {
@@ -703,14 +705,12 @@ private fun PairForm(busy: Boolean, onPair: (String, String) -> Unit, label: Str
                 enabled = !busy,
                 modifier = Modifier.fillMaxWidth(),
             )
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
+            OutlinedSecureTextField(
+                state = password,
                 label = { Text(stringResource(R.string.router_password)) },
                 placeholder = { Text(stringResource(R.string.router_password_placeholder)) },
-                singleLine = true,
                 enabled = !busy,
-                visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+                textObfuscationMode = if (visible) TextObfuscationMode.Visible else TextObfuscationMode.Hidden,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                 trailingIcon = {
                     IconButton(onClick = { visible = !visible }) {
@@ -730,8 +730,8 @@ private fun PairForm(busy: Boolean, onPair: (String, String) -> Unit, label: Str
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Button(
-                onClick = { onPair(user, password) },
-                enabled = !busy && user.isNotBlank() && password.isNotEmpty(),
+                onClick = { onPair(user, password.text.toString()) },
+                enabled = !busy && user.isNotBlank() && password.text.isNotEmpty(),
                 shape = RoundedCornerShape(13.dp),
                 modifier = Modifier.fillMaxWidth().height(48.dp),
             ) {
@@ -1876,7 +1876,8 @@ private fun CompatibilityCard(check: com.tobevpn.app.router.RouterCheck) {
 private fun InstallLog(lines: List<com.tobevpn.app.router.InstallLogLine>) {
     var open by rememberSaveable { mutableStateOf(false) }
     var copied by remember { mutableStateOf(false) }
-    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboard.current
+    val clipboardScope = rememberCoroutineScope()
     val errors = lines.count { it.level == "error" }
     val stepLabels = lines.filter { it.level == "step" }.associate { it.text to stepText(it.text) }
     fun lineText(line: com.tobevpn.app.router.InstallLogLine) =
@@ -1915,11 +1916,16 @@ private fun InstallLog(lines: List<com.tobevpn.app.router.InstallLogLine>) {
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
                         .clickable {
-                            clipboard.setText(
-                                androidx.compose.ui.text.AnnotatedString(
-                                    lines.joinToString("\n") { "${it.time} ${it.level.uppercase()} ${lineText(it)}" },
-                                ),
-                            )
+                            val text = lines.joinToString("\n") {
+                                "${it.time} ${it.level.uppercase()} ${lineText(it)}"
+                            }
+                            clipboardScope.launch {
+                                clipboard.setClipEntry(
+                                    androidx.compose.ui.platform.ClipEntry(
+                                        android.content.ClipData.newPlainText("plain text", text),
+                                    ),
+                                )
+                            }
                             copied = true
                         }
                         .padding(vertical = 6.dp, horizontal = 2.dp),

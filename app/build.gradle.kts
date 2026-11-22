@@ -39,7 +39,7 @@ android {
     namespace = "com.tobevpn.app"
     compileSdk {
         version = release(37) {
-            minorApiLevel = 0
+            minorApiLevel = 2
         }
     }
 
@@ -329,7 +329,7 @@ dependencies {
     // Testing
     testImplementation(libs.junit)
     // Real org.json for JVM tests of the Xray config builder (Android ships a stub).
-    testImplementation("org.json:json:20250517")
+    testImplementation("org.json:json:20260814")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
 }

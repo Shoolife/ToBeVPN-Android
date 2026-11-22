@@ -185,7 +185,7 @@ class RouterRepository @Inject constructor(
      */
     suspend fun routerHere(maxAgeMs: Long = HERE_VALID_MS): RouterLink? = hereLock.withLock {
         val lan = withContext(Dispatchers.IO) { detector.homeLan() } ?: return@withLock null
-        val handle = lan.network?.networkHandle
+        val handle = lan.network.networkHandle
         val linksNow = synchronized(links) { links.toList() }.hashCode()
         val now = android.os.SystemClock.elapsedRealtime()
         here?.takeIf {

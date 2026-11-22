@@ -626,7 +626,7 @@ class RouterInstaller @Inject constructor(
                 }
             }
         }
-        val bytes = downloaded!!
+        val bytes = downloaded
         if (RouterAgent.sha256Hex(bytes) != binary.downloadSha256) throw RouterException("${binary.name}: download checksum mismatch")
         runCatching { cached.writeBytes(bytes) }
         val content = binary.zipMember?.let { unzip(bytes, it) } ?: bytes

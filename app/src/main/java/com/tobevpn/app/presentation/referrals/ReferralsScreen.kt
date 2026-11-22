@@ -1,5 +1,7 @@
 package com.tobevpn.app.presentation.referrals
 
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import com.tobevpn.app.presentation.components.rememberRefreshSwap
 import androidx.compose.ui.graphics.graphicsLayer
 import android.content.ClipData
@@ -73,7 +75,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -883,7 +884,10 @@ private fun InvitedFriendsBottomSheet(
     onLoadMore: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val sheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
     val isDark = isSystemInDarkTheme()
     val refreshSwap = rememberRefreshSwap(isRefreshing)
     @Suppress("NAME_SHADOWING") val isRefreshing = refreshSwap.refreshing

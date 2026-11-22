@@ -2,6 +2,9 @@ package com.tobevpn.app.presentation.navigation
 
 import androidx.compose.animation.AnimatedContentScope
 import androidx.compose.animation.EnterExitState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -111,6 +114,12 @@ fun AppNavHost(
             navController = navController,
             startDestination = startDestination,
             modifier = modifier.fillMaxSize(),
+            // Navigation 2.10 gave the back swipe its own animation (the
+            // leaving screen shrinks to 70 %). Keep the one it had before:
+            // the same 700 ms cross-fade as any other way back, following
+            // the finger.
+            predictivePopEnterTransition = { fadeIn(animationSpec = tween(700)) },
+            predictivePopExitTransition = { fadeOut(animationSpec = tween(700)) },
         ) {
             screen<OnboardingRoute> {
                 OnboardingScreen(

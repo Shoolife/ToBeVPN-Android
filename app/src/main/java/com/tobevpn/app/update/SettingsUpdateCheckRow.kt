@@ -207,7 +207,7 @@ private fun SettingsUpdateCheckRowContent(
                     vertical = 8.dp,
                 ),
                 border = if (androidx.compose.foundation.isSystemInDarkTheme()) {
-                    androidx.compose.material3.ButtonDefaults.outlinedButtonBorder
+                    androidx.compose.material3.ButtonDefaults.outlinedButtonBorder()
                 } else {
                     androidx.compose.foundation.BorderStroke(
                         1.dp,

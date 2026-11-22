@@ -71,10 +71,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.R
 import com.tobevpn.app.billing.PlayBillingStatus
+import com.tobevpn.app.billing.regionLocale
 import com.tobevpn.app.presentation.components.VerticalScrollEdgeArrow
 import com.tobevpn.app.presentation.components.endEdgeFade
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
@@ -555,7 +556,7 @@ private fun PlayBillingDiagnosticsCard(
     val countryText = status.country
         ?.takeIf { it.isNotBlank() }
         ?.let { code ->
-            val name = Locale("", code).getDisplayCountry(locale)
+            val name = regionLocale(code)?.getDisplayCountry(locale).orEmpty()
             if (name.isBlank() || name.equals(code, ignoreCase = true)) code else "$code · $name"
         }
         ?: notAvailable

@@ -93,7 +93,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.tobevpn.app.BuildConfig
@@ -375,7 +375,7 @@ internal fun AppConfirmDialog(
         ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
     }
     val secondaryButtonBorder = if (darkTheme) {
-        ButtonDefaults.outlinedButtonBorder
+        ButtonDefaults.outlinedButtonBorder()
     } else {
         BorderStroke(1.dp, Color(0xFFD6D6D6))
     }

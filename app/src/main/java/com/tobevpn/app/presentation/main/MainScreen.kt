@@ -56,10 +56,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
@@ -141,7 +141,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tobevpn.app.BuildConfig
@@ -906,7 +906,7 @@ private fun SpeedTestCard(onClick: () -> Unit) {
                 )
             }
             Icon(
-                Icons.Default.KeyboardArrowRight,
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -958,7 +958,7 @@ private fun AnonymousSubscriptionCard(
                 modifier = Modifier.weight(USAGE_SUMMARY_WEIGHT),
             )
             Icon(
-                Icons.Default.KeyboardArrowRight,
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1759,7 +1759,7 @@ private fun ServerSelectorCard(
                 Spacer(modifier = Modifier.width(8.dp))
             }
             Icon(
-                Icons.Default.KeyboardArrowRight,
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = "Select server",
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -1804,7 +1804,7 @@ private fun TrafficCard(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Icon(
-                    Icons.Default.KeyboardArrowRight,
+                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     contentDescription = stringResource(R.string.detailed_stats),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -2063,7 +2063,7 @@ private fun PlanCard(
                 modifier = Modifier.weight(USAGE_SUMMARY_WEIGHT),
             )
             Icon(
-                Icons.Default.KeyboardArrowRight,
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -2110,7 +2110,7 @@ private fun BlockedSubscriptionCard(onClick: () -> Unit) {
                 )
             }
             Icon(
-                Icons.Default.KeyboardArrowRight,
+                Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onErrorContainer,
             )
@@ -3201,7 +3201,7 @@ private fun ScrollEdgeArrow(
     modifier: Modifier = Modifier,
 ) {
     Icon(
-        imageVector = if (isStart) Icons.Filled.KeyboardArrowLeft else Icons.Filled.KeyboardArrowRight,
+        imageVector = if (isStart) Icons.AutoMirrored.Filled.KeyboardArrowLeft else Icons.AutoMirrored.Filled.KeyboardArrowRight,
         contentDescription = null,
         modifier = modifier
             .size(22.dp)

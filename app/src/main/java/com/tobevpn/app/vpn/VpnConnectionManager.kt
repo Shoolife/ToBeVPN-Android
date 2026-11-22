@@ -753,6 +753,9 @@ class VpnConnectionManager @Inject constructor(
         scope.launch { performStop(request = request) }
     }
 
+    // allNetworks has no replacement for a one-off look at every network, and
+    // activeNetwork will not do: this app's own traffic bypasses its VPN.
+    @Suppress("DEPRECATION")
     fun isOwnVpnNetworkActive(): Boolean {
         val connectivityManager = context.getSystemService(ConnectivityManager::class.java)
             ?: return XRayCore.isRunning

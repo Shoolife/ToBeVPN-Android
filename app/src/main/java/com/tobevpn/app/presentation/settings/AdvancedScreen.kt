@@ -72,6 +72,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -110,7 +111,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.common.MlKitException
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -520,7 +521,7 @@ fun AdvancedScreen(
                                 ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
                             },
                             border = if (isDark) {
-                                ButtonDefaults.outlinedButtonBorder
+                                ButtonDefaults.outlinedButtonBorder()
                             } else {
                                 BorderStroke(1.dp, Color(0xFFD6D6D6))
                             },
@@ -706,8 +707,19 @@ private fun ServerPingTimeoutCard(
                         onValueChangeFinished(selected)
                     },
                 )
+                // The state-based Slider is the one that takes a custom track
+                // (Material3 1.5); the value is pushed into it as the
+                // value-based one did.
+                val timeoutRange = MIN_SERVER_PING_TIMEOUT_SECONDS.toFloat()..
+                    MAX_SERVER_PING_TIMEOUT_SECONDS.toFloat()
+                val timeoutSteps = MAX_SERVER_PING_TIMEOUT_SECONDS -
+                    MIN_SERVER_PING_TIMEOUT_SECONDS - 1
+                val timeoutState = remember(timeoutSteps, timeoutRange) {
+                    SliderState(selectedSeconds.toFloat(), timeoutSteps, timeoutRange)
+                }
+                timeoutState.value = selectedSeconds.toFloat()
                 Slider(
-                    value = selectedSeconds.toFloat(),
+                    state = timeoutState,
                     onValueChange = { sliderValue = it.roundToInt().toFloat() },
                     // Read the state here, not the value captured at the
                     // last recomposition: a quick tap on the track can finish
@@ -723,10 +735,6 @@ private fun ServerPingTimeoutCard(
                     modifier = Modifier
                         .weight(1f)
                         .padding(horizontal = 6.dp),
-                    valueRange = MIN_SERVER_PING_TIMEOUT_SECONDS.toFloat()..
-                        MAX_SERVER_PING_TIMEOUT_SECONDS.toFloat(),
-                    steps = MAX_SERVER_PING_TIMEOUT_SECONDS -
-                        MIN_SERVER_PING_TIMEOUT_SECONDS - 1,
                     colors = sliderColors,
                     track = { sliderState ->
                         SliderDefaults.Track(
@@ -907,7 +915,7 @@ private fun PairingCodeInputDialog(
                         ButtonDefaults.outlinedButtonColors(contentColor = Color.Black)
                     },
                     border = if (isDark) {
-                        ButtonDefaults.outlinedButtonBorder
+                        ButtonDefaults.outlinedButtonBorder()
                     } else {
                         BorderStroke(1.dp, Color(0xFFD6D6D6))
                     },
@@ -1263,7 +1271,7 @@ private fun LinkedDevicesSheetBody(
                                 lightOutlinedButtonColors
                             },
                             border = if (isDark) {
-                                ButtonDefaults.outlinedButtonBorder
+                                ButtonDefaults.outlinedButtonBorder()
                             } else {
                                 lightOutlinedButtonBorder
                             },
