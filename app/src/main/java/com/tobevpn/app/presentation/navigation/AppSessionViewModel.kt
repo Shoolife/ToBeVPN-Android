@@ -47,6 +47,12 @@ class AppSessionViewModel @Inject constructor(
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
+    /** The cached Telegram photo's path, for warming the Settings avatar early. */
+    val avatarPath: StateFlow<String?> = authRepository.observeAuthState()
+        .map { (it as? AuthState.Authenticated)?.photoUrl?.takeIf { path -> path.isNotBlank() } }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     init {
         viewModelScope.launch {
             authRepository.subscriptionResetEvents.collectLatest {

@@ -96,6 +96,10 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.tobevpn.app.presentation.components.rememberAvatarSizePx
+import com.tobevpn.app.presentation.components.avatarRequest
+import com.tobevpn.app.presentation.components.SETTINGS_AVATAR_SIZE
+import com.tobevpn.app.presentation.components.AVATAR_INSET
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import com.tobevpn.app.billing.LocalExternalPurchasesAllowed
@@ -673,7 +677,7 @@ internal fun AccountCard(
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                 ProfileAvatar(
                                     photoUrl = authState.photoUrl.takeUnless { personalDataHidden },
-                                    size = 120.dp,
+                                    size = SETTINGS_AVATAR_SIZE,
                                     loading = avatarLoading && !personalDataHidden,
                                 )
                                 if (!personalDataHidden) {
@@ -926,7 +930,7 @@ private fun ProfileAvatar(photoUrl: String?, size: Dp, loading: Boolean = false)
         modifier = Modifier
             .size(size)
             .border(2.5.dp, ringColor, CircleShape)
-            .padding(4.dp)
+            .padding(AVATAR_INSET)
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.07f)),
         contentAlignment = Alignment.Center,
@@ -938,9 +942,13 @@ private fun ProfileAvatar(photoUrl: String?, size: Dp, loading: Boolean = false)
             modifier = Modifier.size(size * 0.5f),
         )
         if (avatarFile != null) {
-            // photoUrl is a local file path (cached avatar). Coil loads the File.
+            // photoUrl is a local file path (cached avatar), decoded at the
+            // drawn size; AppNavHost warms the same request beforehand.
+            val context = LocalContext.current
+            val sizePx = rememberAvatarSizePx(size)
+            val request = remember(avatarFile, sizePx) { avatarRequest(context, avatarFile, sizePx) }
             AsyncImage(
-                model = avatarFile,
+                model = request,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.matchParentSize(),

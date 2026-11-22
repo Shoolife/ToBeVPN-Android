@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -32,9 +33,13 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
+import coil3.SingletonImageLoader
 import com.tobevpn.app.presentation.appfilter.AppFilterScreen
 import com.tobevpn.app.presentation.auth.AuthScreen
 import com.tobevpn.app.presentation.components.LocalPersonalDataHidden
+import com.tobevpn.app.presentation.components.SETTINGS_AVATAR_SIZE
+import com.tobevpn.app.presentation.components.avatarRequest
+import com.tobevpn.app.presentation.components.rememberAvatarSizePx
 import com.tobevpn.app.presentation.main.MainScreen
 import com.tobevpn.app.presentation.onboarding.DisplayScaleHintDialog
 import com.tobevpn.app.presentation.onboarding.OnboardingScreen
@@ -108,6 +113,18 @@ fun AppNavHost(
     }
 
     val personalDataHidden by appSessionViewModel.personalDataHidden.collectAsStateWithLifecycle()
+
+    // The Settings avatar decoded ahead into the memory cache, at the size
+    // Settings draws it: the first visit shows the photo at once instead of
+    // the placeholder and a late pop-in.
+    val avatarPath by appSessionViewModel.avatarPath.collectAsStateWithLifecycle()
+    val avatarSizePx = rememberAvatarSizePx(SETTINGS_AVATAR_SIZE)
+    val appContext = LocalContext.current.applicationContext
+    LaunchedEffect(avatarPath, avatarSizePx, personalDataHidden) {
+        val path = avatarPath ?: return@LaunchedEffect
+        if (personalDataHidden) return@LaunchedEffect
+        SingletonImageLoader.get(appContext).enqueue(avatarRequest(appContext, java.io.File(path), avatarSizePx))
+    }
 
     CompositionLocalProvider(LocalPersonalDataHidden provides personalDataHidden) {
         NavHost(
