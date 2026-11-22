@@ -192,7 +192,6 @@ class VpnConnectionManager @Inject constructor(
         .build()
 
     init {
-        startHomePauseWatch()
         SafeDiagnostics.installStateSnapshotProvider(::diagnosticStateSnapshot)
         scope.launch {
             try {
@@ -1552,6 +1551,14 @@ class VpnConnectionManager @Inject constructor(
     private var pauseAtHomeEnabled = false
 
     private val homeNudges = Channel<Unit>(Channel.CONFLATED)
+
+    // Started only here, after every field it uses: Kotlin initialises a
+    // class in the order of its text, and a watch started from the first
+    // init block could reach homeNudges before it existed (a release build
+    // crashed at launch with a NullPointerException in Google's test lab).
+    init {
+        startHomePauseWatch()
+    }
 
     /**
      * Watches for home ("Pause VPN at home"): on every Wi-Fi change and every
