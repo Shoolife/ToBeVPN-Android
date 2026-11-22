@@ -932,7 +932,7 @@
     <string name="router_traffic_month">This month</string>
     <string name="router_unit_mb">MB</string>
     <string name="router_unit_gb">GB</string>
-    <string name="router_update_available">An update of the VPN on the router is available</string>
+    <string name="router_update_available">Update available</string>
     <string name="router_update_button">Update</string>
     <string name="router_update_xray_versions">Xray %1$s → %2$s</string>
     <string name="router_update_xray_version">Xray %1$s</string>

@@ -946,7 +946,7 @@
     <string name="router_traffic_month">За месяц</string>
     <string name="router_unit_mb">МБ</string>
     <string name="router_unit_gb">ГБ</string>
-    <string name="router_update_available">Доступно обновление VPN на роутере</string>
+    <string name="router_update_available">Доступно обновление</string>
     <string name="router_update_button">Обновить</string>
     <string name="router_update_xray_versions">Xray %1$s → %2$s</string>
     <string name="router_update_xray_version">Xray %1$s</string>
