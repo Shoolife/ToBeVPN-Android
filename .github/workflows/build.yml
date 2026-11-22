@@ -32,6 +32,31 @@ jobs:
         # Compose 1.13 (BOM 2026.11) needs compileSdk 37.1 or later.
         run: '"${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.2"'
 
+      - name: Russian sites list for the router
+        # The router's "Russian sites direct" list comes from the latest
+        # runetfreedom release, checked against the digest GitHub publishes,
+        # cut to the Russian categories (the full file is ~90 MB; these are
+        # ~50 KB) and tagged with the release so the router keeps the newer
+        # list of the phone and desktop apps.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          metadata=$(gh api repos/runetfreedom/russia-v2ray-rules-dat/releases/latest)
+          url=$(jq -r '.assets[] | select(.name == "geosite.dat") | .browser_download_url' <<<"$metadata")
+          digest=$(jq -r '.assets[] | select(.name == "geosite.dat") | .digest' <<<"$metadata")
+          tag=$(jq -r '.tag_name' <<<"$metadata" | tr -cd '0-9')
+          if [ -z "$url" ] || [ "$url" = "null" ] || [[ "$digest" != sha256:* ]] || [ -z "$tag" ]; then
+            echo "::error::Could not resolve a verified runetfreedom geosite.dat"
+            exit 1
+          fi
+          curl -fsSL -o geosite-full.dat "$url"
+          echo "${digest#sha256:}  geosite-full.dat" | sha256sum -c -
+          python3 scripts/trim-geosite.py geosite-full.dat app/src/main/assets/geosite.dat
+          echo "$tag" > app/src/main/assets/geosite.version
+          rm geosite-full.dat
+          echo "Russian sites list: release $tag"
+
       - name: Restore release keystore
         env:
           SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}

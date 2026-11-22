@@ -650,11 +650,10 @@ class RouterRepository @Inject constructor(
     /** Turns the Russian sites bypass on or off in the config on the router and restarts. */
     suspend fun setRuDirect(enabled: Boolean): RouterStatus {
         return withRouter { shell ->
-            // The phone's list only when the router has none of its own (the
-            // desktop app's fuller one is kept and is enough).
-            if (enabled && shell.run("[ -s ${RouterAgent.RU_SITES_PATH} ]").second != 0) {
-                val sites = ruSites() ?: throw RouterException("geosite.dat is missing")
-                RouterAgent.writeRuSitesIfMissing(shell, sites)
+            // This app's list when the router has none or an older release's
+            // (a newer one from the desktop app stays).
+            if (enabled) {
+                RouterAgent.writeRuSitesIfNewer(shell) { ruSites() ?: throw RouterException("geosite.dat is missing") }
             }
             val config = JSONObject(shell.run("cat /opt/tobevpn/xray.json 2>/dev/null").first)
             RouterAgent.applyRuDirect(config, enabled)

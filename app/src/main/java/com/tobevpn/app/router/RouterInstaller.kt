@@ -335,8 +335,8 @@ class RouterInstaller @Inject constructor(
         val binaries: List<Binary>,
         val xrayCurrent: String?,
         val agent: Boolean,
-        /** The bypass is on but the router has no Russian sites list at all. */
-        val sitesMissing: Boolean,
+        /** The bypass is on and the router has no Russian sites list or an older release's. */
+        val sitesOutdated: Boolean,
     )
 
     private fun outdatedComponents(shell: RouterShell, log: (InstallLogLine) -> Unit): Outdated {
@@ -348,7 +348,7 @@ class RouterInstaller @Inject constructor(
                 componentFactsCommand(binaries) +
                     "echo agent_version=\$(sed -n 's/^AGENT_VERSION=//p' ${RouterAgent.SCRIPT} 2>/dev/null); " +
                     "echo ru_direct=\$(cat ${RouterAgent.RU_DIRECT_FLAG} 2>/dev/null); " +
-                    "echo sites=\$([ -s ${RouterAgent.RU_SITES_PATH} ] && echo 1 || echo 0)",
+                    RouterAgent.SITES_FACTS_COMMAND,
             ),
         )
         // By version, not by content: a newer agent put there by the desktop
@@ -358,9 +358,9 @@ class RouterInstaller @Inject constructor(
             binaries = binaries.filter { outdated(it, facts) },
             xrayCurrent = facts["xray_version"]?.takeIf { it.isNotEmpty() },
             agent = (facts["agent_version"]?.trim()?.toLongOrNull() ?: 0L) < ours,
-            // The phone's list is the smaller one: it never replaces a list
-            // the router has (the desktop app brings the fuller one).
-            sitesMissing = facts["ru_direct"]?.trim() != "0" && facts["sites"] != "1",
+            // By release, not by content: a newer list put there by the
+            // desktop app is not "updated" back to this app's older one.
+            sitesOutdated = facts["ru_direct"]?.trim() != "0" && RouterAgent.sitesOutdated(facts),
         )
     }
 
@@ -371,7 +371,7 @@ class RouterInstaller @Inject constructor(
             val components = buildList {
                 found.binaries.forEach { add(it.name) }
                 if (found.agent) add("agent")
-                if (found.sitesMissing && haveSites) add("sites")
+                if (found.sitesOutdated && haveSites) add("sites")
             }
             RouterUpdate(
                 components = components,
@@ -435,9 +435,9 @@ class RouterInstaller @Inject constructor(
                 // Rewriting the init script keeps its enabled/disabled state (rc.d link).
                 shell.writeFile("/etc/init.d/tobevpn", INIT_SCRIPT.toByteArray(), "755")
             }
-            if (found.sitesMissing && ruSites != null) {
+            if (found.sitesOutdated && ruSites != null) {
                 progress("upload:sites")
-                RouterAgent.writeRuSitesIfMissing(shell, ruSites)
+                RouterAgent.writeRuSites(shell, ruSites)
                 // The config may lack the sites rule (written when the list was
                 // missing): turned on with the list, or the bypass stays off.
                 runCatching {

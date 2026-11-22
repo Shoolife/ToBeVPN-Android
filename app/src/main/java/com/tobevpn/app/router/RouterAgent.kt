@@ -1,5 +1,6 @@
 package com.tobevpn.app.router
 
+import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.domain.model.Server
 import com.tobevpn.app.vpn.VpnConfig
 import org.json.JSONArray
@@ -92,6 +93,41 @@ object RouterAgent {
     const val RU_DIRECT_FLAG = "/opt/tobevpn/ru_direct"
     const val RU_SITES_PATH = "/opt/tobevpn/geosite.dat"
     const val RU_SITES_DIGEST = "/opt/tobevpn/geosite.sha256"
+    /**
+     * "<release tag> <sha256 of the list>": the runetfreedom release the
+     * router's list was cut from (digits, date and time: a larger one is
+     * newer). The desktop app writes the same file.
+     */
+    const val RU_SITES_VERSION = "/opt/tobevpn/geosite.version"
+
+    /** Shell lines reporting the router's list: present, its digest and version file. */
+    const val SITES_FACTS_COMMAND =
+        "echo sites=\$([ -s $RU_SITES_PATH ] && echo 1 || echo 0); " +
+            "echo sites_digest=\$(cat $RU_SITES_DIGEST 2>/dev/null); " +
+            "echo sites_version=\$(cat $RU_SITES_VERSION 2>/dev/null); "
+
+    /**
+     * The tag of the router's list, trusted only while the list is the one
+     * the version file describes: an app that does not know the file may have
+     * replaced the list since (0 then).
+     */
+    fun routerSitesTag(versionFile: String, digestFile: String): Long {
+        val parts = versionFile.trim().split(Regex("\\s+"))
+        if (parts.size < 2 || parts[1] != digestFile.trim()) return 0L
+        return parts[0].toLongOrNull() ?: 0L
+    }
+
+    /** This app's list goes to the router when it has none or this one is from a newer release. */
+    fun sitesOutdated(routerHasList: Boolean, routerTag: Long, appTag: Long): Boolean =
+        !routerHasList || appTag > routerTag
+
+    /** Whether this app's list should go to the router, from [SITES_FACTS_COMMAND]'s output. */
+    fun sitesOutdated(facts: Map<String, String>, appTag: Long = BuildConfig.GEOSITE_TAG): Boolean =
+        sitesOutdated(
+            routerHasList = facts["sites"]?.trim() == "1",
+            routerTag = routerSitesTag(facts["sites_version"].orEmpty(), facts["sites_digest"].orEmpty()),
+            appTag = appTag,
+        )
 
     /** Memory one more server takes on the router, and what is always left free. */
     private const val SERVER_MEMORY_KB = 6 * 1024
@@ -328,9 +364,9 @@ object RouterAgent {
         bypassHosts: Collection<String>,
     ) {
         val ruDirect = shell.run("cat $RU_DIRECT_FLAG 2>/dev/null").first.trim() != "0"
-        // The phone's list (trimmed from a large asset) only when the router
-        // has none: most routers have theirs, and it is not built for nothing.
-        if (ruDirect && shell.run("[ -s $RU_SITES_PATH ]").second != 0) sites()?.let { writeRuSitesIfMissing(shell, it) }
+        // This app's list (trimmed from a large asset, so only when needed)
+        // when the router has none or an older release's.
+        if (ruDirect) writeRuSitesIfNewer(shell, sites)
         // The rule goes in whenever the router has a list (its own, e.g. the
         // desktop app's, even when this phone has none to give).
         val withSites = ruDirect && shell.run("[ -s $RU_SITES_PATH ]").second == 0
@@ -347,11 +383,24 @@ object RouterAgent {
         shell.writeFile("/opt/tobevpn/servers", serverList(bypassHosts).toByteArray(), "644")
     }
 
-    /** The phone's sites list, only when the router has none (the desktop app carries the fuller one). */
-    fun writeRuSitesIfMissing(shell: RouterShell, sites: ByteArray) {
-        if (shell.run("[ -s $RU_SITES_PATH ]").second == 0) return
+    /**
+     * Puts this app's sites list on the router when it has none or an older
+     * release's; a newer list another app put there stays. True when written.
+     */
+    fun writeRuSitesIfNewer(shell: RouterShell, sites: () -> ByteArray?): Boolean {
+        val facts = keyValues(shell.run(SITES_FACTS_COMMAND).first)
+        if (!sitesOutdated(facts)) return false
+        val list = sites() ?: return false
+        writeRuSites(shell, list)
+        return true
+    }
+
+    /** Writes the list with its digest and version file (this app's release tag). */
+    fun writeRuSites(shell: RouterShell, sites: ByteArray) {
+        val digest = sha256Hex(sites)
         shell.writeFile(RU_SITES_PATH, sites, "644")
-        shell.writeFile(RU_SITES_DIGEST, "${sha256Hex(sites)}\n".toByteArray(), "644")
+        shell.writeFile(RU_SITES_DIGEST, "$digest\n".toByteArray(), "644")
+        shell.writeFile(RU_SITES_VERSION, "${BuildConfig.GEOSITE_TAG} $digest\n".toByteArray(), "644")
     }
 
     fun shellQuoteInner(value: String) = value.replace("'", "'\\''")

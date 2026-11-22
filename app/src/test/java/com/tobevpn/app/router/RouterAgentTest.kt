@@ -285,4 +285,49 @@ class RouterInstallerTest {
         assertEquals(emptyList<Int>(), RouterInstaller.versionTuple("v26.1"))
         assertEquals(0, RouterInstaller.compareVersions(listOf(26, 10), listOf(26, 10, 0)))
     }
+
+    @Test
+    fun `sites list is only replaced by a newer release`() {
+        // No list on the router: written whatever the tags.
+        assertTrue(RouterAgent.sitesOutdated(routerHasList = false, routerTag = 0, appTag = 0))
+        assertTrue(RouterAgent.sitesOutdated(routerHasList = false, routerTag = 202611221150, appTag = 202604010000))
+        // A newer release replaces, an older or the same one does not.
+        assertTrue(RouterAgent.sitesOutdated(routerHasList = true, routerTag = 202604010000, appTag = 202611221150))
+        assertFalse(RouterAgent.sitesOutdated(routerHasList = true, routerTag = 202611221150, appTag = 202604010000))
+        assertFalse(RouterAgent.sitesOutdated(routerHasList = true, routerTag = 202611221150, appTag = 202611221150))
+        // A build without a tag never replaces a list.
+        assertFalse(RouterAgent.sitesOutdated(routerHasList = true, routerTag = 0, appTag = 0))
+    }
+
+    @Test
+    fun `router sites tag counts only while the list is the one it names`() {
+        assertEquals(202611221150, RouterAgent.routerSitesTag("202611221150 abc123\n", "abc123\n"))
+        assertEquals(0L, RouterAgent.routerSitesTag("202611221150 abc123", "def456"))
+        assertEquals(0L, RouterAgent.routerSitesTag("", "abc123"))
+        assertEquals(0L, RouterAgent.routerSitesTag("garbage", "abc123"))
+        // From the shell facts, as the update check reads them.
+        assertTrue(
+            RouterAgent.sitesOutdated(
+                mapOf("sites" to "1", "sites_digest" to "abc", "sites_version" to "202604010000 abc"),
+                appTag = 202611221150,
+            ),
+        )
+        assertFalse(
+            RouterAgent.sitesOutdated(
+                mapOf("sites" to "1", "sites_digest" to "abc", "sites_version" to "202611221150 abc"),
+                appTag = 202604010000,
+            ),
+        )
+    }
+
+    @Test
+    fun `bundled geosite carries every Russian category and nothing else`() {
+        val asset = listOf("src/main/assets/geosite.dat", "app/src/main/assets/geosite.dat")
+            .map(::File).first { it.isFile }
+        val bytes = asset.readBytes()
+        // Trimming the bundled file changes nothing: it holds only the
+        // categories, and trimGeosite fails if any of them is missing.
+        val trimmed = RouterAgent.trimGeosite(ByteArrayInputStream(bytes), RouterAgent.RU_DIRECT_DOMAIN_GROUPS)
+        assertTrue(bytes.contentEquals(trimmed))
+    }
 }

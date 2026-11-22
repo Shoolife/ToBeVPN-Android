@@ -55,6 +55,17 @@ android {
         // be delivered by Google Play instead of REQUEST_INSTALL_PACKAGES.
         buildConfigField("boolean", "IN_APP_UPDATES_ENABLED", "true")
         buildConfigField("boolean", "PLAY_DISTRIBUTION", "false")
+        // The runetfreedom release the bundled geosite.dat comes from (the
+        // release build refreshes both, see build.yml); the router compares
+        // Russian sites lists by it. 0 without the file: then the app only
+        // fills a missing list on the router and never replaces one.
+        val geositeTag = file("src/main/assets/geosite.version")
+            .takeIf { it.isFile }
+            ?.readText()
+            ?.filter { it.isDigit() }
+            ?.takeIf { it.isNotEmpty() }
+            ?: "0"
+        buildConfigField("long", "GEOSITE_TAG", "${geositeTag}L")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
