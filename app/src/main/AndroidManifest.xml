@@ -21,6 +21,13 @@
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+    <!-- ML Kit's QR scanner activity is pinned to portrait, which makes the
+         portrait screen an implied requirement; Google Play then hides the
+         app from fixed-landscape devices. The app works in any orientation. -->
+    <uses-feature
+        android:name="android.hardware.screen.portrait"
+        android:required="false" />
+
     <!-- Android 11+ filtered package visibility — declare what we look up so
          ACTION_VIEW with vnd.android.package-archive resolves correctly. -->
     <queries>
