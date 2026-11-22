@@ -23,11 +23,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.BarChart
-import androidx.compose.material.icons.filled.PauseCircle
 import androidx.compose.material.icons.filled.Router
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -149,29 +147,19 @@ private val WhatsNewHeroIcon: ImageVector by lazy {
 // list with each release.
 private val currentHighlights = listOf(
     WhatsNewHighlight(
-        icon = Icons.Filled.PauseCircle,
-        titleRes = R.string.whats_new_pause_home_title,
-        descriptionRes = R.string.whats_new_pause_home_desc,
-    ),
-    WhatsNewHighlight(
-        icon = Icons.Filled.BarChart,
-        titleRes = R.string.whats_new_stats_tap_title,
-        descriptionRes = R.string.whats_new_stats_tap_desc,
-    ),
-    WhatsNewHighlight(
         icon = Icons.Filled.Router,
-        titleRes = R.string.whats_new_keenetic_title,
-        descriptionRes = R.string.whats_new_keenetic_desc,
+        titleRes = R.string.whats_new_ru_sites_title,
+        descriptionRes = R.string.whats_new_ru_sites_desc,
     ),
     WhatsNewHighlight(
-        icon = Icons.Filled.Sync,
-        titleRes = R.string.whats_new_router_servers_title,
-        descriptionRes = R.string.whats_new_router_servers_desc,
+        icon = Icons.Filled.Lock,
+        titleRes = R.string.whats_new_router_password_title,
+        descriptionRes = R.string.whats_new_router_password_desc,
     ),
     WhatsNewHighlight(
         icon = Icons.Filled.AutoAwesome,
-        titleRes = R.string.whats_new_calm_numbers_title,
-        descriptionRes = R.string.whats_new_calm_numbers_desc,
+        titleRes = R.string.whats_new_components_title,
+        descriptionRes = R.string.whats_new_components_desc,
     ),
 )
 
