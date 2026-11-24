@@ -102,6 +102,8 @@ jobs:
           FALLBACK_SUBS_DOMAIN: ${{ secrets.FALLBACK_SUBS_DOMAIN }}
           BASE_STATION_BYPASS_URL: ${{ secrets.BASE_STATION_BYPASS_URL }}
           BASE_STATION_BYPASS_FALLBACK_URL: ${{ secrets.BASE_STATION_BYPASS_FALLBACK_URL }}
+          # Firebase project config (google-services.json) for announcement pushes.
+          FIREBASE_CONFIG_JSON: ${{ secrets.FIREBASE_CONFIG_JSON }}
         run: ./gradlew assembleRelease --no-daemon
 
       - name: Build Google Play AAB (no splits)
@@ -115,6 +117,8 @@ jobs:
           FALLBACK_SUBS_DOMAIN: ${{ secrets.FALLBACK_SUBS_DOMAIN }}
           BASE_STATION_BYPASS_URL: ${{ secrets.BASE_STATION_BYPASS_URL }}
           BASE_STATION_BYPASS_FALLBACK_URL: ${{ secrets.BASE_STATION_BYPASS_FALLBACK_URL }}
+          # Firebase project config (google-services.json) for announcement pushes.
+          FIREBASE_CONFIG_JSON: ${{ secrets.FIREBASE_CONFIG_JSON }}
         run: ./gradlew bundlePlayRelease -PdisableAbiSplits --no-daemon
 
       - name: Locate and rename artifacts
