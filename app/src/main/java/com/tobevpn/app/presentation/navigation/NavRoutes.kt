@@ -58,3 +58,9 @@ object PromocodesRoute
 
 @Serializable
 object RouterRoute
+
+@Serializable
+object NotificationsRoute
+
+@Serializable
+data class NotificationDetailRoute(val id: String)

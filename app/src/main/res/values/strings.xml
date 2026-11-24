@@ -960,4 +960,23 @@
     <string name="home_router_vpn_turn_off">Turn off</string>
     <string name="stats_router_period">Router (whole home network): %1$s</string>
     <string name="stats_router_short">router %1$s</string>
+
+    <!-- Announcements (feed, detail, pushes) -->
+    <string name="announcements_channel">Announcements</string>
+    <string name="announcements_channel_description">ToBeVPN news and maintenance</string>
+    <string name="notifications_title">Notifications</string>
+    <string name="notifications_bell_new">Notifications, new ones available</string>
+    <string name="notifications_empty_title">No notifications yet</string>
+    <string name="notifications_empty_text">ToBeVPN news and announcements from the last 30 days appear here.</string>
+    <string name="notifications_error_title">Couldn\'t load notifications</string>
+    <string name="notifications_error_network">Check your internet connection and try again.</string>
+    <string name="notifications_error_rate_limited">Too many requests. Try again a bit later.</string>
+    <string name="notifications_error_rate_limited_seconds">Too many requests. Try again in %1$d s.</string>
+    <string name="notifications_error_forbidden">Notifications aren\'t available on this device.</string>
+    <string name="notification_new">New</string>
+    <string name="notification_unavailable_title">Notification unavailable</string>
+    <string name="notification_unavailable_text">It may have expired.</string>
+    <string name="notification_detail_error_title">Couldn\'t open the notification</string>
+    <string name="notification_back_to_feed">To notifications</string>
+    <string name="notification_open_plans">Open plans</string>
 </resources>

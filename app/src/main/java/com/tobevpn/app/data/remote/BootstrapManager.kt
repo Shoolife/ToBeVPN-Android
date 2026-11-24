@@ -8,6 +8,9 @@ import com.tobevpn.app.data.remote.dto.BootstrapRequestDto
 import com.tobevpn.app.data.remote.dto.RefreshRequestDto
 import com.tobevpn.app.data.remote.dto.SessionTokensDto
 import com.tobevpn.app.data.remote.dto.mergePanelUserUuid
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicReference
@@ -32,6 +35,14 @@ class BootstrapManager @Inject constructor(
 
     @Volatile
     private var hydrated = false
+
+    private val _newSessions = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /**
+     * A bootstrap created a new server session (a refresh keeps the old one):
+     * what the server kept per session, such as the push registration, is gone.
+     */
+    val newSessions: SharedFlow<Unit> = _newSessions.asSharedFlow()
 
     data class StoredTokens(
         val accessToken: String,
@@ -114,7 +125,7 @@ class BootstrapManager @Inject constructor(
         )
         val data = response.data
             ?: error(response.message ?: "Bootstrap failed")
-        persist(data)
+        persist(data).also { _newSessions.tryEmit(Unit) }
     }
 
     suspend fun refreshNow(): StoredTokens = mutex.withLock {

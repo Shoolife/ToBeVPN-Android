@@ -133,6 +133,34 @@ android {
             "BASE_STATION_BYPASS_FALLBACK_URL",
             "\"$baseStationBypassFallbackUrl\"",
         )
+
+        // Firebase Cloud Messaging (announcement pushes). The project's
+        // google-services.json is not part of the public tree: it is read from
+        // app/google-services.json (gitignored) or the FIREBASE_CONFIG_JSON
+        // environment variable (CI secret), and only the four values Firebase
+        // needs go into BuildConfig. The app initialises Firebase itself
+        // (FirebaseOptions), so one config serves the release package and the
+        // .debug one; without a config the app just has no pushes (the feed
+        // still works).
+        val firebaseConfig = (System.getenv("FIREBASE_CONFIG_JSON")?.takeIf { it.isNotBlank() }
+            ?: file("google-services.json").takeIf { it.isFile }?.readText())
+            ?.let { groovy.json.JsonSlurper().parseText(it) as Map<*, *> }
+        val firebaseProject = firebaseConfig?.get("project_info") as? Map<*, *>
+        val firebaseClient = (firebaseConfig?.get("client") as? List<*>)
+            ?.filterIsInstance<Map<*, *>>()
+            ?.firstOrNull()
+        val firebaseAppId = ((firebaseClient?.get("client_info") as? Map<*, *>)
+            ?.get("mobilesdk_app_id") as? String).orEmpty()
+        val firebaseApiKey = ((firebaseClient?.get("api_key") as? List<*>)
+            ?.filterIsInstance<Map<*, *>>()
+            ?.firstOrNull()
+            ?.get("current_key") as? String).orEmpty()
+        val firebaseProjectId = (firebaseProject?.get("project_id") as? String).orEmpty()
+        val firebaseSenderId = (firebaseProject?.get("project_number") as? String).orEmpty()
+        buildConfigField("String", "FIREBASE_APP_ID", "\"$firebaseAppId\"")
+        buildConfigField("String", "FIREBASE_API_KEY", "\"$firebaseApiKey\"")
+        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"$firebaseProjectId\"")
+        buildConfigField("String", "FIREBASE_SENDER_ID", "\"$firebaseSenderId\"")
     }
 
     // Release signing is opt-in — credentials live in local.properties (gitignored).
@@ -324,6 +352,10 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     // ML Kit Barcode Scanner (for linking TV via QR)
+    // Announcement pushes (FCM); the feed itself needs no Firebase.
+    implementation(platform("com.google.firebase:firebase-bom:35.2.0"))
+    implementation("com.google.firebase:firebase-messaging")
+
     implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
     implementation(libs.zxing.core)
     // Fallback camera scanner for devices where the Play services scanner

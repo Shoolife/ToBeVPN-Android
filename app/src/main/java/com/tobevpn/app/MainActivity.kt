@@ -38,7 +38,13 @@ import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.rememberNavController
+import androidx.lifecycle.lifecycleScope
 import com.tobevpn.app.data.local.PrefsDataStore
+import com.tobevpn.app.data.remote.BootstrapManager
+import com.tobevpn.app.notifications.AnnouncementPushes
+import com.tobevpn.app.notifications.NotificationsRepository
+import com.tobevpn.app.notifications.PushRegistrar
+import kotlinx.coroutines.launch
 import com.tobevpn.app.domain.model.DEFAULT_FONT_SCALE
 import com.tobevpn.app.domain.model.DEFAULT_INTERFACE_SCALE
 import com.tobevpn.app.presentation.navigation.AppNavHost
@@ -77,6 +83,15 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var playBillingCountry: PlayBillingCountry
 
+    @Inject
+    lateinit var bootstrapManager: BootstrapManager
+
+    @Inject
+    lateinit var pushRegistrar: PushRegistrar
+
+    @Inject
+    lateinit var notificationsRepository: NotificationsRepository
+
     private val quickSettingsConnectRequests = MutableStateFlow(0)
     private val onboardingPreviewRequests = MutableStateFlow(false)
 
@@ -94,6 +109,18 @@ class MainActivity : AppCompatActivity() {
         dispatchQuickSettingsIntent(intent)
         dispatchQuickSettingsPreferencesIntent(intent)
         dispatchOnboardingPreviewIntent(intent)
+        // A recreated activity has already opened its push's announcement.
+        if (savedInstanceState == null) dispatchNotificationIntent(intent)
+
+        // The bot session, the push registration and the bell's feed belong
+        // to the open window, not to the process: FCM may start the process
+        // just to show a push, and a mass send must not make every phone call
+        // the bot.
+        lifecycleScope.launch {
+            runCatching { bootstrapManager.ensureBootstrapped() }
+            pushRegistrar.registerIfNeeded()
+            notificationsRepository.onAppOpened()
+        }
 
         playBillingCountry.refresh()
 
@@ -293,6 +320,14 @@ class MainActivity : AppCompatActivity() {
         dispatchQuickSettingsIntent(intent)
         dispatchQuickSettingsPreferencesIntent(intent)
         dispatchOnboardingPreviewIntent(intent)
+        dispatchNotificationIntent(intent)
+    }
+
+    /** A tapped announcement push (FCM's own or ours) carries its ID. */
+    private fun dispatchNotificationIntent(intent: Intent?) {
+        val id = AnnouncementPushes.notificationIdFrom(intent) ?: return
+        intent?.removeExtra(AnnouncementPushes.EXTRA_NOTIFICATION_ID)
+        deepLinkBus.openNotification(id)
     }
 
     private fun dispatchDeepLink(intent: Intent?) {

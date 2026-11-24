@@ -974,4 +974,23 @@
     <string name="home_router_vpn_turn_off">Выключить</string>
     <string name="stats_router_period">Роутер (вся домашняя сеть): %1$s</string>
     <string name="stats_router_short">роутер %1$s</string>
+
+    <!-- Announcements (feed, detail, pushes) -->
+    <string name="announcements_channel">Объявления</string>
+    <string name="announcements_channel_description">Новости и технические работы ToBeVPN</string>
+    <string name="notifications_title">Уведомления</string>
+    <string name="notifications_bell_new">Уведомления, есть новые</string>
+    <string name="notifications_empty_title">Уведомлений пока нет</string>
+    <string name="notifications_empty_text">Здесь появятся новости и объявления ToBeVPN за последние 30 дней.</string>
+    <string name="notifications_error_title">Не удалось загрузить уведомления</string>
+    <string name="notifications_error_network">Проверьте подключение к интернету и попробуйте снова.</string>
+    <string name="notifications_error_rate_limited">Слишком много запросов. Попробуйте чуть позже.</string>
+    <string name="notifications_error_rate_limited_seconds">Слишком много запросов. Попробуйте через %1$d с.</string>
+    <string name="notifications_error_forbidden">Уведомления недоступны для этого устройства.</string>
+    <string name="notification_new">Новое</string>
+    <string name="notification_unavailable_title">Уведомление недоступно</string>
+    <string name="notification_unavailable_text">Возможно, истёк срок его хранения.</string>
+    <string name="notification_detail_error_title">Не удалось открыть уведомление</string>
+    <string name="notification_back_to_feed">К уведомлениям</string>
+    <string name="notification_open_plans">Открыть тарифы</string>
 </resources>

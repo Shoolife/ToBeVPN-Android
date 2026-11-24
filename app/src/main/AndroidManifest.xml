@@ -132,6 +132,25 @@
                 android:value="true" />
         </service>
 
+        <!-- Announcement pushes (FCM). In the background Android draws them
+             itself, with this icon and colour; the server names the channel. -->
+        <service
+            android:name=".notifications.AnnouncementMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/ic_notification_tobevpn" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_icon_color" />
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="tobevpn_announcements" />
+
         <!-- Lazy download of Google Code Scanner module (for "Link TV") -->
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"

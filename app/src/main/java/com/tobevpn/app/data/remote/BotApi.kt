@@ -12,6 +12,10 @@ import com.tobevpn.app.data.remote.dto.DeviceUnlinkResponseDto
 import com.tobevpn.app.data.remote.dto.EnsureUserRequestDto
 import com.tobevpn.app.data.remote.dto.EnsureUserResponseDto
 import com.tobevpn.app.data.remote.dto.LinkedDevicesDto
+import com.tobevpn.app.data.remote.dto.NotificationDetailDto
+import com.tobevpn.app.data.remote.dto.NotificationItemDto
+import com.tobevpn.app.data.remote.dto.NotificationReadDto
+import com.tobevpn.app.data.remote.dto.PushRegistrationRequestDto
 import com.tobevpn.app.data.remote.dto.PanelNodeDto
 import com.tobevpn.app.data.remote.dto.PanelResponse
 import com.tobevpn.app.data.remote.dto.PanelUserDto
@@ -33,6 +37,7 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Streaming
@@ -147,4 +152,26 @@ interface BotApi {
     suspend fun setReferrer(
         @Body request: SetReferrerRequestDto,
     ): ApiResponse<SetReferrerResponseDto>
+
+    // Announcements — the server picks the recipient from the session.
+    // Response<> keeps the status (404, 429 with Retry-After) for the screens.
+
+    @GET("api/device/notifications")
+    suspend fun getNotifications(): Response<ApiResponse<List<NotificationItemDto>>>
+
+    @GET("api/device/notifications/{id}")
+    suspend fun getNotification(
+        @Path("id") id: String,
+    ): Response<ApiResponse<NotificationDetailDto>>
+
+    @POST("api/device/notifications/{id}/read")
+    suspend fun markNotificationRead(
+        @Path("id") id: String,
+    ): Response<ApiResponse<NotificationReadDto>>
+
+    /** 204 No Content on success; the body is never parsed. */
+    @PUT("api/device/push-registration")
+    suspend fun registerPush(
+        @Body request: PushRegistrationRequestDto,
+    ): Response<Unit>
 }

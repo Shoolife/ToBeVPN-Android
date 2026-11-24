@@ -63,6 +63,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.LocalOffer
@@ -200,12 +201,16 @@ fun MainScreen(
     onNavigateToStats: () -> Unit,
     onNavigateToSpeedTest: () -> Unit = {},
     onNavigateToRouter: () -> Unit = {},
+    onNavigateToNotifications: () -> Unit = {},
+    /** Bumped by «Открыть тарифы» in an announcement: open the plans sheet. */
+    openPlansRequest: Int = 0,
     /** Another window over Home (the display scale hint): the Keenetic offer waits for it. */
     otherDialogShown: Boolean = false,
     quickSettingsConnectRequest: Int = 0,
     viewModel: MainViewModel = hiltViewModel(),
 ) {
     val keeneticOffer by viewModel.keeneticOffer.collectAsStateWithLifecycle()
+    val hasUnreadNotifications by viewModel.hasUnreadNotifications.collectAsStateWithLifecycle()
 
     val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
     val usageInfo by viewModel.usageInfo.collectAsStateWithLifecycle()
@@ -329,6 +334,16 @@ fun MainScreen(
         }
     }
 
+    var handledOpenPlansRequest by rememberSaveable { mutableStateOf(openPlansRequest) }
+    LaunchedEffect(openPlansRequest) {
+        if (openPlansRequest == handledOpenPlansRequest) return@LaunchedEffect
+        handledOpenPlansRequest = openPlansRequest
+        viewModel.requestSubscriptionSheet {
+            selectCurrentTariffOnSubscriptionOpen = false
+            showSubscriptionSheet = true
+        }
+    }
+
     LaunchedEffect(quickSettingsConnectRequest) {
         if (quickSettingsConnectRequest <= 0 ||
             handledQuickSettingsConnectRequest == quickSettingsConnectRequest
@@ -385,6 +400,10 @@ fun MainScreen(
                     }
                 },
                 actions = {
+                    NotificationsBell(
+                        hasUnread = hasUnreadNotifications,
+                        onClick = onNavigateToNotifications,
+                    )
                     IconButton(onClick = onNavigateToSettings) {
                         Icon(
                             Icons.Default.Settings,
@@ -3915,3 +3934,34 @@ private data class SubscriptionSheetInputs(
     val purchasePlansLoaded: Boolean,
     val currentLimits: CurrentPlanLimits?,
 )
+
+/** The bell on Home: the announcements feed, with a dot while something is new. */
+@Composable
+private fun NotificationsBell(hasUnread: Boolean, onClick: () -> Unit) {
+    val tint = if (androidx.compose.foundation.isSystemInDarkTheme()) {
+        MaterialTheme.colorScheme.onSurface
+    } else {
+        Color.Black
+    }
+    IconButton(onClick = onClick) {
+        Box {
+            Icon(
+                Icons.Outlined.Notifications,
+                contentDescription = stringResource(
+                    if (hasUnread) R.string.notifications_bell_new else R.string.notifications_title,
+                ),
+                tint = tint,
+            )
+            if (hasUnread) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .size(9.dp)
+                        .background(MaterialTheme.colorScheme.surface, CircleShape)
+                        .padding(1.5.dp)
+                        .background(Color(0xFFF44336), CircleShape),
+                )
+            }
+        }
+    }
+}

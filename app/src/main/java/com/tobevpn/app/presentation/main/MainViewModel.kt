@@ -88,11 +88,15 @@ class MainViewModel @Inject constructor(
     private val serverQualityRepository: ServerQualityRepository,
     private val deepLinkBus: DeepLinkBus,
     private val paymentNotifications: PaymentNotifications,
+    notificationsRepository: com.tobevpn.app.notifications.NotificationsRepository,
     private val playBillingCountry: PlayBillingCountry,
     private val routerRepository: com.tobevpn.app.router.RouterRepository,
     private val routerCredentials: com.tobevpn.app.router.RouterCredentials,
     @ApplicationContext private val context: Context,
 ) : ViewModel() {
+
+    /** The dot on the Home bell (announcements). */
+    val hasUnreadNotifications: StateFlow<Boolean> = notificationsRepository.hasUnread
 
     private val _rubToUsdRate = MutableStateFlow<Double?>(null)
     val rubToUsdRate: StateFlow<Double?> = _rubToUsdRate

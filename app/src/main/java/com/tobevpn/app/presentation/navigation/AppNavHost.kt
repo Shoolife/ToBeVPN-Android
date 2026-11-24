@@ -11,6 +11,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -41,6 +44,8 @@ import com.tobevpn.app.presentation.components.SETTINGS_AVATAR_SIZE
 import com.tobevpn.app.presentation.components.avatarRequest
 import com.tobevpn.app.presentation.components.rememberAvatarSizePx
 import com.tobevpn.app.presentation.main.MainScreen
+import com.tobevpn.app.presentation.notifications.NotificationDetailScreen
+import com.tobevpn.app.presentation.notifications.NotificationsScreen
 import com.tobevpn.app.presentation.onboarding.DisplayScaleHintDialog
 import com.tobevpn.app.presentation.onboarding.OnboardingScreen
 import com.tobevpn.app.presentation.promocodes.PromocodesScreen
@@ -106,6 +111,18 @@ fun AppNavHost(
         }
     }
 
+    // A tapped announcement push: its announcement over Home, so Back leads
+    // to the feed's owner screen and not out of the app. Waits for onboarding.
+    LaunchedEffect(navController, startFromOnboarding) {
+        if (startFromOnboarding) return@LaunchedEffect
+        deepLinkBus.notificationOpenRequests.collect { id ->
+            navController.navigateSingleTop(NotificationDetailRoute(id))
+        }
+    }
+
+    // «Открыть тарифы» in an announcement: Home opens its plans sheet.
+    var openPlansRequest by rememberSaveable { mutableIntStateOf(0) }
+
     LaunchedEffect(quickSettingsConnectRequest, startFromOnboarding) {
         if (quickSettingsConnectRequest > 0 && !startFromOnboarding) {
             navController.navigateSingleTop(MainRoute)
@@ -156,8 +173,30 @@ fun AppNavHost(
                     onNavigateToStats = { navController.navigateSingleTop(StatsRoute) },
                     onNavigateToSpeedTest = { navController.navigateSingleTop(SpeedTestRoute) },
                     onNavigateToRouter = { navController.navigateSingleTop(RouterRoute) },
+                    onNavigateToNotifications = { navController.navigateSingleTop(NotificationsRoute) },
+                    openPlansRequest = openPlansRequest,
                     otherDialogShown = showDisplayScaleHint,
                     quickSettingsConnectRequest = quickSettingsConnectRequest,
+                )
+            }
+            screen<NotificationsRoute> {
+                NotificationsScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                    onOpenNotification = { id ->
+                        navController.navigateSingleTop(NotificationDetailRoute(id))
+                    },
+                )
+            }
+            screen<NotificationDetailRoute> {
+                NotificationDetailScreen(
+                    onBack = { navController.popBackStackOrRecover(startDestination) },
+                    onOpenPlans = {
+                        val home = runCatching {
+                            navController.popBackStack(MainRoute, inclusive = false)
+                        }.getOrDefault(false)
+                        if (!home) navController.navigateSingleTop(MainRoute)
+                        openPlansRequest += 1
+                    },
                 )
             }
             screen<ServerListRoute> {

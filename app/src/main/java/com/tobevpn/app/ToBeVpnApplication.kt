@@ -15,6 +15,8 @@ import com.tobevpn.app.update.UpdateDownloader
 import com.tobevpn.app.util.DiagnosticLogManager
 import com.tobevpn.app.util.SafeDiagnostics
 import com.tobevpn.app.util.TrafficLimitNotifications
+import com.tobevpn.app.notifications.AnnouncementPushes
+import com.tobevpn.app.notifications.PushRegistrar
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +48,9 @@ class ToBeVpnApplication : Application() {
     @Inject
     lateinit var trafficLimitNotifications: TrafficLimitNotifications
 
+    @Inject
+    lateinit var pushRegistrar: PushRegistrar
+
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
@@ -57,6 +62,10 @@ class ToBeVpnApplication : Application() {
         )
         installCrashDiagnostics()
         trafficLimitNotifications.start(appScope)
+        // Before anything FCM delivers: the channel the server names, and the
+        // Firebase app (set up by hand, there is no google-services plugin).
+        AnnouncementPushes.createChannel(this)
+        pushRegistrar.available
         // Hydrate cached tokens from the encrypted DB and obtain a fresh access token
         // before the UI starts hitting the API. If we're offline this fails silently
         // and the AuthHeaderInterceptor will re-try on the first request.
@@ -80,7 +89,11 @@ class ToBeVpnApplication : Application() {
                 },
             )
             runCatching { updateDownloader.cleanupStaleDownloads() }
-            runCatching { bootstrapManager.ensureBootstrapped() }
+            // Only the saved tokens here; the network part waits for the
+            // window (MainActivity), so a process FCM starts to show a push
+            // does not call the bot. Requests made without a window (the VPN
+            // service) bootstrap on their own in AuthHeaderInterceptor.
+            runCatching { bootstrapManager.hydrateFromDb() }
             runCatching { migrateLegacyEmail() }
         }
     }

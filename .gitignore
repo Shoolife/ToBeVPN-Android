@@ -19,3 +19,6 @@ keystore.properties
 # Claude Code
 .claude/skills/git-workflow-skill/
 .codex
+
+# Firebase project config (read by app/build.gradle.kts)
+app/google-services.json

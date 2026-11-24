@@ -30,11 +30,19 @@ class DeepLinkBus @Inject constructor() {
     private val paymentChannel = Channel<Uri>(capacity = Channel.BUFFERED)
     private val devicePairingChannel = Channel<String>(capacity = Channel.BUFFERED)
     private val navigationChannel = Channel<DeepLinkDestination>(capacity = Channel.BUFFERED)
+    private val notificationChannel = Channel<String>(capacity = Channel.CONFLATED)
 
     val authCallbacks: Flow<Uri> = authChannel.receiveAsFlow()
     val paymentCallbacks: Flow<Uri> = paymentChannel.receiveAsFlow()
     val devicePairingCodes: Flow<String> = devicePairingChannel.receiveAsFlow()
     val navigationRequests: Flow<DeepLinkDestination> = navigationChannel.receiveAsFlow()
+
+    /** Announcement IDs from tapped pushes, kept until navigation is ready. */
+    val notificationOpenRequests: Flow<String> = notificationChannel.receiveAsFlow()
+
+    fun openNotification(id: String) {
+        notificationChannel.trySend(id)
+    }
 
     fun post(uri: Uri) {
         if (uri.scheme != SCHEME) return
