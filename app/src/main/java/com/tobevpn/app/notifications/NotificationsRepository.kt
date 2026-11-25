@@ -61,9 +61,12 @@ sealed interface NotificationDetailResult {
  * Announcements from the bot (Рассылка → TobeVPN): the feed, one
  * announcement, its read mark, and the dot on the Home bell.
  *
- * The feed is requested on events only — once when the app window opens (for
- * the bell), when the user enters the feed, and on Refresh — never in the
- * background. Concurrent loads share one request. The server picks the
+ * As few feed requests as possible (agreed with the bot side): one when the
+ * app window first opens in a process, then at most one a day when the window
+ * comes back, and on the user's Refresh. Entering the feed shows the loaded
+ * one; it asks the server again only when there is none yet or a push said
+ * something new arrived. Nothing runs in the background — pushes are the only
+ * automatic channel. Concurrent loads share one request. The server picks the
  * recipient from the device session, so after a sign-in, sign-out or account
  * change the old feed is dropped.
  */
@@ -78,6 +81,10 @@ class NotificationsRepository @Inject constructor(
     private val loadMutex = Mutex()
     private var inFlight: Deferred<Unit>? = null
     private var openedThisProcess = false
+
+    /** A push arrived after the last feed: the feed lacks that announcement. */
+    @Volatile
+    private var staleByPush = false
 
     private val _feed = MutableStateFlow(NotificationsFeedState())
     val feed: StateFlow<NotificationsFeedState> = _feed.asStateFlow()
@@ -103,15 +110,27 @@ class NotificationsRepository @Inject constructor(
         }
     }
 
-    /** The app window opened: one feed request per process, for the bell. */
+    /**
+     * The app window is shown: the first time in this process loads the feed
+     * for the bell, later ones only when the last feed is a day old.
+     */
     fun onAppOpened() {
-        if (openedThisProcess) return
+        val due = !openedThisProcess ||
+            System.currentTimeMillis() - prefs.getLong(KEY_LOADED_AT, 0L) >= DAILY_MS
+        if (!due) return
         openedThisProcess = true
+        scope.launch { loadFeed() }
+    }
+
+    /** The user entered the feed: reuse the loaded one unless it is missing or a push made it stale. */
+    fun onFeedEntered() {
+        if (_feed.value.items != null && !staleByPush) return
         scope.launch { loadFeed() }
     }
 
     /** A push arrived: the bell shows the dot until the feed says otherwise. */
     fun onPushReceived() {
+        staleByPush = true
         setUnread(true)
     }
 
@@ -128,6 +147,8 @@ class NotificationsRepository @Inject constructor(
         val result = call { botApi.getNotifications() }
         result.fold(
             onSuccess = { items ->
+                staleByPush = false
+                prefs.edit().putLong(KEY_LOADED_AT, System.currentTimeMillis()).apply()
                 _feed.value = NotificationsFeedState(items = items.orEmpty())
                 setUnread(items.orEmpty().any { it.readAt == null })
             },
@@ -210,6 +231,8 @@ class NotificationsRepository @Inject constructor(
         private const val TAG = "Notifications"
         private const val PREFS = "announcements"
         private const val KEY_UNREAD = "has_unread"
+        private const val KEY_LOADED_AT = "feed_loaded_at"
+        private const val DAILY_MS = 24L * 60 * 60 * 1000
 
         fun isUuid(value: String?): Boolean =
             value != null && value.length == 36 && runCatching { UUID.fromString(value) }.isSuccess

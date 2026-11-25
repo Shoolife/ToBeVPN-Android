@@ -1,5 +1,6 @@
 package com.tobevpn.app.presentation.notifications
 
+import android.os.SystemClock
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,13 +10,14 @@ import com.tobevpn.app.notifications.NotificationDetailResult
 import com.tobevpn.app.notifications.NotificationsError
 import com.tobevpn.app.notifications.NotificationsFeedState
 import com.tobevpn.app.notifications.NotificationsRepository
+import com.tobevpn.app.presentation.components.awaitWholeRefreshTurns
 import com.tobevpn.app.presentation.navigation.NotificationDetailRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import javax.inject.Inject
 
 @HiltViewModel
 class NotificationsViewModel @Inject constructor(
@@ -25,13 +27,32 @@ class NotificationsViewModel @Inject constructor(
     val feed: StateFlow<NotificationsFeedState> = repository.feed
 
     init {
-        // Entering the section: one feed request. The result lives in the
-        // repository, so returning from an announcement does not reload it.
-        refresh()
+        // Entering the section shows the feed loaded on app open; the server
+        // is asked again only if there is none or a push made it stale.
+        repository.onFeedEntered()
     }
 
+    private val _refreshing = MutableStateFlow(false)
+
+    /**
+     * A refresh the user asked for (the top bar button, Retry): the list swaps
+     * to placeholders and back as on every screen, and the result lands as
+     * the refresh icon comes to rest.
+     */
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
     fun refresh() {
-        viewModelScope.launch { repository.loadFeed() }
+        if (_refreshing.value) return
+        viewModelScope.launch {
+            _refreshing.value = true
+            val startedAt = SystemClock.elapsedRealtime()
+            try {
+                repository.loadFeed()
+                awaitWholeRefreshTurns(startedAt)
+            } finally {
+                _refreshing.value = false
+            }
+        }
     }
 }
 

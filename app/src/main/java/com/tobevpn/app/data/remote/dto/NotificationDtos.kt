@@ -20,6 +20,10 @@ data class NotificationDetailDto(
     @SerializedName("read_at") val readAt: String? = null,
     val body: String? = null,
     val action: String? = null,
+    /** For `action = "url"`: the web link the button opens. */
+    @SerializedName("action_url") val actionUrl: String? = null,
+    /** For `action = "url"`: the button text. */
+    @SerializedName("action_label") val actionLabel: String? = null,
 )
 
 data class NotificationReadDto(

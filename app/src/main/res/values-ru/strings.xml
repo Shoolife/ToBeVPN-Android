@@ -993,4 +993,5 @@
     <string name="notification_detail_error_title">Не удалось открыть уведомление</string>
     <string name="notification_back_to_feed">К уведомлениям</string>
     <string name="notification_open_plans">Открыть тарифы</string>
+    <string name="notification_link_failed">Нет приложения, чтобы открыть ссылку</string>
 </resources>

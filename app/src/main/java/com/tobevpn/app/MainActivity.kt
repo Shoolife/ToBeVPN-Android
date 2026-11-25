@@ -36,9 +36,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.rememberNavController
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import com.tobevpn.app.data.local.PrefsDataStore
 import com.tobevpn.app.data.remote.BootstrapManager
 import com.tobevpn.app.notifications.AnnouncementPushes
@@ -119,7 +121,11 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             runCatching { bootstrapManager.ensureBootstrapped() }
             pushRegistrar.registerIfNeeded()
-            notificationsRepository.onAppOpened()
+            // Each time the window is shown; the repository loads the feed
+            // the first time and then at most once a day.
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                notificationsRepository.onAppOpened()
+            }
         }
 
         playBillingCountry.refresh()
