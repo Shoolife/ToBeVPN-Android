@@ -81,7 +81,11 @@ class SettingsViewModel @Inject constructor(
         )
 
     val authState: StateFlow<AuthState> = authRepository.observeAuthState()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AuthState.Anonymous)
+        .stateIn(
+            viewModelScope,
+            SharingStarted.WhileSubscribed(5000),
+            authRepository.lastKnownAuthState ?: AuthState.Anonymous,
+        )
 
     val avatarLoading: StateFlow<Boolean> = authRepository.avatarLoading
 

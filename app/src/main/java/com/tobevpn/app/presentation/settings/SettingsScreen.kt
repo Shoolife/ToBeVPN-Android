@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -96,10 +98,6 @@ import androidx.compose.ui.window.DialogWindowProvider
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import com.tobevpn.app.presentation.components.rememberAvatarSizePx
-import com.tobevpn.app.presentation.components.avatarRequest
-import com.tobevpn.app.presentation.components.SETTINGS_AVATAR_SIZE
-import com.tobevpn.app.presentation.components.AVATAR_INSET
 import com.tobevpn.app.BuildConfig
 import com.tobevpn.app.R
 import com.tobevpn.app.billing.LocalExternalPurchasesAllowed
@@ -107,10 +105,14 @@ import com.tobevpn.app.billing.paymentUnavailableMessage
 import com.tobevpn.app.domain.model.AuthState
 import com.tobevpn.app.domain.model.ProfileNameDisplay
 import com.tobevpn.app.domain.model.UserPlan
+import com.tobevpn.app.presentation.components.AVATAR_INSET
 import com.tobevpn.app.presentation.components.LocalPersonalDataHidden
 import com.tobevpn.app.presentation.components.PERSONAL_DATA_MASK
+import com.tobevpn.app.presentation.components.SETTINGS_AVATAR_SIZE
 import com.tobevpn.app.presentation.components.SubscriptionExpiryUrgency
+import com.tobevpn.app.presentation.components.avatarRequest
 import com.tobevpn.app.presentation.components.fixedLayoutTextStyle
+import com.tobevpn.app.presentation.components.rememberAvatarSizePx
 import com.tobevpn.app.presentation.components.subscriptionExpiryUrgency
 import com.tobevpn.app.presentation.components.verticalScrollWithCues
 import com.tobevpn.app.presentation.components.withSmallerEmoji
@@ -162,7 +164,11 @@ fun SettingsScreen(
                     // Sign out lives in the top-right corner of the screen, mirroring
                     // the back button — only shown while signed in.
                     actions = {
-                        if (authState is AuthState.Authenticated) {
+                        AnimatedVisibility(
+                            visible = authState is AuthState.Authenticated,
+                            enter = fadeIn(tween(ACCOUNT_CARD_FADE_IN_MS)),
+                            exit = fadeOut(tween(ACCOUNT_CARD_FADE_OUT_MS)),
+                        ) {
                             IconButton(onClick = { showLogoutConfirm = true }) {
                                 Icon(
                                     imageVector = Icons.AutoMirrored.Filled.Logout,
@@ -551,7 +557,7 @@ internal fun AccountCard(
     // is left: green with plenty of time, orange when it's running low, red
     // when it's almost gone or expired. Plans without an expiry (e.g. admin)
     // stay green; a not-signed-in card is blue.
-    val accentColor = when (authState) {
+    val targetAccentColor = when (authState) {
         is AuthState.Authenticated -> when {
             authState.plan == UserPlan.EXPIRED -> VpnRed
             authState.planExpiresAt != null -> {
@@ -565,6 +571,11 @@ internal fun AccountCard(
         }
         AuthState.Anonymous -> VpnBlue
     }
+    val accentColor by animateColorAsState(
+        targetValue = targetAccentColor,
+        animationSpec = tween(ACCOUNT_CARD_FADE_IN_MS + ACCOUNT_CARD_FADE_OUT_MS),
+        label = "accountAccent",
+    )
     val titleColor = if (isSystemInDarkTheme()) MaterialTheme.colorScheme.onSurface else Color.Black
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -588,190 +599,152 @@ internal fun AccountCard(
                 // columns below, so it must reach the card edges.
                 .padding(vertical = 18.dp),
         ) {
-            when (authState) {
-                is AuthState.Anonymous -> {
-                    val isDark = isSystemInDarkTheme()
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 18.dp),
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            ProfileAvatar(photoUrl = null, size = 97.dp)
-                            Spacer(modifier = Modifier.width(16.dp))
-                            Text(
-                                text = stringResource(R.string.not_authorized),
-                                style = fixedLayoutTextStyle(
-                                    MaterialTheme.typography.titleSmall,
-                                ),
-                                fontWeight = FontWeight.SemiBold,
-                                color = titleColor,
-                                modifier = Modifier.weight(1f),
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = onNavigateToAuth,
+            // Signing out (or in) swaps the whole card: cross-fade it and let
+            // the card resize smoothly instead of jumping to the new layout.
+            AnimatedContent(
+                targetState = authState,
+                contentKey = { it is AuthState.Authenticated },
+                transitionSpec = {
+                    fadeIn(tween(ACCOUNT_CARD_FADE_IN_MS, delayMillis = ACCOUNT_CARD_FADE_OUT_MS)) togetherWith
+                        fadeOut(tween(ACCOUNT_CARD_FADE_OUT_MS)) using
+                        SizeTransform(clip = false)
+                },
+                label = "accountCard",
+            ) { cardState ->
+                val authState = cardState
+                when (authState) {
+                    is AuthState.Anonymous -> {
+                        val isDark = isSystemInDarkTheme()
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(52.dp),
-                            shape = RoundedCornerShape(14.dp),
-                            colors = if (isDark) {
-                                ButtonDefaults.buttonColors()
-                            } else {
-                                ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF3F3F3F),
-                                    contentColor = Color.White,
-                                )
-                            },
+                                .padding(horizontal = 18.dp),
                         ) {
-                            SettingsSingleLineText(
-                                text = stringResource(R.string.login_action),
-                                style = MaterialTheme.typography.labelLarge,
-                                fontWeight = FontWeight.Medium,
-                            )
-                        }
-                    }
-                }
-
-                is AuthState.Authenticated -> {
-                    val serverPlanName = authState.planDisplayName?.takeIf {
-                        it.isNotBlank() && authState.plan != UserPlan.EXPIRED
-                    }
-                    // The plan pill describes the plan itself and therefore does
-                    // not change colour as the expiry date approaches. The date
-                    // and the card glow carry the remaining-time indication.
-                    val planLabel = when (authState.plan) {
-                        UserPlan.ADMIN, UserPlan.PAID ->
-                            serverPlanName ?: stringResource(R.string.plan_unknown_name)
-                        UserPlan.EXPIRED -> stringResource(R.string.plan_expired)
-                        UserPlan.FREE_TRIAL -> serverPlanName ?: stringResource(R.string.plan_free)
-                    }
-                    val planPillColor = when (authState.plan) {
-                        UserPlan.ADMIN, UserPlan.PAID -> VpnGreen
-                        UserPlan.FREE_TRIAL -> VpnOrange
-                        UserPlan.EXPIRED -> VpnRed
-                    }
-                    val personalDataHidden = LocalPersonalDataHidden.current
-                    // Full name + @username parsed from the panel; rendered
-                    // according to the user's Personalization choice.
-                    val fullName = authState.name?.takeIf { it.isNotBlank() }
-                    val handle = authState.username
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { "@${it.removePrefix("@")}" }
-                    // Overlay layout: the avatar is centred in the left half of
-                    // the card (so it sits over the "Персонализация" tile below),
-                    // while the plan/ID/date are a separate layer centred in the
-                    // space to the RIGHT of the avatar. Two side-by-side columns
-                    // can't do this because the label area starts mid-left-half.
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(0.5f)
-                                .align(Alignment.CenterStart),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                ProfileAvatar(
-                                    photoUrl = authState.photoUrl.takeUnless { personalDataHidden },
-                                    size = SETTINGS_AVATAR_SIZE,
-                                    loading = avatarLoading && !personalDataHidden,
-                                )
-                                if (!personalDataHidden) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    ProfileNameBlock(
-                                        mode = nameDisplay,
-                                        fullName = fullName,
-                                        handle = handle,
-                                        telegramId = authState.telegramId,
-                                        color = titleColor,
-                                    )
-                                }
-                            }
-                        }
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(0.6f)
-                                .align(Alignment.CenterEnd),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                PlanPill(text = planLabel, color = planPillColor)
-                                Spacer(modifier = Modifier.height(6.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                ProfileAvatar(photoUrl = null, size = 97.dp)
+                                Spacer(modifier = Modifier.width(16.dp))
                                 Text(
-                                    text = if (personalDataHidden) {
-                                        "ID $PERSONAL_DATA_MASK"
-                                    } else {
-                                        "ID ${authState.telegramId}"
-                                    },
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable(enabled = !personalDataHidden) {
-                                            val clipboard = context.getSystemService(
-                                                Context.CLIPBOARD_SERVICE,
-                                            ) as ClipboardManager
-                                            clipboard.setPrimaryClip(
-                                                ClipData.newPlainText(
-                                                    "Telegram ID",
-                                                    authState.telegramId.toString(),
-                                                ),
-                                            )
-                                        }
-                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    text = stringResource(R.string.not_authorized),
                                     style = fixedLayoutTextStyle(
-                                        MaterialTheme.typography.bodySmall,
+                                        MaterialTheme.typography.titleSmall,
                                     ),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = titleColor,
+                                    modifier = Modifier.weight(1f),
                                     maxLines = 1,
                                     softWrap = false,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                if (authState.plan == UserPlan.EXPIRED) {
-                                    Spacer(modifier = Modifier.height(6.dp))
-                                    val externalPurchasesAllowed = LocalExternalPurchasesAllowed.current
-                                    Text(
-                                        text = if (externalPurchasesAllowed) {
-                                            stringResource(R.string.renew_in_bot)
-                                        } else {
-                                            paymentUnavailableMessage()
-                                        },
-                                        style = fixedLayoutTextStyle(
-                                            MaterialTheme.typography.bodySmall,
-                                        ),
-                                        color = VpnRed,
-                                        textAlign = TextAlign.Center,
-                                        maxLines = if (externalPurchasesAllowed) 1 else 3,
-                                        softWrap = !externalPurchasesAllowed,
-                                        overflow = TextOverflow.Ellipsis,
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = onNavigateToAuth,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(52.dp),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = if (isDark) {
+                                    ButtonDefaults.buttonColors()
+                                } else {
+                                    ButtonDefaults.buttonColors(
+                                        containerColor = Color(0xFF3F3F3F),
+                                        contentColor = Color.White,
                                     )
-                                } else if (
-                                    (authState.plan == UserPlan.ADMIN || authState.plan == UserPlan.PAID) &&
-                                    authState.planExpiresAt != null
-                                ) {
+                                },
+                            ) {
+                                SettingsSingleLineText(
+                                    text = stringResource(R.string.login_action),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                        }
+                    }
+
+                    is AuthState.Authenticated -> {
+                        val serverPlanName = authState.planDisplayName?.takeIf {
+                            it.isNotBlank() && authState.plan != UserPlan.EXPIRED
+                        }
+                        // The plan pill describes the plan itself and therefore does
+                        // not change colour as the expiry date approaches. The date
+                        // and the card glow carry the remaining-time indication.
+                        val planLabel = when (authState.plan) {
+                            UserPlan.ADMIN, UserPlan.PAID ->
+                                serverPlanName ?: stringResource(R.string.plan_unknown_name)
+                            UserPlan.EXPIRED -> stringResource(R.string.plan_expired)
+                            UserPlan.FREE_TRIAL -> serverPlanName ?: stringResource(R.string.plan_free)
+                        }
+                        val planPillColor = when (authState.plan) {
+                            UserPlan.ADMIN, UserPlan.PAID -> VpnGreen
+                            UserPlan.FREE_TRIAL -> VpnOrange
+                            UserPlan.EXPIRED -> VpnRed
+                        }
+                        val personalDataHidden = LocalPersonalDataHidden.current
+                        // Full name + @username parsed from the panel; rendered
+                        // according to the user's Personalization choice.
+                        val fullName = authState.name?.takeIf { it.isNotBlank() }
+                        val handle = authState.username
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { "@${it.removePrefix("@")}" }
+                        // Overlay layout: the avatar is centred in the left half of
+                        // the card (so it sits over the "Персонализация" tile below),
+                        // while the plan/ID/date are a separate layer centred in the
+                        // space to the RIGHT of the avatar. Two side-by-side columns
+                        // can't do this because the label area starts mid-left-half.
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.5f)
+                                    .align(Alignment.CenterStart),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    ProfileAvatar(
+                                        photoUrl = authState.photoUrl.takeUnless { personalDataHidden },
+                                        size = SETTINGS_AVATAR_SIZE,
+                                        loading = avatarLoading && !personalDataHidden,
+                                    )
+                                    if (!personalDataHidden) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        ProfileNameBlock(
+                                            mode = nameDisplay,
+                                            fullName = fullName,
+                                            handle = handle,
+                                            telegramId = authState.telegramId,
+                                            color = titleColor,
+                                        )
+                                    }
+                                }
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.6f)
+                                    .align(Alignment.CenterEnd),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    PlanPill(text = planLabel, color = planPillColor)
                                     Spacer(modifier = Modifier.height(6.dp))
-                                    val expiresLabel = stringResource(R.string.expires)
-                                    val expiresDate = formatDate(authState.planExpiresAt)
-                                    val expiresDateColor = when (
-                                        subscriptionExpiryUrgency(authState.planExpiresAt, now)
-                                    ) {
-                                        SubscriptionExpiryUrgency.CRITICAL -> VpnRed
-                                        SubscriptionExpiryUrgency.WARNING -> VpnOrange
-                                        SubscriptionExpiryUrgency.NORMAL ->
-                                            MaterialTheme.colorScheme.onSurfaceVariant
-                                    }
-                                    val expiresText = buildAnnotatedString {
-                                        append(expiresLabel)
-                                        append(" ")
-                                        pushStyle(SpanStyle(color = expiresDateColor))
-                                        append(expiresDate)
-                                        pop()
-                                    }
                                     Text(
-                                        text = expiresText,
+                                        text = if (personalDataHidden) {
+                                            "ID $PERSONAL_DATA_MASK"
+                                        } else {
+                                            "ID ${authState.telegramId}"
+                                        },
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable(enabled = !personalDataHidden) {
+                                                val clipboard = context.getSystemService(
+                                                    Context.CLIPBOARD_SERVICE,
+                                                ) as ClipboardManager
+                                                clipboard.setPrimaryClip(
+                                                    ClipData.newPlainText(
+                                                        "Telegram ID",
+                                                        authState.telegramId.toString(),
+                                                    ),
+                                                )
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
                                         style = fixedLayoutTextStyle(
                                             MaterialTheme.typography.bodySmall,
                                         ),
@@ -781,6 +754,58 @@ internal fun AccountCard(
                                         softWrap = false,
                                         overflow = TextOverflow.Ellipsis,
                                     )
+                                    if (authState.plan == UserPlan.EXPIRED) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        val externalPurchasesAllowed = LocalExternalPurchasesAllowed.current
+                                        Text(
+                                            text = if (externalPurchasesAllowed) {
+                                                stringResource(R.string.renew_in_bot)
+                                            } else {
+                                                paymentUnavailableMessage()
+                                            },
+                                            style = fixedLayoutTextStyle(
+                                                MaterialTheme.typography.bodySmall,
+                                            ),
+                                            color = VpnRed,
+                                            textAlign = TextAlign.Center,
+                                            maxLines = if (externalPurchasesAllowed) 1 else 3,
+                                            softWrap = !externalPurchasesAllowed,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    } else if (
+                                        (authState.plan == UserPlan.ADMIN || authState.plan == UserPlan.PAID) &&
+                                        authState.planExpiresAt != null
+                                    ) {
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        val expiresLabel = stringResource(R.string.expires)
+                                        val expiresDate = formatDate(authState.planExpiresAt)
+                                        val expiresDateColor = when (
+                                            subscriptionExpiryUrgency(authState.planExpiresAt, now)
+                                        ) {
+                                            SubscriptionExpiryUrgency.CRITICAL -> VpnRed
+                                            SubscriptionExpiryUrgency.WARNING -> VpnOrange
+                                            SubscriptionExpiryUrgency.NORMAL ->
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                        }
+                                        val expiresText = buildAnnotatedString {
+                                            append(expiresLabel)
+                                            append(" ")
+                                            pushStyle(SpanStyle(color = expiresDateColor))
+                                            append(expiresDate)
+                                            pop()
+                                        }
+                                        Text(
+                                            text = expiresText,
+                                            style = fixedLayoutTextStyle(
+                                                MaterialTheme.typography.bodySmall,
+                                            ),
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            textAlign = TextAlign.Center,
+                                            maxLines = 1,
+                                            softWrap = false,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1193,3 +1218,6 @@ internal fun formatDate(epochMillis: Long): String {
     sdf.timeZone = java.util.TimeZone.getDefault()
     return sdf.format(java.util.Date(epochMillis))
 }
+
+private const val ACCOUNT_CARD_FADE_IN_MS = 350
+private const val ACCOUNT_CARD_FADE_OUT_MS = 200

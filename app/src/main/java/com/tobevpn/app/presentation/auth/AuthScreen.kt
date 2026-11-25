@@ -6,6 +6,15 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas as AndroidCanvas
 import android.widget.Toast
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -140,7 +149,12 @@ fun AuthScreen(
                 .fillMaxSize()
                 .padding(paddingValues),
         ) {
-            if (uiState !is AuthUiState.Success) {
+            // On success the method tabs fold away instead of vanishing.
+            AnimatedVisibility(
+                visible = uiState !is AuthUiState.Success,
+                enter = fadeIn(tween(AUTH_STATE_FADE_IN_MS)) + expandVertically(tween(AUTH_STATE_FADE_IN_MS)),
+                exit = fadeOut(tween(AUTH_STATE_FADE_OUT_MS)) + shrinkVertically(tween(AUTH_STATE_FADE_IN_MS)),
+            ) {
                 AuthMethodTabs(
                     selectedMethod = authMethod,
                     onMethodSelected = viewModel::selectAuthMethod,
@@ -156,45 +170,64 @@ fun AuthScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                when (uiState) {
-                    is AuthUiState.Idle -> IdleContent(
-                        onTelegramLogin = { viewModel.startTelegramAuth(context) },
-                        onTelegramQrAccess = viewModel::startTelegramQrPairing,
-                    )
-                    is AuthUiState.OpeningTelegram -> OpeningContent(
-                        text = stringResource(R.string.auth_opening_telegram),
-                    )
-                    is AuthUiState.LoadingDevicePairing -> OpeningContent(
-                        text = stringResource(R.string.auth_pairing_loading),
-                    )
-                    is AuthUiState.LoadingTelegramPairing -> OpeningContent(
-                        text = stringResource(R.string.auth_telegram_pairing_loading),
-                    )
-                    is AuthUiState.Polling -> PollingContent(
-                        onOpenTelegram = { viewModel.reopenTelegram(context) },
-                        onRestart = { viewModel.startTelegramAuth(context) },
-                    )
-                    is AuthUiState.WaitingDevicePairing -> {
-                        val state = uiState as AuthUiState.WaitingDevicePairing
-                        DevicePairingContent(code = state.code)
+                // One state replaces another with a cross-fade (waiting for the
+                // bot, then "signed in", a QR, an error) instead of a jump.
+                // Keyed by the kind of state, so the same state updating its
+                // data (a new QR, a new code) does not fade again.
+                AnimatedContent(
+                    targetState = uiState,
+                    contentKey = { it::class },
+                    transitionSpec = {
+                        fadeIn(tween(AUTH_STATE_FADE_IN_MS, delayMillis = AUTH_STATE_FADE_OUT_MS)) togetherWith
+                            fadeOut(tween(AUTH_STATE_FADE_OUT_MS)) using
+                            SizeTransform(clip = false)
+                    },
+                    contentAlignment = Alignment.Center,
+                    label = "authState",
+                ) { state ->
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        when (state) {
+                            is AuthUiState.Idle -> IdleContent(
+                                onTelegramLogin = { viewModel.startTelegramAuth(context) },
+                                onTelegramQrAccess = viewModel::startTelegramQrPairing,
+                            )
+                            is AuthUiState.OpeningTelegram -> OpeningContent(
+                                text = stringResource(R.string.auth_opening_telegram),
+                            )
+                            is AuthUiState.LoadingDevicePairing -> OpeningContent(
+                                text = stringResource(R.string.auth_pairing_loading),
+                            )
+                            is AuthUiState.LoadingTelegramPairing -> OpeningContent(
+                                text = stringResource(R.string.auth_telegram_pairing_loading),
+                            )
+                            is AuthUiState.Polling -> PollingContent(
+                                onOpenTelegram = { viewModel.reopenTelegram(context) },
+                                onRestart = { viewModel.startTelegramAuth(context) },
+                            )
+                            is AuthUiState.WaitingDevicePairing -> {
+                                DevicePairingContent(code = state.code)
+                            }
+                            is AuthUiState.WaitingTelegramPairing -> {
+                                TelegramPairingContent(
+                                    qrData = state.qrData,
+                                    onBackToTelegramLogin = viewModel::showTelegramLogin,
+                                )
+                            }
+                            is AuthUiState.Success -> SuccessContent(onBack = onBack)
+                            is AuthUiState.Error -> ErrorContent(
+                                message = stringResource(state.messageRes),
+                                onRetry = { viewModel.retryAuth(context) },
+                            )
+                        }
                     }
-                    is AuthUiState.WaitingTelegramPairing -> {
-                        val state = uiState as AuthUiState.WaitingTelegramPairing
-                        TelegramPairingContent(
-                            qrData = state.qrData,
-                            onBackToTelegramLogin = viewModel::showTelegramLogin,
-                        )
-                    }
-                    is AuthUiState.Success -> SuccessContent(onBack = onBack)
-                    is AuthUiState.Error -> ErrorContent(
-                        message = stringResource((uiState as AuthUiState.Error).messageRes),
-                        onRetry = { viewModel.retryAuth(context) },
-                    )
                 }
             }
         }
     }
 }
+
+private const val AUTH_STATE_FADE_IN_MS = 350
+private const val AUTH_STATE_FADE_OUT_MS = 200
 
 @Composable
 private fun AuthMethodTabs(
