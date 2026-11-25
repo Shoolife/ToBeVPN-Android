@@ -41,7 +41,7 @@ class PurchaseRepository @Inject constructor(
             if (error !is HttpException || (error.code() != 401 && error.code() != 403)) {
                 throw error
             }
-            runCatching { bootstrapManager.bootstrap() }.getOrElse { throw error }
+            runCatching { bootstrapManager.renewSession() }.getOrElse { throw error }
             botApi.getPurchasePlans()
         }
     }

@@ -150,7 +150,7 @@ class PromocodeRepository @Inject constructor(
             if (error !is HttpException || error.code() !in setOf(401, 403)) {
                 throw error
             }
-            runCatching { bootstrapManager.bootstrap() }.getOrElse { throw error }
+            runCatching { bootstrapManager.renewSession() }.getOrElse { throw error }
             request()
         }
     }

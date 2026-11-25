@@ -47,6 +47,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import retrofit2.HttpException
@@ -105,6 +106,7 @@ class AuthRepository @Inject constructor(
     private val baseStationBypassRepository: BaseStationBypassRepository,
 ) {
     companion object {
+        private const val DEVICE_REGISTRATION_REUSE_MS = 60_000L
         private const val TAG = "AuthRepository"
         private const val RESET_REFETCH_INTERVAL_MS = 10L * 60L * 1000L
     }
@@ -188,6 +190,14 @@ class AuthRepository @Inject constructor(
     // window updated by the first and exits without a network call.
     private val syncMutex = Mutex()
 
+    /** When the last subscription sync began (elapsedRealtime), under [syncMutex]. */
+    private var lastSyncStartedAt = Long.MIN_VALUE
+    private var lastSyncOverwroteUsage = false
+
+    /** The account the device was last reported for, and when. */
+    @Volatile
+    private var lastDeviceRegistration: Pair<Long?, Long>? = null
+
     private fun planFromString(plan: String): UserPlan {
         return runCatching { UserPlan.valueOf(plan) }.getOrDefault(UserPlan.FREE_TRIAL)
     }
@@ -248,7 +258,18 @@ class AuthRepository @Inject constructor(
         return sessionDao.observeSession()
             .map { session -> sessionToAuthState(session) }
             .distinctUntilChanged()
+            .onEach { lastKnownAuthState = it }
     }
+
+    /**
+     * The account state the app last read (Home keeps it observed), so a
+     * screen opened later starts from it instead of "not signed in" for the
+     * moment its own database read takes, which showed as the profile card
+     * changing right after Settings opened.
+     */
+    @Volatile
+    var lastKnownAuthState: AuthState? = null
+        private set
 
     @OptIn(ExperimentalCoroutinesApi::class)
     fun observeSubscriptionUsageBlocked(): Flow<Boolean> {
@@ -348,6 +369,15 @@ class AuthRepository @Inject constructor(
     }
 
     suspend fun registerCurrentDevice(): Result<Unit> {
+        val telegramId = sessionDao.getSession()?.telegramId
+        val now = SystemClock.elapsedRealtime()
+        // Sign-in, subscription syncs and the VPN start all report the
+        // device; one report a minute for the same account is enough.
+        lastDeviceRegistration?.let { (registeredFor, at) ->
+            if (registeredFor == telegramId && now - at < DEVICE_REGISTRATION_REUSE_MS) {
+                return Result.success(Unit)
+            }
+        }
         return try {
             val request = DeviceRegisterRequestDto(
                 deviceName = currentDeviceName(),
@@ -358,6 +388,7 @@ class AuthRepository @Inject constructor(
                 botApi.registerDevice(request)
             }
             if (response.success) {
+                lastDeviceRegistration = telegramId to SystemClock.elapsedRealtime()
                 Result.success(Unit)
             } else {
                 Result.failure(IllegalStateException(response.message ?: "Could not register device"))
@@ -404,7 +435,7 @@ class AuthRepository @Inject constructor(
             block()
         } catch (error: Exception) {
             if (!error.isDeviceSessionAuthFailure()) throw error
-            runCatching { bootstrapManager.bootstrap() }.getOrElse { throw error }
+            runCatching { bootstrapManager.renewSession() }.getOrElse { throw error }
             block()
         }
     }
@@ -448,7 +479,8 @@ class AuthRepository @Inject constructor(
 
     private suspend fun refreshAfterDeviceUnlink(data: DeviceUnlinkResponseDto?, linkReset: Boolean) {
         val oldShortUuid = sessionDao.getSession()?.shortUuid
-        runCatching { bootstrapManager.bootstrap() }
+        // Another device left the account; this one keeps working with its
+        // own session (and the Telegram confirmation in it) as it is.
 
         val planInfo = data
             ?.takeIf { it.currentPlan != null || it.subscription != null }
@@ -534,9 +566,10 @@ class AuthRepository @Inject constructor(
         val subscriptionUrlChanged = !nextUrl.isNullOrBlank() &&
             nextUrl != sessionBefore.subscriptionUrl
 
-        if (subscriptionUrlChanged) {
-            runCatching { bootstrapManager.bootstrap() }
-        }
+        // A new link is applied with the session the app already has: its
+        // tokens stay valid and keep the Telegram confirmation, so no renewal
+        // (right after sign-in this check sees the new link too, and renewing
+        // here only repeated the sign-in's own refresh).
         sessionStore.update { current ->
             val resolvedPlan = resolvePlanFromCurrentPlan(current.userPlan, planInfo)
             current.copy(
@@ -962,7 +995,7 @@ class AuthRepository @Inject constructor(
             }
 
             try {
-                val tokens = bootstrapManager.bootstrap()
+                val tokens = bootstrapManager.renewSession()
                 if (!tokens.isLinked || tokens.telegramId == null) {
                     return@withLock false
                 }
@@ -1044,9 +1077,11 @@ class AuthRepository @Inject constructor(
                 pendingAuthToken = if (clearPendingAuthToken) null else current.pendingAuthToken,
             )
         }
-        // Server has just bound this device row. Open a fresh session so
-        // bearer-token claims include telegram_id/panel_user_uuid.
-        runCatching { bootstrapManager.bootstrap() }
+        // Server has just bound this device row. New tokens for the same
+        // session carry telegram_id/panel_user_uuid; a refresh keeps the
+        // Telegram confirmation the bot wrote into it (a bootstrap would drop
+        // it, and with it the account's announcements).
+        runCatching { bootstrapManager.renewSession() }
 
         try {
             val panelUser = getPanelUserByTelegramId(telegramId)
@@ -1154,13 +1189,22 @@ class AuthRepository @Inject constructor(
         overwriteUsage: Boolean = true,
         force: Boolean = false,
     ) {
+        val requestedAt = SystemClock.elapsedRealtime()
         syncMutex.withLock {
+            // Several parts of the app ask at once (sign-in, the plan check,
+            // screens reacting to the new account); a sync that started after
+            // this request already has everything it would fetch.
+            if (lastSyncStartedAt >= requestedAt && (lastSyncOverwroteUsage || !overwriteUsage)) {
+                return@withLock
+            }
             if (!force) {
                 val (lastSyncAt, intervalMs) = prefsDataStore.getSubscriptionSyncState()
                 if (lastSyncAt > 0 && System.currentTimeMillis() - lastSyncAt < intervalMs) {
                     return@withLock
                 }
             }
+            lastSyncStartedAt = SystemClock.elapsedRealtime()
+            lastSyncOverwroteUsage = overwriteUsage
             runSyncSubscription(overwriteUsage, forceRefresh = force)
         }
     }

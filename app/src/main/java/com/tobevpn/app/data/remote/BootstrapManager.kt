@@ -8,11 +8,15 @@ import com.tobevpn.app.data.remote.dto.BootstrapRequestDto
 import com.tobevpn.app.data.remote.dto.RefreshRequestDto
 import com.tobevpn.app.data.remote.dto.SessionTokensDto
 import com.tobevpn.app.data.remote.dto.mergePanelUserUuid
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import retrofit2.HttpException
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -108,8 +112,11 @@ class BootstrapManager @Inject constructor(
         when {
             tokens == null -> runCatching { bootstrap() }
             tokens.refreshExpiresAt <= now -> runCatching { bootstrap() }
+            // A refresh the server rejects needs a new session; a network
+            // error or a busy server does not (the next request refreshes
+            // again), so the session and its Telegram confirmation stay.
             tokens.accessExpiresAt <= now -> runCatching { refreshNow() }.onFailure {
-                runCatching { bootstrap() }
+                if (it.isRejectedRefresh()) runCatching { bootstrap() }
             }
             else -> Unit
         }
@@ -126,6 +133,35 @@ class BootstrapManager @Inject constructor(
         val data = response.data
             ?: error(response.message ?: "Bootstrap failed")
         persist(data).also { _newSessions.tryEmit(Unit) }
+    }
+
+    /**
+     * New tokens for the session this install already has. The bot writes
+     * the Telegram confirmation into that session when the user signs in;
+     * refresh keeps it, while bootstrap replaces the session and drops it,
+     * so the server stops sending announcements meant for the account
+     * (subscription or plan audiences, pushes included). Bootstrap only when
+     * there is no usable refresh token or the server rejects it.
+     */
+    suspend fun renewSession(): StoredTokens {
+        hydrateFromDb()
+        val tokens = tokensRef.get()
+        if (tokens != null && tokens.refreshExpiresAt > System.currentTimeMillis()) {
+            for (attempt in 0 until REFRESH_ATTEMPTS) {
+                try {
+                    return refreshNow()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (e.isRejectedRefresh()) break
+                    // Timeout, network, 429 or 5xx: the session is still
+                    // good, ask again after a pause instead of replacing it.
+                    if (attempt == REFRESH_ATTEMPTS - 1) throw e
+                    delay(REFRESH_RETRY_MS * (attempt + 1))
+                }
+            }
+        }
+        return bootstrap()
     }
 
     suspend fun refreshNow(): StoredTokens = mutex.withLock {
@@ -152,9 +188,11 @@ class BootstrapManager @Inject constructor(
             } else {
                 bootstrap().accessToken
             }
-        } catch (_: Exception) {
-            // Refresh failed — try bootstrap once more.
-            runCatching { bootstrap().accessToken }.getOrNull()
+        } catch (e: Exception) {
+            // Only a refresh the server rejected needs a new session; after a
+            // network error or a busy server the session (and its Telegram
+            // confirmation) is kept and the request just fails this time.
+            if (e.isRejectedRefresh()) runCatching { bootstrap().accessToken }.getOrNull() else null
         }
     }
 
@@ -230,4 +268,18 @@ class BootstrapManager @Inject constructor(
         }
         return stored
     }
+}
+
+private const val REFRESH_ATTEMPTS = 3
+private const val REFRESH_RETRY_MS = 2_000L
+
+/**
+ * The server turned the refresh token down (401/403, or an answer without
+ * tokens), so only a new session helps. Timeouts, network errors, 429 and
+ * 5xx are temporary and keep the session.
+ */
+private fun Throwable.isRejectedRefresh(): Boolean = when (this) {
+    is IOException -> false
+    is HttpException -> code() != 429 && code() < 500
+    else -> true
 }
